@@ -4,7 +4,7 @@ import { injectStyles, removeStyles, unlockSkinCarousel } from './styles';
 import { wsConnect, wsSend } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState } from './ui';
 import { ensureChromaButton, closeChromaPanel, setLastChampionId, setAppliedSkinName } from './chroma';
-import { handleSessionUpdate, resetAutoApply, fetchAndLogGameflow, fetchAndLogTimer } from './autoApply';
+import { handleSessionUpdate, resetAutoApply, fetchAndLogGameflow, fetchAndLogTimer, checkSkinChange } from './autoApply';
 
 let pollTimer = null;
 let observer = null;
@@ -32,6 +32,9 @@ async function pollUI() {
     await loadChampionSkins(champId);
     ensureChromaButton();
   }
+
+  // Check for skin changes to reset auto-apply timer
+  checkSkinChange();
 }
 
 function startObserving() {

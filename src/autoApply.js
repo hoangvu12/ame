@@ -12,6 +12,7 @@ const LOG_PREFIX = '[ame:auto]';
 let autoApplyTimer = null;
 let lastChampionChangeTime = null;
 let lastLoggedChampionId = null;
+let lastSkinName = null;
 let autoApplyTriggered = false;
 let lastSessionSnapshot = null;
 
@@ -74,6 +75,7 @@ export function resetAutoApply() {
   clearAutoApplyTimer();
   lastChampionChangeTime = null;
   lastLoggedChampionId = null;
+  lastSkinName = null;
   autoApplyTriggered = false;
   lastSessionSnapshot = null;
 }
@@ -87,6 +89,23 @@ function clearAutoApplyTimer() {
     autoApplyTimer = null;
     console.log(`${LOG_PREFIX} Auto-apply timer cleared`);
   }
+}
+
+/**
+ * Check if skin changed and reset timer if so (called from UI polling)
+ */
+export function checkSkinChange() {
+  if (autoApplyTriggered) return;
+
+  const currentSkin = readCurrentSkin();
+  if (!currentSkin) return;
+
+  if (lastSkinName !== null && currentSkin !== lastSkinName) {
+    console.log(`${LOG_PREFIX} Skin changed: ${lastSkinName} -> ${currentSkin}`);
+    clearAutoApplyTimer();
+  }
+
+  lastSkinName = currentSkin;
 }
 
 /**
@@ -168,12 +187,16 @@ export function handleSessionUpdate(session) {
   const myChampId = getMyChampFromSession(session);
   const allHaveChamp = allTeammatesHaveChampion(session);
 
+  // Track if champion changed this update
+  let championChangedThisUpdate = false;
+
   // Log when champion changes
   if (myChampId !== lastLoggedChampionId) {
     console.log(`${LOG_PREFIX} Champion changed: ${lastLoggedChampionId || 'none'} -> ${myChampId || 'none'}`);
     logSessionData(session, 'Champion Changed');
     lastLoggedChampionId = myChampId;
     lastChampionChangeTime = Date.now();
+    championChangedThisUpdate = true;
 
     // Reset auto-apply when champion changes (user might be rerolling in ARAM)
     if (!autoApplyTriggered) {
@@ -186,7 +209,8 @@ export function handleSessionUpdate(session) {
   const timeSinceChange = lastChampionChangeTime ? now - lastChampionChangeTime : null;
 
   // Check if we should start the auto-apply timer
-  if (!autoApplyTriggered && myChampId && allHaveChamp) {
+  // Don't schedule in the same update where champion changed - wait for next update
+  if (!autoApplyTriggered && myChampId && allHaveChamp && !championChangedThisUpdate) {
     if (!autoApplyTimer) {
       console.log(`${LOG_PREFIX} Conditions met: all teammates have champions, starting timer`);
       logSessionData(session, 'Auto-apply conditions met');
