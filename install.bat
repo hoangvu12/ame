@@ -100,6 +100,10 @@ if errorlevel 1 (
 ) else (
     echo         [%CHECK%] Plugin installed
 )
+:: Copy ame.bat and server.ps1 to install dir
+copy /y "%~dp0ame.bat" "%AME_DIR%\" >nul 2>&1
+copy /y "%~dp0server.ps1" "%AME_DIR%\" >nul 2>&1
+echo         [%CHECK%] ame.bat copied to %AME_DIR%
 echo.
 
 :: Step 4: Activate Pengu
@@ -124,7 +128,9 @@ if "%FAILED%"=="1" (
     echo   %DIM%Check your internet connection and try again.%R%
 ) else (
     echo   %GREEN%Installation complete!%R%
-    echo   %DIM%Run ame.bat to start the skin changer.%R%
+    echo.
+    echo   %DIM%To run ame, open:%R%
+    echo   %CYAN%%AME_DIR%\ame.bat%R%
 )
 echo.
 pause
