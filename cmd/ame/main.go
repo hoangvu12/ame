@@ -27,7 +27,7 @@ const PORT = 18765
 var setupConfig = setup.Config{
 	ToolsURL:  "https://raw.githubusercontent.com/Alban1911/Rose/main/injection/tools",
 	PenguURL:  "https://github.com/PenguLoader/PenguLoader/releases/download/v1.1.6/pengu-loader-v1.1.6.zip",
-	PluginURL: "https://raw.githubusercontent.com/hoangvu12/ame/main/src",
+	PluginURL: "https://github.com/hoangvu12/ame/releases/latest/download/plugin.zip",
 }
 
 // isAdmin checks if running with admin privileges

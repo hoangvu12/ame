@@ -33,6 +33,12 @@ jobs:
           go mod tidy
           go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}'" -o dist/ame.exe ./cmd/ame
 
+      - name: Create plugin zip
+        shell: bash
+        run: |
+          cd src
+          7z a -tzip ../dist/plugin.zip *.js
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -59,6 +65,7 @@ jobs:
             Download and run `uninstall.bat` to remove ame completely.
           files: |
             dist/ame.exe
+            dist/plugin.zip
             uninstall.bat
           draft: false
           prerelease: false

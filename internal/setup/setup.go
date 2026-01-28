@@ -31,17 +31,6 @@ var TOOL_FILES = []string{
 	"wad-make.exe",
 }
 
-// Plugin files to download
-var PLUGIN_FILES = []string{
-	"index.js",
-	"api.js",
-	"chroma.js",
-	"constants.js",
-	"skin.js",
-	"styles.js",
-	"ui.js",
-	"websocket.js",
-}
 
 // Config holds setup URLs
 type Config struct {
@@ -227,19 +216,28 @@ func setupPenguLoader(penguURL string) bool {
 	return true
 }
 
-// SetupPlugin downloads plugin files (exported for use after updates)
-func SetupPlugin(pluginURL string) bool {
-	allSuccess := true
-	for _, file := range PLUGIN_FILES {
-		url := pluginURL + "/" + file
-		dest := filepath.Join(PLUGIN_DIR, file)
-		if err := downloadFile(url, dest); err != nil {
-			allSuccess = false
-		}
+// SetupPlugin downloads and extracts plugin zip (exported for use after updates)
+func SetupPlugin(pluginZipURL string) bool {
+	info("Downloading plugin...")
+	zipPath := filepath.Join(AME_DIR, "plugin.zip")
+
+	if err := downloadFile(pluginZipURL, zipPath); err != nil {
+		status("Plugin", false)
+		return false
 	}
 
-	status("Plugin", allSuccess)
-	return allSuccess
+	// Clear existing plugin files
+	os.RemoveAll(PLUGIN_DIR)
+	os.MkdirAll(PLUGIN_DIR, os.ModePerm)
+
+	if err := extractZip(zipPath, PLUGIN_DIR); err != nil {
+		status("Plugin", false)
+		return false
+	}
+
+	os.Remove(zipPath)
+	status("Plugin", true)
+	return true
 }
 
 // checkPenguActivation checks and prompts for Pengu activation
