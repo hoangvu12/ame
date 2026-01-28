@@ -115,16 +115,25 @@ func checkForUpdates() {
 				return
 			}
 
-			scriptPath, err := updater.ApplyUpdate(exePath)
-			if err != nil {
-				fmt.Printf("  ! Failed to update: %v\n", err)
+			fmt.Println("  Restarting...")
+
+			// Use PowerShell directly with detached process flags
+			// This avoids batch file issues and survives parent exit
+			psScript := fmt.Sprintf(
+				`Start-Sleep -Seconds 2; `+
+					`Copy-Item -Path '%s' -Destination '%s' -Force; `+
+					`Remove-Item -Path '%s' -Force; `+
+					`Start-Process -FilePath '%s' -Verb RunAs`,
+				updater.GetUpdateFilePath(), exePath, updater.GetUpdateFilePath(), exePath)
+
+			cmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript)
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | 0x00000008, // DETACHED_PROCESS
+			}
+			if err := cmd.Start(); err != nil {
+				fmt.Printf("  ! Failed to start updater: %v\n", err)
 				return
 			}
-
-			fmt.Println("  Restarting...")
-			cmd := exec.Command("cmd", "/C", scriptPath)
-			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-			cmd.Start()
 			os.Exit(0)
 		}
 	} else {

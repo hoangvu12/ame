@@ -218,6 +218,11 @@ func CleanupUpdateFile() {
 	os.Remove(UPDATE_FILE)
 }
 
+// GetUpdateFilePath returns the path to the update file
+func GetUpdateFilePath() string {
+	return UPDATE_FILE
+}
+
 // VerifyUpdateFile checks if the update file exists and is valid
 func VerifyUpdateFile() bool {
 	info, err := os.Stat(UPDATE_FILE)
@@ -228,48 +233,3 @@ func VerifyUpdateFile() bool {
 	return info.Size() > 1024*1024
 }
 
-// ApplyUpdate creates a batch script to replace the exe and relaunch
-// Returns the path to the batch script
-func ApplyUpdate(currentExePath string) (string, error) {
-	scriptPath := filepath.Join(AME_DIR, "update.bat")
-
-	// Batch script that:
-	// 1. Waits for the current process to exit
-	// 2. Verifies update file exists
-	// 3. Copies the new exe over the old one (with retry)
-	// 4. Only proceeds if copy succeeded
-	// 5. Deletes the update file and relaunches
-	script := fmt.Sprintf(`@echo off
-setlocal
-
-set "UPDATE_FILE=%s"
-set "TARGET_FILE=%s"
-
-echo Updating ame...
-timeout /t 2 /nobreak >nul
-
-if not exist "%%UPDATE_FILE%%" (
-    echo Update file not found: %%UPDATE_FILE%%
-    pause
-    exit /b 1
-)
-
-:retry
-copy /y "%%UPDATE_FILE%%" "%%TARGET_FILE%%"
-if errorlevel 1 (
-    echo Copy failed, retrying in 2 seconds...
-    timeout /t 2 /nobreak >nul
-    goto retry
-)
-
-del "%%UPDATE_FILE%%"
-start "" "%%TARGET_FILE%%"
-del "%%~f0"
-`, UPDATE_FILE, currentExePath)
-
-	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
-		return "", err
-	}
-
-	return scriptPath, nil
-}
