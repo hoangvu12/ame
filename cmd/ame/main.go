@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -64,7 +65,28 @@ func killPenguLoader() {
 	cmd.Run() // Ignore errors
 }
 
+// disableQuickEdit disables QuickEdit mode to prevent terminal from pausing on click
+func disableQuickEdit() {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	getConsoleMode := kernel32.NewProc("GetConsoleMode")
+	setConsoleMode := kernel32.NewProc("SetConsoleMode")
+
+	handle, _ := syscall.GetStdHandle(syscall.STD_INPUT_HANDLE)
+
+	var mode uint32
+	getConsoleMode.Call(uintptr(handle), uintptr(unsafe.Pointer(&mode)))
+
+	// Disable ENABLE_QUICK_EDIT_MODE (0x0040) and ENABLE_EXTENDED_FLAGS (0x0080)
+	mode &^= 0x0040 // Remove QUICK_EDIT
+	mode |= 0x0080  // Add EXTENDED_FLAGS (required)
+
+	setConsoleMode.Call(uintptr(handle), uintptr(mode))
+}
+
 func main() {
+	// Disable QuickEdit mode so terminal doesn't pause on click
+	disableQuickEdit()
+
 	// Check for admin privileges
 	if !isAdmin() {
 		fmt.Println("[ame] Requesting admin privileges...")

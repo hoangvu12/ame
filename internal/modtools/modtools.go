@@ -3,9 +3,11 @@ package modtools
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 var TOOLS_DIR = filepath.Join(os.Getenv("LOCALAPPDATA"), "ame", "tools")
@@ -15,9 +17,29 @@ var runningProcess *exec.Cmd
 
 // KillModTools kills any running mod-tools processes
 func KillModTools() {
-	// First try to gracefully stop our tracked process
+	// First try to gracefully stop by writing to stdin (like bocchi)
+	if stdinPipe != nil {
+		stdinPipe.Write([]byte("\n"))
+		stdinPipe.Close()
+		stdinPipe = nil
+	}
+
+	// Give it a moment to exit gracefully
 	if runningProcess != nil && runningProcess.Process != nil {
-		runningProcess.Process.Kill()
+		// Wait a bit for graceful exit
+		done := make(chan struct{})
+		go func() {
+			runningProcess.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// Process exited gracefully
+		case <-time.After(1 * time.Second):
+			// Force kill if still running
+			runningProcess.Process.Kill()
+		}
 		runningProcess = nil
 	}
 
@@ -60,6 +82,9 @@ func RunMkOverlay(modsDir, overlayDir, gameDir, modName string) (bool, int) {
 	return true, 0
 }
 
+// stdinPipe holds the stdin writer for runoverlay (to keep it alive and stop gracefully)
+var stdinPipe io.WriteCloser
+
 // RunOverlay runs mod-tools runoverlay command (NOT detached, like bocchi)
 func RunOverlay(overlayDir, configPath, gameDir string) error {
 	modTools := filepath.Join(TOOLS_DIR, "mod-tools.exe")
@@ -79,7 +104,14 @@ func RunOverlay(overlayDir, configPath, gameDir string) error {
 
 	cmd.Dir = TOOLS_DIR
 
-	// Create pipes for stdout/stderr (like bocchi's stdio: ['pipe', 'pipe', 'pipe'])
+	// Create pipes for stdin/stdout/stderr (like bocchi's stdio: ['pipe', 'pipe', 'pipe'])
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdin pipe: %v", err)
+	}
+	// Keep stdin pipe open (bocchi keeps reference and writes to it to stop)
+	stdinPipe = stdin
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %v", err)
@@ -128,6 +160,7 @@ func RunOverlay(overlayDir, configPath, gameDir string) error {
 			fmt.Println("[ame] runoverlay exited normally")
 		}
 		runningProcess = nil
+		stdinPipe = nil
 	}()
 
 	return nil
