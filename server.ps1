@@ -76,7 +76,7 @@ function Send-Status($ws, $status, $message) {
 
 # --- Skin apply ---
 
-function Invoke-Apply($ws, $championId, $skinId) {
+function Invoke-Apply($ws, $championId, $skinId, $baseSkinId) {
     # Called when user clicks "Apply Skin" — do everything now
     $gameDir = Find-GameDir
     if (-not $gameDir) {
@@ -108,7 +108,11 @@ function Invoke-Apply($ws, $championId, $skinId) {
         New-Item -ItemType Directory -Path $skinDir -Force | Out-Null
         $downloaded = $false
         foreach ($ext in @("fantome", "zip")) {
-            $url = "$SKIN_BASE_URL/$championId/$skinId/$skinId.$ext"
+            if ($baseSkinId) {
+                $url = "$SKIN_BASE_URL/$championId/$baseSkinId/$skinId/$skinId.$ext"
+            } else {
+                $url = "$SKIN_BASE_URL/$championId/$skinId/$skinId.$ext"
+            }
             $tryPath = Join-Path $skinDir "$skinId.$ext"
             try {
                 Invoke-WebRequest -Uri $url -OutFile $tryPath -UseBasicParsing
@@ -212,8 +216,8 @@ try {
 
                 switch ($msg.type) {
                     "apply" {
-                        Write-Host "[ame] Apply requested: champion=$($msg.championId) skin=$($msg.skinId)"
-                        Invoke-Apply $ws $msg.championId $msg.skinId
+                        Write-Host "[ame] Apply requested: champion=$($msg.championId) skin=$($msg.skinId) base=$($msg.baseSkinId)"
+                        Invoke-Apply $ws $msg.championId $msg.skinId $msg.baseSkinId
                     }
                     "cleanup" {
                         Invoke-Cleanup
