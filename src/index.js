@@ -4,6 +4,7 @@ import { injectStyles, removeStyles, unlockSkinCarousel } from './styles';
 import { wsConnect, wsSend } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState } from './ui';
 import { ensureChromaButton, closeChromaPanel, setLastChampionId, setAppliedSkinName } from './chroma';
+import { handleSessionUpdate, resetAutoApply, fetchAndLogGameflow, fetchAndLogTimer } from './autoApply';
 
 let pollTimer = null;
 let observer = null;
@@ -61,6 +62,9 @@ export function init(context) {
       setLastChampionId(champId);
       resetSkinsCache();
     }
+
+    // Feed session to auto-apply logic
+    handleSessionUpdate(session);
   });
 
   context.socket.observe('/lol-gameflow/v1/gameflow-phase', (event) => {
@@ -77,10 +81,16 @@ export function init(context) {
       resetSkinsCache();
       injectionTriggered = false;
       setAppliedSkinName(null);
+      resetAutoApply();
       startObserving();
+
+      // Log gameflow and timer info for debugging
+      fetchAndLogGameflow();
+      fetchAndLogTimer();
     } else if (!inChampSelect && wasInChampSelect) {
       console.log('[ame] Left champ select');
       stopObserving();
+      resetAutoApply();
       injectionTriggered = true;
     }
 
