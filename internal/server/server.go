@@ -23,10 +23,10 @@ var (
 
 // ApplyMessage represents an apply skin request
 type ApplyMessage struct {
-	Type       string `json:"type"`
-	ChampionID string `json:"championId"`
-	SkinID     string `json:"skinId"`
-	BaseSkinID string `json:"baseSkinId,omitempty"`
+	Type       string      `json:"type"`
+	ChampionID interface{} `json:"championId"`
+	SkinID     interface{} `json:"skinId"`
+	BaseSkinID interface{} `json:"baseSkinId,omitempty"`
 }
 
 // CleanupMessage represents a cleanup request
@@ -50,6 +50,23 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all origins
 	},
+}
+
+// toString converts interface{} to string (handles both string and number types)
+func toString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64:
+		return fmt.Sprintf("%.0f", val)
+	case int:
+		return fmt.Sprintf("%d", val)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
 }
 
 var clients = make(map[*websocket.Conn]bool)
@@ -176,9 +193,12 @@ func handleConnection(conn *websocket.Conn) {
 				fmt.Printf("[ame] Apply message parse error: %v\n", err)
 				continue
 			}
+			championID := toString(applyMsg.ChampionID)
+			skinID := toString(applyMsg.SkinID)
+			baseSkinID := toString(applyMsg.BaseSkinID)
 			fmt.Printf("[ame] Apply requested: champion=%s skin=%s base=%s\n",
-				applyMsg.ChampionID, applyMsg.SkinID, applyMsg.BaseSkinID)
-			handleApply(conn, applyMsg.ChampionID, applyMsg.SkinID, applyMsg.BaseSkinID)
+				championID, skinID, baseSkinID)
+			handleApply(conn, championID, skinID, baseSkinID)
 
 		case "cleanup":
 			HandleCleanup()
