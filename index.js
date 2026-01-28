@@ -9,6 +9,7 @@ const WS_URL = 'ws://localhost:18765';
 const WS_RECONNECT_BASE_MS = 1000;
 const WS_RECONNECT_MAX_MS = 30000;
 const BUTTON_ID = 'ame-apply-btn';
+const STYLE_ID = 'ame-styles';
 
 let lastChampionId = null;
 let pollTimer = null;
@@ -20,6 +21,7 @@ let ws = null;
 let wsReconnectDelay = WS_RECONNECT_BASE_MS;
 let wsReconnectTimer = null;
 let injectionTriggered = false;
+let appliedSkinName = null;
 
 async function getMyChampionId() {
   try {
@@ -72,6 +74,58 @@ function readCurrentSkin() {
     if (candidate) return candidate;
   }
   return null;
+}
+
+// --- Style injection & skin unlock ---
+
+function injectStyles() {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+    .skin-selection-item.disabled {
+      filter: none !important;
+      -webkit-filter: none !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+    }
+    .skin-selection-item .lock-icon,
+    .skin-selection-item .locked-icon,
+    .skin-selection-item .skin-selection-item-unowned-overlay,
+    .unlock-skin-hit-area,
+    .unlock-skin-hit-area * {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+    .skin-selection-item:hover .skin-selection-thumbnail,
+    .skin-selection-item.selected .skin-selection-thumbnail {
+      border: 2px solid #c8aa6e;
+      box-shadow: 0 0 6px #c8aa6e80;
+    }
+    #ame-apply-btn[disabled] {
+      opacity: 0.4 !important;
+      pointer-events: none !important;
+      cursor: default !important;
+      filter: grayscale(0.5) !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function removeStyles() {
+  const style = document.getElementById(STYLE_ID);
+  if (style) style.remove();
+}
+
+function unlockSkinCarousel() {
+  const items = document.querySelectorAll('.skin-selection-item.disabled');
+  for (const el of items) {
+    el.classList.remove('disabled');
+  }
 }
 
 // --- Apply button ---
@@ -140,6 +194,8 @@ async function onApplyClick() {
 
   console.log('[ame] Apply clicked:', skinName, '| Skin ID:', skin.id, '| Champion ID:', championId);
   wsSend({ type: 'apply', championId, skinId: skin.id });
+  appliedSkinName = skinName;
+  setButtonState('Applied', true);
 }
 
 // --- Poll for button injection ---
@@ -147,6 +203,19 @@ async function onApplyClick() {
 function pollUI() {
   if (!inChampSelect) return;
   ensureApplyButton();
+  unlockSkinCarousel();
+  updateButtonState();
+}
+
+function updateButtonState() {
+  if (!appliedSkinName) return;
+  const current = readCurrentSkin();
+  if (!current) return;
+  if (current === appliedSkinName) {
+    setButtonState('Applied', true);
+  } else {
+    setButtonState('Apply Skin', false);
+  }
 }
 
 // --- Observing ---
@@ -155,6 +224,7 @@ function stopObserving() {
   if (observer) { observer.disconnect(); observer = null; }
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   removeApplyButton();
+  removeStyles();
 }
 
 function startObserving() {
@@ -224,6 +294,7 @@ function wsSend(obj) {
 
 export function init(context) {
   console.log('[ame] Plugin loaded');
+  injectStyles();
   wsConnect();
 
   context.socket.observe('/lol-champ-select/v1/session', (event) => {
@@ -251,6 +322,7 @@ export function init(context) {
       championSkins = null;
       cachedChampionId = null;
       injectionTriggered = false;
+      appliedSkinName = null;
       startObserving();
     } else if (!inChampSelect && wasInChampSelect) {
       console.log('[ame] Left champ select');
