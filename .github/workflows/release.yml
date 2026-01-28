@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p dist
           go mod tidy
-          go build -trimpath -ldflags="-s -w" -o dist/ame.exe ./cmd/ame
+          go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}'" -o dist/ame.exe ./cmd/ame
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

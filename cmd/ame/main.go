@@ -15,7 +15,11 @@ import (
 
 	"github.com/hoangvu12/ame/internal/server"
 	"github.com/hoangvu12/ame/internal/setup"
+	"github.com/hoangvu12/ame/internal/updater"
 )
+
+// Version is set at build time via -ldflags
+var Version = "dev"
 
 const PORT = 18765
 
@@ -65,6 +69,70 @@ func killPenguLoader() {
 	cmd.Run() // Ignore errors
 }
 
+// printBanner prints the application banner
+func printBanner() {
+	fmt.Println()
+	fmt.Println("  ame " + Version)
+	fmt.Println("  https://github.com/hoangvu12/ame")
+	fmt.Println()
+}
+
+// checkForUpdates checks for new versions and prompts user to update
+func checkForUpdates() {
+	if Version == "dev" {
+		return
+	}
+
+	fmt.Print("  Checking for updates... ")
+
+	result, err := updater.CheckForUpdates(Version)
+	if err != nil {
+		fmt.Println("failed")
+		return
+	}
+
+	if !result.UpdateAvailable {
+		fmt.Println("up to date")
+		return
+	}
+
+	fmt.Println("update available!")
+	fmt.Println()
+	fmt.Printf("  New version: %s (current: %s)\n", result.LatestVersion, Version)
+
+	if result.Downloaded {
+		fmt.Println()
+		fmt.Print("  Update now? [Y/n]: ")
+
+		var input string
+		fmt.Scanln(&input)
+		input = strings.ToLower(strings.TrimSpace(input))
+
+		if input == "" || input == "y" || input == "yes" {
+			exePath, err := os.Executable()
+			if err != nil {
+				fmt.Printf("  ! Failed to update: %v\n", err)
+				return
+			}
+
+			scriptPath, err := updater.ApplyUpdate(exePath)
+			if err != nil {
+				fmt.Printf("  ! Failed to update: %v\n", err)
+				return
+			}
+
+			fmt.Println("  Restarting...")
+			cmd := exec.Command("cmd", "/C", scriptPath)
+			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			cmd.Start()
+			os.Exit(0)
+		}
+	} else {
+		fmt.Println("  Download: https://github.com/hoangvu12/ame/releases/latest")
+	}
+	fmt.Println()
+}
+
 // disableQuickEdit disables QuickEdit mode to prevent terminal from pausing on click
 func disableQuickEdit() {
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
@@ -89,16 +157,12 @@ func main() {
 
 	// Check for admin privileges
 	if !isAdmin() {
-		fmt.Println("[ame] Requesting admin privileges...")
-		err := runAsAdmin()
-		if err != nil {
-			fmt.Printf("[ame] Failed to elevate: %v\n", err)
-			fmt.Println("[ame] Please run as administrator manually.")
-			fmt.Println("Press Enter to exit...")
-			fmt.Scanln()
-		}
+		runAsAdmin()
 		os.Exit(0)
 	}
+
+	// Print banner
+	printBanner()
 
 	// Handle process exit signals
 	sigChan := make(chan os.Signal, 1)
@@ -106,19 +170,34 @@ func main() {
 
 	go func() {
 		<-sigChan
-		fmt.Println("\n[ame] Shutting down...")
+		fmt.Println("\n  Shutting down...")
 		server.HandleCleanup()
 		killPenguLoader()
 		os.Exit(0)
 	}()
 
+	// Check if plugin reinstall is needed (after an update)
+	if updater.NeedsPluginReinstall(Version) {
+		fmt.Printf("  > Updating plugins (%s -> %s)...\n", updater.GetSavedVersion(), Version)
+		setup.SetupPlugin(setupConfig.PluginURL)
+		updater.SaveVersion(Version)
+		updater.CleanupUpdateFile()
+	}
+
+	// Check for updates
+	checkForUpdates()
+
 	// Run setup (downloads dependencies if needed)
 	if !setup.RunSetup(setupConfig) {
-		fmt.Println("[ame] Setup failed. Please check your internet connection and try again.")
+		fmt.Println()
+		fmt.Println("  ! Setup failed. Check your internet connection.")
+		fmt.Println("  Press Enter to exit...")
+		fmt.Scanln()
 		os.Exit(1)
 	}
 
-	fmt.Printf("[ame] Starting server on port %d...\n", PORT)
+	// Save current version after successful setup
+	updater.SaveVersion(Version)
 
 	// Start WebSocket server (blocks)
 	server.StartServer(PORT)

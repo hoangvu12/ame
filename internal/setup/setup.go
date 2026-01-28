@@ -50,16 +50,23 @@ type Config struct {
 	PluginURL string
 }
 
-// log prints status message with formatting
-func log(message string, logType string) {
-	prefix := "[..]"
-	switch logType {
-	case "success":
-		prefix = "[OK]"
-	case "error":
-		prefix = "[ERR]"
+// status prints a status line with indicator
+func status(name string, ok bool) {
+	if ok {
+		fmt.Printf("  + %s\n", name)
+	} else {
+		fmt.Printf("  x %s (failed)\n", name)
 	}
-	fmt.Printf("%s %s\n", prefix, message)
+}
+
+// info prints an info message
+func info(message string) {
+	fmt.Printf("  > %s\n", message)
+}
+
+// errorMsg prints an error message
+func errorMsg(message string) {
+	fmt.Printf("  ! %s\n", message)
 }
 
 // downloadFile downloads a file from URL to destination
@@ -146,26 +153,21 @@ func isPenguActivated() bool {
 func launchPenguForActivation() error {
 	penguExe := filepath.Join(PENGU_DIR, "Pengu Loader.exe")
 	if _, err := os.Stat(penguExe); os.IsNotExist(err) {
-		log("Pengu Loader.exe not found", "error")
+		errorMsg("Pengu Loader.exe not found")
 		return err
 	}
 
-	fmt.Println("")
-	fmt.Println("  ========================================")
-	fmt.Println("  Please click 'Activate' in Pengu Loader")
-	fmt.Println("  then close the window to continue.")
-	fmt.Println("  ========================================")
-	fmt.Println("")
+	fmt.Println()
+	fmt.Println("  +-----------------------------------------+")
+	fmt.Println("  |  Click 'Activate' in Pengu Loader       |")
+	fmt.Println("  |  then close the window to continue      |")
+	fmt.Println("  +-----------------------------------------+")
+	fmt.Println()
 
 	cmd := exec.Command(penguExe)
 	cmd.SysProcAttr = getSysProcAttr()
 	err := cmd.Run()
-	if err != nil {
-		return err
-	}
-
-	log("Pengu Loader closed", "success")
-	return nil
+	return err
 }
 
 // createDirectories creates all required directories
@@ -178,140 +180,108 @@ func createDirectories() {
 
 // setupModTools downloads mod-tools if not present
 func setupModTools(toolsURL string) bool {
-	log("Checking mod-tools...", "info")
-
 	modToolsPath := filepath.Join(TOOLS_DIR, "mod-tools.exe")
 	if _, err := os.Stat(modToolsPath); err == nil {
-		log("mod-tools already installed", "success")
+		status("mod-tools", true)
 		return true
 	}
 
-	log("Downloading mod-tools...", "info")
+	info("Downloading mod-tools...")
 	allSuccess := true
 
 	for _, file := range TOOL_FILES {
 		url := toolsURL + "/" + file
 		dest := filepath.Join(TOOLS_DIR, file)
-		fmt.Printf("     Downloading %s...", file)
-		if err := downloadFile(url, dest); err == nil {
-			fmt.Println(" OK")
-		} else {
-			fmt.Println(" FAILED")
+		if err := downloadFile(url, dest); err != nil {
 			allSuccess = false
 		}
 	}
 
-	if allSuccess {
-		log("mod-tools installed", "success")
-	} else {
-		log("Some mod-tools files failed to download", "error")
-	}
-
+	status("mod-tools", allSuccess)
 	return allSuccess
 }
 
 // setupPenguLoader downloads and extracts Pengu Loader if not present
 func setupPenguLoader(penguURL string) bool {
-	log("Checking Pengu Loader...", "info")
-
 	penguExe := filepath.Join(PENGU_DIR, "Pengu Loader.exe")
 	if _, err := os.Stat(penguExe); err == nil {
-		log("Pengu Loader already installed", "success")
+		status("Pengu Loader", true)
 		return true
 	}
 
-	log("Downloading Pengu Loader...", "info")
+	info("Downloading Pengu Loader...")
 	zipPath := filepath.Join(AME_DIR, "pengu.zip")
 
 	if err := downloadFile(penguURL, zipPath); err != nil {
-		log("Failed to download Pengu Loader", "error")
+		status("Pengu Loader", false)
 		return false
 	}
 
-	log("Extracting Pengu Loader...", "info")
 	if err := extractZip(zipPath, PENGU_DIR); err != nil {
-		log("Failed to extract Pengu Loader", "error")
+		status("Pengu Loader", false)
 		return false
 	}
 
-	// Clean up zip
 	os.Remove(zipPath)
-
-	log("Pengu Loader installed", "success")
+	status("Pengu Loader", true)
 	return true
 }
 
-// setupPlugin downloads plugin files
-func setupPlugin(pluginURL string) bool {
-	log("Checking ame plugin...", "info")
-	log("Installing ame plugin...", "info")
-
+// SetupPlugin downloads plugin files (exported for use after updates)
+func SetupPlugin(pluginURL string) bool {
 	allSuccess := true
 	for _, file := range PLUGIN_FILES {
 		url := pluginURL + "/" + file
 		dest := filepath.Join(PLUGIN_DIR, file)
 		if err := downloadFile(url, dest); err != nil {
-			log(fmt.Sprintf("Failed to download %s", file), "error")
 			allSuccess = false
 		}
 	}
 
-	if allSuccess {
-		log("ame plugin installed", "success")
-	} else {
-		log("Some plugin files failed to download", "error")
-	}
-
+	status("Plugin", allSuccess)
 	return allSuccess
 }
 
 // checkPenguActivation checks and prompts for Pengu activation
-func checkPenguActivation() {
-	log("Checking Pengu activation...", "info")
-
+func checkPenguActivation() bool {
 	if isPenguActivated() {
-		log("Pengu Loader already activated", "success")
-		return
+		status("Pengu activated", true)
+		return true
 	}
 
 	launchPenguForActivation()
+
+	if isPenguActivated() {
+		status("Pengu activated", true)
+		return true
+	}
+
+	status("Pengu activated", false)
+	return false
 }
 
-// RunSetup runs the full setup process
+// RunSetup runs the full setup process (version can be passed for display)
 func RunSetup(config Config) bool {
-	fmt.Println("")
-	fmt.Println("  ======================================")
-	fmt.Println("    ame - skin changer")
-	fmt.Println("  ======================================")
-	fmt.Println("")
-
 	// Create directories
 	createDirectories()
 
 	// Setup mod-tools
 	if !setupModTools(config.ToolsURL) {
-		log("Setup failed: mod-tools", "error")
 		return false
 	}
 
 	// Setup Pengu Loader
 	if !setupPenguLoader(config.PenguURL) {
-		log("Setup failed: Pengu Loader", "error")
 		return false
 	}
 
 	// Setup plugin
-	if !setupPlugin(config.PluginURL) {
-		log("Setup failed: plugin", "error")
+	if !SetupPlugin(config.PluginURL) {
 		return false
 	}
 
 	// Check activation
 	checkPenguActivation()
-
-	fmt.Println("")
-	log("Setup complete!", "success")
-	fmt.Println("")
 
 	return true
 }

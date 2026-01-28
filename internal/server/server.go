@@ -81,7 +81,14 @@ func sendStatus(conn *websocket.Conn, status, message string) {
 	}
 	data, _ := json.Marshal(payload)
 	conn.WriteMessage(websocket.TextMessage, data)
-	fmt.Printf("[ame] %s: %s\n", status, message)
+
+	// Only log important status changes
+	switch status {
+	case "ready":
+		fmt.Printf("  > %s\n", message)
+	case "error":
+		fmt.Printf("  ! %s\n", message)
+	}
 }
 
 // handleApply handles skin apply request
@@ -92,7 +99,6 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 		sendStatus(conn, "error", "League of Legends Game directory not found")
 		return
 	}
-	fmt.Printf("[ame] Game dir: %s\n", gameDir)
 
 	// Check mod-tools exists
 	if !modtools.Exists() {
@@ -112,8 +118,6 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 			return
 		}
 		zipPath = downloaded
-	} else {
-		fmt.Printf("[ame] Skin %s already cached\n", skinID)
 	}
 
 	// Kill any previous runoverlay
@@ -156,7 +160,6 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 
 // HandleCleanup handles cleanup request
 func HandleCleanup() {
-	fmt.Println("[ame] Cleanup: stopping runoverlay")
 	modtools.KillModTools()
 	os.RemoveAll(OVERLAY_DIR)
 }
@@ -168,10 +171,10 @@ func handleConnection(conn *websocket.Conn) {
 		delete(clients, conn)
 		clientsMu.Unlock()
 		conn.Close()
-		fmt.Println("[ame] Client disconnected")
+		fmt.Println("  > Client disconnected")
 	}()
 
-	fmt.Println("[ame] Client connected")
+	fmt.Println("  > Client connected")
 	clientsMu.Lock()
 	clients[conn] = true
 	clientsMu.Unlock()
@@ -182,10 +185,8 @@ func handleConnection(conn *websocket.Conn) {
 			break
 		}
 
-		// Parse message type first
 		var incoming IncomingMessage
 		if err := json.Unmarshal(message, &incoming); err != nil {
-			fmt.Printf("[ame] Message parse error: %v\n", err)
 			continue
 		}
 
@@ -193,21 +194,15 @@ func handleConnection(conn *websocket.Conn) {
 		case "apply":
 			var applyMsg ApplyMessage
 			if err := json.Unmarshal(message, &applyMsg); err != nil {
-				fmt.Printf("[ame] Apply message parse error: %v\n", err)
 				continue
 			}
 			championID := toString(applyMsg.ChampionID)
 			skinID := toString(applyMsg.SkinID)
 			baseSkinID := toString(applyMsg.BaseSkinID)
-			fmt.Printf("[ame] Apply requested: champion=%s skin=%s base=%s\n",
-				championID, skinID, baseSkinID)
 			handleApply(conn, championID, skinID, baseSkinID)
 
 		case "cleanup":
 			HandleCleanup()
-
-		default:
-			fmt.Printf("[ame] Unknown message type: %s\n", incoming.Type)
 		}
 	}
 }
@@ -216,7 +211,6 @@ func handleConnection(conn *websocket.Conn) {
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Printf("[ame] WebSocket upgrade error: %v\n", err)
 		return
 	}
 	handleConnection(conn)
@@ -231,7 +225,6 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 // StartServer starts the WebSocket server
 func StartServer(port int) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Check if it's a WebSocket upgrade request
 		if r.Header.Get("Upgrade") == "websocket" {
 			wsHandler(w, r)
 		} else {
@@ -239,13 +232,13 @@ func StartServer(port int) {
 		}
 	})
 
-	addr := fmt.Sprintf(":%d", port)
-	fmt.Printf("[ame] Listening on ws://localhost%s\n", addr)
-	fmt.Println("[ame] Open League client to see the skin selector.")
-	fmt.Println("[ame] Press Ctrl+C to stop.")
+	fmt.Println()
+	fmt.Println("  Ready! Open League client to use skins.")
+	fmt.Println("  Press Ctrl+C to stop.")
 	fmt.Println()
 
+	addr := fmt.Sprintf(":%d", port)
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		fmt.Printf("[ame] Server error: %v\n", err)
+		fmt.Printf("  ! Server error: %v\n", err)
 	}
 }
