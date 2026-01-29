@@ -63,7 +63,7 @@ for /f "tokens=2*" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\Curren
 :: Parse the path from rundll32 "path\to\core.dll", #6000
 if defined REG_VALUE (
     :: Extract path between quotes
-    for /f "tokens=2 delims=^"" %%p in ("!REG_VALUE!") do (
+    for /f tokens^=2^ delims^=^" %%p in ("!REG_VALUE!") do (
         set "CORE_PATH=%%p"
     )
     if defined CORE_PATH (
