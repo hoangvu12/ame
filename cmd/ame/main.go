@@ -188,6 +188,8 @@ func main() {
 	// Check if plugin reinstall is needed (after an update)
 	if updater.NeedsPluginReinstall(Version) {
 		fmt.Printf("  > Updating plugins (%s -> %s)...\n", updater.GetSavedVersion(), Version)
+		// Detect existing Pengu installation to set correct plugin path
+		setup.DetectAndSetPenguPaths()
 		setup.SetupPlugin(setupConfig.PluginURL)
 		updater.SaveVersion(Version)
 		updater.CleanupUpdateFile()

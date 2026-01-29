@@ -22,6 +22,77 @@ var (
 	PLUGIN_DIR  = filepath.Join(PENGU_DIR, "plugins", "ame")
 )
 
+// GetExistingPenguDir detects an existing Pengu Loader installation from the registry
+// Returns the installation directory path, or empty string if not found
+// Exported for use by other packages
+func GetExistingPenguDir() string {
+	// Query the IFEO Debugger value
+	cmd := exec.Command("reg", "query",
+		`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\LeagueClientUx.exe`,
+		"/v", "Debugger")
+	cmd.SysProcAttr = getSysProcAttr()
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	// Parse the output to extract the path
+	// Format: rundll32 "C:\path\to\core.dll", #6000
+	outputStr := string(output)
+	if !strings.Contains(strings.ToLower(outputStr), "rundll32") {
+		return ""
+	}
+
+	// Find the path between quotes
+	startQuote := strings.Index(outputStr, `"`)
+	if startQuote == -1 {
+		return ""
+	}
+	endQuote := strings.Index(outputStr[startQuote+1:], `"`)
+	if endQuote == -1 {
+		return ""
+	}
+
+	corePath := outputStr[startQuote+1 : startQuote+1+endQuote]
+
+	// Verify the core.dll exists
+	if _, err := os.Stat(corePath); os.IsNotExist(err) {
+		return ""
+	}
+
+	// Return the parent directory (Pengu installation dir)
+	return filepath.Dir(corePath)
+}
+
+// IsUsingExternalPengu checks if we're using a Pengu installation outside of ame's directory
+func IsUsingExternalPengu() bool {
+	existingDir := GetExistingPenguDir()
+	if existingDir == "" {
+		return false
+	}
+	// Check if it's NOT in our default location
+	defaultPenguDir := filepath.Join(os.Getenv("LOCALAPPDATA"), "ame", "pengu")
+	return !strings.EqualFold(filepath.Clean(existingDir), filepath.Clean(defaultPenguDir))
+}
+
+// DetectAndSetPenguPaths detects existing Pengu installation and updates PENGU_DIR/PLUGIN_DIR
+// Call this before SetupPlugin when you need to install plugins without full setup
+func DetectAndSetPenguPaths() {
+	existingDir := GetExistingPenguDir()
+	if existingDir != "" {
+		PENGU_DIR = existingDir
+		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
+	} else {
+		// Ensure PLUGIN_DIR is set correctly for default location
+		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
+	}
+}
+
+// GetPluginDir returns the current plugin directory path
+func GetPluginDir() string {
+	return PLUGIN_DIR
+}
+
 // Tool files to download
 var TOOL_FILES = []string{
 	"mod-tools.exe",
@@ -159,9 +230,9 @@ func launchPenguForActivation() error {
 	return err
 }
 
-// createDirectories creates all required directories
+// createDirectories creates base directories (not Pengu-related, those are created after detection)
 func createDirectories() {
-	dirs := []string{AME_DIR, TOOLS_DIR, SKINS_DIR, MODS_DIR, OVERLAY_DIR, PENGU_DIR, PLUGIN_DIR}
+	dirs := []string{AME_DIR, TOOLS_DIR, SKINS_DIR, MODS_DIR, OVERLAY_DIR}
 	for _, dir := range dirs {
 		os.MkdirAll(dir, os.ModePerm)
 	}
@@ -190,14 +261,31 @@ func setupModTools(toolsURL string) bool {
 	return allSuccess
 }
 
-// setupPenguLoader downloads and extracts Pengu Loader if not present
+// setupPenguLoader detects existing installation or downloads Pengu Loader
 func setupPenguLoader(penguURL string) bool {
+	// First, check for existing Pengu installation via registry
+	existingDir := GetExistingPenguDir()
+	if existingDir != "" {
+		// Use existing installation
+		PENGU_DIR = existingDir
+		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
+		info("Using existing Pengu Loader at: " + existingDir)
+		status("Pengu Loader (existing)", true)
+		return true
+	}
+
+	// Check if we already downloaded Pengu to our directory
 	penguExe := filepath.Join(PENGU_DIR, "Pengu Loader.exe")
 	if _, err := os.Stat(penguExe); err == nil {
+		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
 		status("Pengu Loader", true)
 		return true
 	}
 
+	// Create Pengu directory for fresh download
+	os.MkdirAll(PENGU_DIR, os.ModePerm)
+
+	// Download Pengu Loader
 	info("Downloading Pengu Loader...")
 	zipPath := filepath.Join(AME_DIR, "pengu.zip")
 
@@ -212,6 +300,7 @@ func setupPenguLoader(penguURL string) bool {
 	}
 
 	os.Remove(zipPath)
+	PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
 	status("Pengu Loader", true)
 	return true
 }
