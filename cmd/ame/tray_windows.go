@@ -13,20 +13,16 @@ import (
 var iconData []byte
 
 var (
-	kernel32           = syscall.NewLazyDLL("kernel32.dll")
-	user32             = syscall.NewLazyDLL("user32.dll")
-	getConsoleWindow   = kernel32.NewProc("GetConsoleWindow")
-	showWindow         = user32.NewProc("ShowWindow")
-	getSystemMenu      = user32.NewProc("GetSystemMenu")
-	deleteMenu         = user32.NewProc("DeleteMenu")
+	kernel32            = syscall.NewLazyDLL("kernel32.dll")
+	user32              = syscall.NewLazyDLL("user32.dll")
+	getConsoleWindow    = kernel32.NewProc("GetConsoleWindow")
+	showWindow          = user32.NewProc("ShowWindow")
 	setForegroundWindow = user32.NewProc("SetForegroundWindow")
 )
 
 const (
-	SW_HIDE     = 0
-	SW_SHOW     = 5
-	SC_CLOSE    = 0xF060
-	MF_BYCOMMAND = 0
+	SW_HIDE = 0
+	SW_SHOW = 5
 )
 
 var consoleVisible = true
@@ -37,15 +33,9 @@ func initConsoleHandle() {
 	consoleHwnd, _, _ = getConsoleWindow.Call()
 }
 
-// disableCloseButton removes the close button from the console window
+// disableCloseButton is a no-op, X button closes the app normally
 func disableCloseButton() {
-	if consoleHwnd == 0 {
-		return
-	}
-	menu, _, _ := getSystemMenu.Call(consoleHwnd, 0)
-	if menu != 0 {
-		deleteMenu.Call(menu, SC_CLOSE, MF_BYCOMMAND)
-	}
+	// X button works normally - closes the app
 }
 
 // hideConsole hides the console window
