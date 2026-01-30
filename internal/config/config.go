@@ -27,7 +27,8 @@ var (
 
 // Settings holds persisted application settings.
 type Settings struct {
-	GamePath string `json:"gamePath"`
+	GamePath   string `json:"gamePath"`
+	AutoAccept bool   `json:"autoAccept"`
 }
 
 // Init loads settings from disk.
@@ -80,6 +81,21 @@ func SetGamePath(path string) error {
 	mu.Lock()
 	defer mu.Unlock()
 	settings.GamePath = path
+	return save()
+}
+
+// AutoAccept returns the current auto-accept setting.
+func AutoAccept() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.AutoAccept
+}
+
+// SetAutoAccept updates and persists the auto-accept setting.
+func SetAutoAccept(enabled bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.AutoAccept = enabled
 	return save()
 }
 

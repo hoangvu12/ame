@@ -51,6 +51,12 @@ type GamePathMessage struct {
 	Path string `json:"path"`
 }
 
+// AutoAcceptMessage represents an auto-accept setting request/response
+type AutoAcceptMessage struct {
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
+}
+
 // IncomingMessage is used for parsing the message type first
 type IncomingMessage struct {
 	Type string `json:"type"`
@@ -266,6 +272,24 @@ func handleConnection(conn *websocket.Conn) {
 				sendStatus(conn, "error", "Failed to save game path")
 			} else {
 				resp := GamePathMessage{Type: "gamePath", Path: msg.Path}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "getAutoAccept":
+			resp := AutoAcceptMessage{Type: "autoAccept", Enabled: config.AutoAccept()}
+			data, _ := json.Marshal(resp)
+			conn.WriteMessage(websocket.TextMessage, data)
+
+		case "setAutoAccept":
+			var msg AutoAcceptMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := config.SetAutoAccept(msg.Enabled); err != nil {
+				sendStatus(conn, "error", "Failed to save auto-accept setting")
+			} else {
+				resp := AutoAcceptMessage{Type: "autoAccept", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
 				conn.WriteMessage(websocket.TextMessage, data)
 			}

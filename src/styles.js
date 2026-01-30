@@ -131,6 +131,14 @@ export function injectStyles() {
     .ame-settings-row lol-uikit-flat-input {
       flex: 1;
     }
+    .ame-settings-section-gap {
+      margin-top: 24px;
+    }
+    .ame-settings-toggle-row {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+    }
   `;
   document.head.appendChild(style);
 }

@@ -1,4 +1,5 @@
-import { wsSend, onGamePath } from './websocket';
+import { wsSend, onGamePath, onAutoAccept } from './websocket';
+import { setAutoAcceptEnabled } from './autoAcceptMatch';
 
 const NAV_TITLE_CLASS = 'lol-settings-nav-title';
 const AME_NAV_NAME = 'ame-settings';
@@ -67,6 +68,40 @@ function buildPanel() {
 
   panel.appendChild(section);
   panel.appendChild(row);
+
+  // Auto Accept Match toggle
+  const autoAcceptSection = document.createElement('div');
+  autoAcceptSection.className = 'lol-settings-ingame-section-title ame-settings-section-gap';
+  autoAcceptSection.textContent = 'Auto Accept Match';
+
+  const toggleRow = document.createElement('div');
+  toggleRow.className = 'ame-settings-toggle-row';
+
+  const checkbox = document.createElement('lol-uikit-flat-checkbox');
+  checkbox.setAttribute('for', 'ameAutoAccept');
+
+  const cbInput = document.createElement('input');
+  cbInput.setAttribute('slot', 'input');
+  cbInput.setAttribute('name', 'ameAutoAccept');
+  cbInput.type = 'checkbox';
+  cbInput.id = 'ameAutoAccept';
+  checkbox.appendChild(cbInput);
+
+  const cbLabel = document.createElement('label');
+  cbLabel.setAttribute('slot', 'label');
+  cbLabel.textContent = 'Automatically accept match when found';
+  checkbox.appendChild(cbLabel);
+
+  cbInput.addEventListener('change', () => {
+    const enabled = cbInput.checked;
+    setAutoAcceptEnabled(enabled);
+    wsSend({ type: 'setAutoAccept', enabled });
+  });
+
+  toggleRow.appendChild(checkbox);
+  panel.appendChild(autoAcceptSection);
+  panel.appendChild(toggleRow);
+
   return panel;
 }
 
@@ -100,12 +135,21 @@ function showAmePanel(settingsContainer) {
   panel.style.display = '';
 
   // Populate input from server
-  const input = panel.querySelector('input');
+  const input = panel.querySelector('input[type="text"]');
   if (input) {
     onGamePath((path) => {
       input.value = path || '';
     });
     wsSend({ type: 'getGamePath' });
+  }
+
+  // Populate auto-accept checkbox from server
+  const cbInput = panel.querySelector('lol-uikit-flat-checkbox input[type="checkbox"]');
+  if (cbInput) {
+    onAutoAccept((enabled) => {
+      cbInput.checked = enabled;
+    });
+    wsSend({ type: 'getAutoAccept' });
   }
 }
 

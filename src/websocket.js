@@ -15,6 +15,9 @@ let overlayActive = false;
 // One-shot callback for gamePath response
 let gamePathCallback = null;
 
+// One-shot callback for autoAccept response
+let autoAcceptCallback = null;
+
 export function wsConnect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   try {
@@ -43,6 +46,11 @@ export function wsConnect() {
           if (gamePathCallback) {
             gamePathCallback(msg.path || '');
             gamePathCallback = null;
+          }
+        } else if (msg.type === 'autoAccept') {
+          if (autoAcceptCallback) {
+            autoAcceptCallback(!!msg.enabled);
+            autoAcceptCallback = null;
           }
         } else if (msg.type === 'status') {
           if (msg.status === 'ready' && applyResolve) {
@@ -83,6 +91,7 @@ export function getLastApplyPayload() { return lastApplyPayload; }
 export function isOverlayActive() { return overlayActive; }
 export function setOverlayActive(v) { overlayActive = v; }
 export function onGamePath(cb) { gamePathCallback = cb; }
+export function onAutoAccept(cb) { autoAcceptCallback = cb; }
 
 export function wsSend(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {

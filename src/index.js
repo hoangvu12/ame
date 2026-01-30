@@ -7,6 +7,7 @@ import { ensureChromaButton, closeChromaPanel, setLastChampionId, setAppliedSkin
 import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply } from './autoApply';
 import { ensureInGameUI, removeInGameUI, updateInGameStatus } from './inGame';
 import { initSettings } from './settings';
+import { handleReadyCheck, cancelPendingAccept, loadAutoAcceptSetting } from './autoAcceptMatch';
 
 let pollTimer = null;
 let observer = null;
@@ -66,6 +67,7 @@ export function init(context) {
   injectStyles();
   wsConnect();
   initSettings();
+  loadAutoAcceptSetting();
 
   context.socket.observe('/lol-champ-select/v1/session', (event) => {
     if (event.eventType === 'Delete' || !inChampSelect) return;
@@ -81,6 +83,12 @@ export function init(context) {
 
   function handlePhase(phase) {
     console.log('[ame] Gameflow phase:', phase);
+
+    if (phase === 'ReadyCheck') {
+      handleReadyCheck();
+    } else {
+      cancelPendingAccept();
+    }
 
     const wasInChampSelect = inChampSelect;
     inChampSelect = CHAMP_SELECT_PHASES.includes(phase);
