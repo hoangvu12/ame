@@ -57,6 +57,12 @@ type AutoAcceptMessage struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// BenchSwapMessage represents a bench-swap setting request/response
+type BenchSwapMessage struct {
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
+}
+
 // IncomingMessage is used for parsing the message type first
 type IncomingMessage struct {
 	Type string `json:"type"`
@@ -290,6 +296,24 @@ func handleConnection(conn *websocket.Conn) {
 				sendStatus(conn, "error", "Failed to save auto-accept setting")
 			} else {
 				resp := AutoAcceptMessage{Type: "autoAccept", Enabled: msg.Enabled}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "getBenchSwap":
+			resp := BenchSwapMessage{Type: "benchSwap", Enabled: config.BenchSwap()}
+			data, _ := json.Marshal(resp)
+			conn.WriteMessage(websocket.TextMessage, data)
+
+		case "setBenchSwap":
+			var msg BenchSwapMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := config.SetBenchSwap(msg.Enabled); err != nil {
+				sendStatus(conn, "error", "Failed to save bench swap setting")
+			} else {
+				resp := BenchSwapMessage{Type: "benchSwap", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
 				conn.WriteMessage(websocket.TextMessage, data)
 			}

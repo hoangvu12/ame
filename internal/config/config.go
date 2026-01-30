@@ -27,8 +27,9 @@ var (
 
 // Settings holds persisted application settings.
 type Settings struct {
-	GamePath   string `json:"gamePath"`
-	AutoAccept bool   `json:"autoAccept"`
+	GamePath  string `json:"gamePath"`
+	AutoAccept bool  `json:"autoAccept"`
+	BenchSwap  bool  `json:"benchSwap"`
 }
 
 // Init loads settings from disk.
@@ -96,6 +97,21 @@ func SetAutoAccept(enabled bool) error {
 	mu.Lock()
 	defer mu.Unlock()
 	settings.AutoAccept = enabled
+	return save()
+}
+
+// BenchSwap returns the current bench-swap setting.
+func BenchSwap() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.BenchSwap
+}
+
+// SetBenchSwap updates and persists the bench-swap setting.
+func SetBenchSwap(enabled bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.BenchSwap = enabled
 	return save()
 }
 

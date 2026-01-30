@@ -1,5 +1,6 @@
-import { wsSend, onGamePath, onAutoAccept } from './websocket';
+import { wsSend, onGamePath, onAutoAccept, onBenchSwap } from './websocket';
 import { setAutoAcceptEnabled } from './autoAcceptMatch';
+import { setBenchSwapEnabled } from './benchSwap';
 
 const NAV_TITLE_CLASS = 'lol-settings-nav-title';
 const AME_NAV_NAME = 'ame-settings';
@@ -102,6 +103,51 @@ function buildPanel() {
   panel.appendChild(autoAcceptSection);
   panel.appendChild(toggleRow);
 
+  // Bench Swap toggle
+  const benchSwapSection = document.createElement('div');
+  benchSwapSection.className = 'lol-settings-ingame-section-title ame-settings-section-gap';
+  benchSwapSection.textContent = 'ARAM Bench Swap';
+
+  const benchSwapDesc = document.createElement('label');
+  Object.assign(benchSwapDesc.style, {
+    fontFamily: 'var(--font-body)',
+    fontSize: '12px',
+    color: '#a09b8c',
+    marginTop: '4px',
+    lineHeight: '1.4',
+    display: 'block',
+  });
+  benchSwapDesc.textContent = 'Click a champion on the bench while it\'s on cooldown to mark it. When the cooldown ends, it will automatically be swapped to you.';
+
+  const benchSwapRow = document.createElement('div');
+  benchSwapRow.className = 'ame-settings-toggle-row';
+
+  const benchCb = document.createElement('lol-uikit-flat-checkbox');
+  benchCb.setAttribute('for', 'ameBenchSwap');
+
+  const benchCbInput = document.createElement('input');
+  benchCbInput.setAttribute('slot', 'input');
+  benchCbInput.setAttribute('name', 'ameBenchSwap');
+  benchCbInput.type = 'checkbox';
+  benchCbInput.id = 'ameBenchSwap';
+  benchCb.appendChild(benchCbInput);
+
+  const benchCbLabel = document.createElement('label');
+  benchCbLabel.setAttribute('slot', 'label');
+  benchCbLabel.textContent = 'Enable auto bench swap in ARAM';
+  benchCb.appendChild(benchCbLabel);
+
+  benchCbInput.addEventListener('change', () => {
+    const val = benchCbInput.checked;
+    setBenchSwapEnabled(val);
+    wsSend({ type: 'setBenchSwap', enabled: val });
+  });
+
+  benchSwapRow.appendChild(benchCb);
+  panel.appendChild(benchSwapSection);
+  panel.appendChild(benchSwapDesc);
+  panel.appendChild(benchSwapRow);
+
   return panel;
 }
 
@@ -144,12 +190,21 @@ function showAmePanel(settingsContainer) {
   }
 
   // Populate auto-accept checkbox from server
-  const cbInput = panel.querySelector('lol-uikit-flat-checkbox input[type="checkbox"]');
+  const cbInput = panel.querySelector('#ameAutoAccept');
   if (cbInput) {
     onAutoAccept((enabled) => {
       cbInput.checked = enabled;
     });
     wsSend({ type: 'getAutoAccept' });
+  }
+
+  // Populate bench-swap checkbox from server
+  const benchInput = panel.querySelector('#ameBenchSwap');
+  if (benchInput) {
+    onBenchSwap((enabled) => {
+      benchInput.checked = enabled;
+    });
+    wsSend({ type: 'getBenchSwap' });
   }
 }
 

@@ -8,6 +8,7 @@ import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTim
 import { ensureInGameUI, removeInGameUI, updateInGameStatus } from './inGame';
 import { initSettings } from './settings';
 import { handleReadyCheck, cancelPendingAccept, loadAutoAcceptSetting } from './autoAcceptMatch';
+import { ensureBenchSwap, cleanupBenchSwap, loadBenchSwapSetting } from './benchSwap';
 
 let pollTimer = null;
 let observer = null;
@@ -23,6 +24,7 @@ function stopObserving() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   removeApplyButton();
   closeChromaPanel();
+  cleanupBenchSwap();
   document.querySelectorAll(`.${CHROMA_BTN_CLASS}`).forEach(el => el.remove());
   removeStyles();
 }
@@ -33,6 +35,7 @@ async function pollUI() {
   pollRunning = true;
   try {
     ensureApplyButton();
+    ensureBenchSwap();
     unlockSkinCarousel();
     updateButtonState();
 
@@ -68,6 +71,7 @@ export function init(context) {
   wsConnect();
   initSettings();
   loadAutoAcceptSetting();
+  loadBenchSwapSetting();
 
   context.socket.observe('/lol-champ-select/v1/session', (event) => {
     if (event.eventType === 'Delete' || !inChampSelect) return;
