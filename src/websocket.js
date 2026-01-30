@@ -12,6 +12,9 @@ let applyReject = null;
 let lastApplyPayload = null;
 let overlayActive = false;
 
+// One-shot callback for gamePath response
+let gamePathCallback = null;
+
 export function wsConnect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   try {
@@ -36,6 +39,11 @@ export function wsConnect() {
           }
           overlayActive = !!msg.overlayActive;
           console.log('[ame] State from server:', overlayActive ? 'active' : 'inactive', lastApplyPayload);
+        } else if (msg.type === 'gamePath') {
+          if (gamePathCallback) {
+            gamePathCallback(msg.path || '');
+            gamePathCallback = null;
+          }
         } else if (msg.type === 'status') {
           if (msg.status === 'ready' && applyResolve) {
             applyResolve();
@@ -74,6 +82,7 @@ function wsScheduleReconnect() {
 export function getLastApplyPayload() { return lastApplyPayload; }
 export function isOverlayActive() { return overlayActive; }
 export function setOverlayActive(v) { overlayActive = v; }
+export function onGamePath(cb) { gamePathCallback = cb; }
 
 export function wsSend(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {

@@ -119,6 +119,18 @@ export function injectStyles() {
       line-height: 24px !important;
       margin: 0 !important;
     }
+    .ame-settings-panel {
+      padding: 10px 12px;
+    }
+    .ame-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .ame-settings-row lol-uikit-flat-input {
+      flex: 1;
+    }
   `;
   document.head.appendChild(style);
 }

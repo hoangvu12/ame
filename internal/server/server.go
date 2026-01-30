@@ -45,6 +45,12 @@ type StateMessage struct {
 	OverlayActive bool   `json:"overlayActive"`
 }
 
+// GamePathMessage represents a game path request/response
+type GamePathMessage struct {
+	Type string `json:"type"`
+	Path string `json:"path"`
+}
+
 // IncomingMessage is used for parsing the message type first
 type IncomingMessage struct {
 	Type string `json:"type"`
@@ -241,6 +247,28 @@ func handleConnection(conn *websocket.Conn) {
 
 		case "cleanup":
 			HandleCleanup()
+
+		case "getGamePath":
+			path := config.GamePath()
+			if path == "" {
+				path = game.FindGameDir()
+			}
+			resp := GamePathMessage{Type: "gamePath", Path: path}
+			data, _ := json.Marshal(resp)
+			conn.WriteMessage(websocket.TextMessage, data)
+
+		case "setGamePath":
+			var msg GamePathMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := config.SetGamePath(msg.Path); err != nil {
+				sendStatus(conn, "error", "Failed to save game path")
+			} else {
+				resp := GamePathMessage{Type: "gamePath", Path: msg.Path}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
 
 		case "query":
 			stateMu.Lock()
