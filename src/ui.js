@@ -1,8 +1,9 @@
 import { BUTTON_ID, SKIN_SELECTORS } from './constants';
 import { getMyChampionId, loadChampionSkins } from './api';
 import { readCurrentSkin, findSkinByName } from './skin';
-import { wsSend } from './websocket';
+import { wsSendApply } from './websocket';
 import { setAppliedSkinName, getAppliedSkinName } from './chroma';
+import { getSelectedChroma } from './autoApply';
 
 export function findSkinNameElement() {
   for (const selector of SKIN_SELECTORS) {
@@ -73,8 +74,15 @@ async function onApplyClick() {
     return;
   }
 
-  console.log('[ame] Apply clicked:', skinName, '| Skin ID:', skin.id, '| Champion ID:', championId);
-  wsSend({ type: 'apply', championId, skinId: skin.id });
+  // Apply with chroma if one is selected, otherwise base skin
+  const chroma = getSelectedChroma();
+  if (chroma) {
+    console.log('[ame] Apply clicked (chroma):', skinName, '| Chroma ID:', chroma.id, '| Base:', chroma.baseSkinId, '| Champion ID:', championId);
+    wsSendApply({ type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId });
+  } else {
+    console.log('[ame] Apply clicked:', skinName, '| Skin ID:', skin.id, '| Champion ID:', championId);
+    wsSendApply({ type: 'apply', championId, skinId: skin.id });
+  }
   setAppliedSkinName(skinName);
   setButtonState('Applied', true);
 }

@@ -1,6 +1,4 @@
 import { CHROMA_BTN_CLASS, CHROMA_PANEL_ID } from './constants';
-import { wsSend } from './websocket';
-import { setButtonState } from './ui';
 import {
   getSkinOffset,
   getSkinKeyFromItem,
@@ -11,6 +9,7 @@ import {
   isItemVisible
 } from './skin';
 import { getMyChampionId, getChampionSkins } from './api';
+import { setSelectedChroma, prefetchChroma } from './autoApply';
 
 let activeChromaPanel = null;
 let activeChromaButton = null;
@@ -243,9 +242,11 @@ async function selectChroma(skinData, chroma) {
   const triggerButton = activeChromaButton;
 
   console.log('[ame] Chroma selected:', chroma.name, '| ID:', chroma.id, '| Base skin:', skinData.id);
-  wsSend({ type: 'apply', championId, skinId: chroma.id, baseSkinId: skinData.id });
-  setAppliedSkinName(chroma.name || skinData.name);
-  setButtonState('Applied', true);
+
+  // Just select the chroma — auto-apply will handle applying after 10s stability
+  setSelectedChroma(chroma.id, skinData.id);
+  prefetchChroma(championId, chroma.id, skinData.id);
+
   closeChromaPanel();
   document.removeEventListener('click', onClickOutsideChroma, true);
 

@@ -104,25 +104,17 @@ type Config struct {
 	ToolsURL  string
 	PenguURL  string
 	PluginURL string
+	DevSrcDir string // When non-empty, copy plugin from this local dir instead of downloading
 }
 
-// status prints a status line with indicator
-func status(name string, ok bool) {
-	if ok {
-		fmt.Printf("  + %s\n", name)
-	} else {
-		fmt.Printf("  x %s (failed)\n", name)
-	}
+// statusFail prints a failure message (success is silent)
+func statusFail(name string) {
+	fmt.Printf("  ! %s failed\n", name)
 }
 
 // info prints an info message
 func info(message string) {
-	fmt.Printf("  > %s\n", message)
-}
-
-// errorMsg prints an error message
-func errorMsg(message string) {
-	fmt.Printf("  ! %s\n", message)
+	fmt.Printf("  %s\n", message)
 }
 
 // downloadFile downloads a file from URL to destination
@@ -209,7 +201,6 @@ func isPenguActivated() bool {
 func launchPenguForActivation() error {
 	penguExe := filepath.Join(PENGU_DIR, "Pengu Loader.exe")
 	if _, err := os.Stat(penguExe); os.IsNotExist(err) {
-		errorMsg("Pengu Loader.exe not found")
 		return err
 	}
 
@@ -238,35 +229,30 @@ func createDirectories() {
 func setupModTools(toolsURL string) bool {
 	modToolsPath := filepath.Join(config.ToolsDir, "mod-tools.exe")
 	if _, err := os.Stat(modToolsPath); err == nil {
-		status("mod-tools", true)
 		return true
 	}
 
 	info("Downloading mod-tools...")
-	allSuccess := true
 
 	for _, file := range TOOL_FILES {
 		url := toolsURL + "/" + file
 		dest := filepath.Join(config.ToolsDir, file)
 		if err := downloadFile(url, dest); err != nil {
-			allSuccess = false
+			statusFail("mod-tools download")
+			return false
 		}
 	}
 
-	status("mod-tools", allSuccess)
-	return allSuccess
+	return true
 }
 
 // setupPenguLoader detects existing installation or downloads Pengu Loader
 func setupPenguLoader(penguURL string) bool {
-	// First, check for existing Pengu installation via registry
+	// Check for existing Pengu installation via registry
 	existingDir := GetExistingPenguDir()
 	if existingDir != "" {
-		// Use existing installation
 		PENGU_DIR = existingDir
 		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
-		info("Using existing Pengu Loader at: " + existingDir)
-		status("Pengu Loader (existing)", true)
 		return true
 	}
 
@@ -274,30 +260,58 @@ func setupPenguLoader(penguURL string) bool {
 	penguExe := filepath.Join(PENGU_DIR, "Pengu Loader.exe")
 	if _, err := os.Stat(penguExe); err == nil {
 		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
-		status("Pengu Loader", true)
 		return true
 	}
 
-	// Create Pengu directory for fresh download
+	// Fresh download needed
 	os.MkdirAll(PENGU_DIR, os.ModePerm)
-
-	// Download Pengu Loader
 	info("Downloading Pengu Loader...")
 	zipPath := filepath.Join(config.AmeDir, "pengu.zip")
 
 	if err := downloadFile(penguURL, zipPath); err != nil {
-		status("Pengu Loader", false)
+		statusFail("Pengu Loader download")
 		return false
 	}
 
 	if err := extractZip(zipPath, PENGU_DIR); err != nil {
-		status("Pengu Loader", false)
+		statusFail("Pengu Loader setup")
 		return false
 	}
 
 	os.Remove(zipPath)
 	PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
-	status("Pengu Loader", true)
+	return true
+}
+
+// SetupPluginFromLocal copies plugin source files from a local directory
+func SetupPluginFromLocal(srcDir string) bool {
+	os.RemoveAll(PLUGIN_DIR)
+	os.MkdirAll(PLUGIN_DIR, os.ModePerm)
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		statusFail("Plugin setup")
+		return false
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(PLUGIN_DIR, entry.Name())
+
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			statusFail("Plugin setup")
+			return false
+		}
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			statusFail("Plugin setup")
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -307,39 +321,35 @@ func SetupPlugin(pluginZipURL string) bool {
 	zipPath := filepath.Join(config.AmeDir, "plugin.zip")
 
 	if err := downloadFile(pluginZipURL, zipPath); err != nil {
-		status("Plugin", false)
+		statusFail("Plugin download")
 		return false
 	}
 
-	// Clear existing plugin files
 	os.RemoveAll(PLUGIN_DIR)
 	os.MkdirAll(PLUGIN_DIR, os.ModePerm)
 
 	if err := extractZip(zipPath, PLUGIN_DIR); err != nil {
-		status("Plugin", false)
+		statusFail("Plugin setup")
 		return false
 	}
 
 	os.Remove(zipPath)
-	status("Plugin", true)
 	return true
 }
 
 // checkPenguActivation checks and prompts for Pengu activation
 func checkPenguActivation() bool {
 	if isPenguActivated() {
-		status("Pengu activated", true)
 		return true
 	}
 
 	launchPenguForActivation()
 
 	if isPenguActivated() {
-		status("Pengu activated", true)
 		return true
 	}
 
-	status("Pengu activated", false)
+	statusFail("Pengu activation")
 	return false
 }
 
@@ -359,8 +369,14 @@ func RunSetup(config Config) bool {
 	}
 
 	// Setup plugin
-	if !SetupPlugin(config.PluginURL) {
-		return false
+	if config.DevSrcDir != "" {
+		if !SetupPluginFromLocal(config.DevSrcDir) {
+			return false
+		}
+	} else {
+		if !SetupPlugin(config.PluginURL) {
+			return false
+		}
 	}
 
 	// Check activation

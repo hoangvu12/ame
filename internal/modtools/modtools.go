@@ -57,22 +57,14 @@ func RunMkOverlay(modsDir, overlayDir, gameDir, modName string) (bool, int) {
 		return false, 1
 	}
 
-	args := fmt.Sprintf(`mkoverlay "%s" "%s" "--game:%s" --mods:%s --noTFT --ignoreConflict`,
-		modsDir, overlayDir, gameDir, modName)
-
-	fmt.Printf("[ame] Running: %s %s\n", modTools, args)
-
 	cmd := exec.Command(modTools, "mkoverlay", modsDir, overlayDir,
 		fmt.Sprintf("--game:%s", gameDir),
 		fmt.Sprintf("--mods:%s", modName),
 		"--noTFT", "--ignoreConflict")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Dir = config.ToolsDir
 
 	err := cmd.Run()
 	if err != nil {
-		fmt.Printf("[ame] mkoverlay error: %v\n", err)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return false, exitErr.ExitCode()
 		}
@@ -93,10 +85,6 @@ func RunOverlay(overlayDir, configPath, gameDir string) error {
 		return fmt.Errorf("mod-tools.exe not found")
 	}
 
-	fmt.Printf("[ame] Running: %s runoverlay \"%s\" \"%s\" \"--game:%s\" --opts:none\n",
-		modTools, overlayDir, configPath, gameDir)
-
-	// Like bocchi: detached: false, stdio: ['pipe', 'pipe', 'pipe']
 	cmd := exec.Command(modTools, "runoverlay",
 		overlayDir, configPath,
 		fmt.Sprintf("--game:%s", gameDir),
@@ -104,12 +92,10 @@ func RunOverlay(overlayDir, configPath, gameDir string) error {
 
 	cmd.Dir = config.ToolsDir
 
-	// Create pipes for stdin/stdout/stderr (like bocchi's stdio: ['pipe', 'pipe', 'pipe'])
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdin pipe: %v", err)
 	}
-	// Keep stdin pipe open (bocchi keeps reference and writes to it to stop)
 	stdinPipe = stdin
 
 	stdout, err := cmd.StdoutPipe()
@@ -121,44 +107,28 @@ func RunOverlay(overlayDir, configPath, gameDir string) error {
 		return fmt.Errorf("failed to create stderr pipe: %v", err)
 	}
 
-	// Start the process (NOT detached)
 	err = cmd.Start()
 	if err != nil {
-		fmt.Printf("[ame] Failed to start runoverlay: %v\n", err)
 		return err
 	}
 
-	// Keep reference like bocchi's this.runningProcess
 	runningProcess = cmd
 
-	fmt.Printf("[ame] runoverlay started with PID %d\n", cmd.Process.Pid)
-
-	// Read stdout in goroutine (keeps pipe alive, like bocchi's event listeners)
+	// Drain stdout/stderr to keep pipes alive
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Printf("[MOD-TOOLS]: %s\n", line)
 		}
 	}()
-
-	// Read stderr in goroutine
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Printf("[MOD-TOOLS ERROR]: %s\n", line)
 		}
 	}()
 
-	// Monitor process exit in goroutine
+	// Monitor process exit
 	go func() {
-		err := cmd.Wait()
-		if err != nil {
-			fmt.Printf("[ame] runoverlay exited with error: %v\n", err)
-		} else {
-			fmt.Println("[ame] runoverlay exited normally")
-		}
+		cmd.Wait()
 		runningProcess = nil
 		stdinPipe = nil
 	}()

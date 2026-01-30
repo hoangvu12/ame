@@ -4,6 +4,10 @@ let ws = null;
 let wsReconnectDelay = WS_RECONNECT_BASE_MS;
 let wsReconnectTimer = null;
 
+// Pending apply promise — resolved/rejected by incoming status messages
+let applyResolve = null;
+let applyReject = null;
+
 export function wsConnect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   try {
@@ -16,13 +20,17 @@ export function wsConnect() {
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'status') {
-          if (typeof Toast !== 'undefined') {
-            if (msg.status === 'error') {
+          if (msg.status === 'ready' && applyResolve) {
+            applyResolve();
+            applyResolve = null;
+            applyReject = null;
+          } else if (msg.status === 'error') {
+            if (applyReject) {
+              applyReject(new Error(msg.message));
+              applyResolve = null;
+              applyReject = null;
+            } else if (typeof Toast !== 'undefined') {
               Toast.error(msg.message);
-            } else if (msg.status === 'ready') {
-              Toast.success(msg.message);
-            } else if (msg.status === 'downloading' || msg.status === 'injecting') {
-              Toast.success(msg.message);
             }
           }
         }
@@ -50,4 +58,30 @@ export function wsSend(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(obj));
   }
+}
+
+/**
+ * Send an apply message and show a single Toast.promise tracking the result.
+ * If an apply is already in-flight, skip (let the existing one finish).
+ */
+export function wsSendApply(obj) {
+  if (applyResolve) {
+    // Already an apply in-flight — don't send another
+    return;
+  }
+
+  const promise = new Promise((resolve, reject) => {
+    applyResolve = resolve;
+    applyReject = reject;
+  });
+
+  if (typeof Toast !== 'undefined') {
+    Toast.promise(promise, {
+      loading: 'Applying skin...',
+      success: 'Skin applied!',
+      error: 'Failed to apply skin',
+    });
+  }
+
+  wsSend(obj);
 }

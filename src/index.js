@@ -4,7 +4,7 @@ import { injectStyles, removeStyles, unlockSkinCarousel } from './styles';
 import { wsConnect, wsSend } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState } from './ui';
 import { ensureChromaButton, closeChromaPanel, setLastChampionId, setAppliedSkinName } from './chroma';
-import { resetAutoApply, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply } from './autoApply';
+import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply } from './autoApply';
 
 let pollTimer = null;
 let observer = null;
@@ -97,7 +97,8 @@ export function init(context) {
     } else if (!inChampSelect && wasInChampSelect) {
       console.log('[ame] Left champ select');
       stopObserving();
-      resetAutoApply();
+      // Last resort: if nothing was applied yet, apply immediately before game starts
+      forceApplyIfNeeded().then(() => resetAutoApply());
       injectionTriggered = true;
     }
 

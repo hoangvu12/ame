@@ -19,7 +19,7 @@ func Download(championID, skinID, baseSkinID string) (string, error) {
 	skinDir := filepath.Join(config.SkinsDir, championID, skinID)
 	os.MkdirAll(skinDir, os.ModePerm)
 
-	extensions := []string{"fantome", "zip"}
+	extensions := []string{"zip", "fantome"}
 
 	for _, ext := range extensions {
 		var url string
@@ -31,10 +31,7 @@ func Download(championID, skinID, baseSkinID string) (string, error) {
 
 		filePath := filepath.Join(skinDir, fmt.Sprintf("%s.%s", skinID, ext))
 
-		fmt.Printf("[ame] Trying: %s\n", url)
-
 		if err := downloadFile(url, filePath); err == nil {
-			fmt.Printf("[ame] Downloaded %s.%s\n", skinID, ext)
 			return filePath, nil
 		}
 	}
@@ -94,16 +91,16 @@ func Extract(archivePath, destDir string) error {
 func GetCachedPath(championID, skinID string) string {
 	skinDir := filepath.Join(config.SkinsDir, championID, skinID)
 
-	// Check for fantome first
-	fantomePath := filepath.Join(skinDir, fmt.Sprintf("%s.fantome", skinID))
-	if _, err := os.Stat(fantomePath); err == nil {
-		return fantomePath
-	}
-
-	// Check for zip
+	// Check for zip first
 	zipPath := filepath.Join(skinDir, fmt.Sprintf("%s.zip", skinID))
 	if _, err := os.Stat(zipPath); err == nil {
 		return zipPath
+	}
+
+	// Check for fantome
+	fantomePath := filepath.Join(skinDir, fmt.Sprintf("%s.fantome", skinID))
+	if _, err := os.Stat(fantomePath); err == nil {
+		return fantomePath
 	}
 
 	return ""

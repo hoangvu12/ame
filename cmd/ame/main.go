@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -31,6 +32,19 @@ var setupConfig = setup.Config{
 	ToolsURL:  "https://raw.githubusercontent.com/Alban1911/Rose/main/injection/tools",
 	PenguURL:  "https://github.com/PenguLoader/PenguLoader/releases/download/v1.1.6/pengu-loader-v1.1.6.zip",
 	PluginURL: "https://github.com/hoangvu12/ame/releases/latest/download/plugin.zip",
+}
+
+// findDevSrcDir locates the local plugin source directory relative to the executable.
+func findDevSrcDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	srcDir := filepath.Join(filepath.Dir(exe), "src")
+	if info, err := os.Stat(srcDir); err == nil && info.IsDir() {
+		return srcDir
+	}
+	return ""
 }
 
 // isAdmin checks if running with admin privileges
@@ -273,10 +287,16 @@ func main() {
 		quitTray()
 	}()
 
+	// Dev mode: use local plugin source instead of downloading from cloud
+	if Version == "dev" {
+		if srcDir := findDevSrcDir(); srcDir != "" {
+			setupConfig.DevSrcDir = srcDir
+		}
+	}
+
 	// Check if plugin reinstall is needed (after an update)
 	if updater.NeedsPluginReinstall(Version) {
-		fmt.Printf("  > Updating plugins (%s -> %s)...\n", updater.GetSavedVersion(), Version)
-		// Detect existing Pengu installation to set correct plugin path
+		fmt.Println("  Updating plugin...")
 		setup.DetectAndSetPenguPaths()
 		setup.SetupPlugin(setupConfig.PluginURL)
 		updater.SaveVersion(Version)
@@ -312,17 +332,12 @@ func main() {
 	go server.StartServer(PORT)
 
 	fmt.Println()
-	fmt.Println("  ╔════════════════════════════════════════════════════════════╗")
-	fmt.Println("  ║                                                            ║")
-	fmt.Println("  ║   !!! IMPORTANT: KEEP THIS WINDOW RUNNING !!!              ║")
-	fmt.Println("  ║                                                            ║")
-	fmt.Println("  ║   ame is now running in the system tray.                   ║")
-	fmt.Println("  ║   You can minimize this window, but DO NOT close it.       ║")
-	fmt.Println("  ║                                                            ║")
-	fmt.Println("  ║   To quit: Right-click the tray icon -> Quit               ║")
-	fmt.Println("  ║   To hide/show: Double-click the tray icon                 ║")
-	fmt.Println("  ║                                                            ║")
-	fmt.Println("  ╚════════════════════════════════════════════════════════════╝")
+	fmt.Println("  +-----------------------------------------+")
+	fmt.Println("  |  Ready! Open League client to use skins |")
+	fmt.Println("  |                                         |")
+	fmt.Println("  |  Keep this window running.              |")
+	fmt.Println("  |  To quit: right-click tray icon > Quit  |")
+	fmt.Println("  +-----------------------------------------+")
 	fmt.Println()
 
 	// Run system tray (blocks until quit)

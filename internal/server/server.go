@@ -106,7 +106,6 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 
 	// Download if not cached
 	if zipPath == "" {
-		sendStatus(conn, "downloading", "Downloading skin...")
 		downloaded, err := skin.Download(championID, skinID, baseSkinID)
 		if err != nil {
 			sendStatus(conn, "error", "Skin not available for download")
@@ -134,7 +133,6 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 	os.MkdirAll(config.OverlayDir, os.ModePerm)
 
 	// Run mkoverlay
-	sendStatus(conn, "injecting", "Applying skin...")
 	modName := fmt.Sprintf("skin_%s", skinID)
 	success, exitCode := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
 
@@ -153,6 +151,16 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 	sendStatus(conn, "ready", "Skin applied!")
 }
 
+// handlePrefetch pre-downloads a skin to cache (no mkoverlay/runoverlay)
+func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID string) {
+	// Check for cached skin file — if already cached, nothing to do
+	if skin.GetCachedPath(championID, skinID) != "" {
+		return
+	}
+
+	skin.Download(championID, skinID, baseSkinID)
+}
+
 // HandleCleanup handles cleanup request
 func HandleCleanup() {
 	modtools.KillModTools()
@@ -166,10 +174,7 @@ func handleConnection(conn *websocket.Conn) {
 		delete(clients, conn)
 		clientsMu.Unlock()
 		conn.Close()
-		fmt.Println("  > Client disconnected")
 	}()
-
-	fmt.Println("  > Client connected")
 	clientsMu.Lock()
 	clients[conn] = true
 	clientsMu.Unlock()
@@ -195,6 +200,16 @@ func handleConnection(conn *websocket.Conn) {
 			skinID := toString(applyMsg.SkinID)
 			baseSkinID := toString(applyMsg.BaseSkinID)
 			handleApply(conn, championID, skinID, baseSkinID)
+
+		case "prefetch":
+			var prefetchMsg ApplyMessage
+			if err := json.Unmarshal(message, &prefetchMsg); err != nil {
+				continue
+			}
+			championID := toString(prefetchMsg.ChampionID)
+			skinID := toString(prefetchMsg.SkinID)
+			baseSkinID := toString(prefetchMsg.BaseSkinID)
+			go handlePrefetch(conn, championID, skinID, baseSkinID)
 
 		case "cleanup":
 			HandleCleanup()
@@ -226,11 +241,6 @@ func StartServer(port int) {
 			httpHandler(w, r)
 		}
 	})
-
-	fmt.Println()
-	fmt.Println("  Ready! Open League client to use skins.")
-	fmt.Println("  Press Ctrl+C to stop.")
-	fmt.Println()
 
 	addr := fmt.Sprintf(":%d", port)
 	if err := http.ListenAndServe(addr, nil); err != nil {
