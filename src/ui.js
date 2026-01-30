@@ -1,6 +1,6 @@
 import { BUTTON_ID, SKIN_SELECTORS } from './constants';
 import { getMyChampionId, loadChampionSkins } from './api';
-import { readCurrentSkin, findSkinByName } from './skin';
+import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSendApply } from './websocket';
 import { setAppliedSkinName, getAppliedSkinName } from './chroma';
 import { getSelectedChroma } from './autoApply';
@@ -73,6 +73,8 @@ async function onApplyClick() {
     if (typeof Toast !== 'undefined') Toast.error('Skin not found in game data');
     return;
   }
+
+  if (isDefaultSkin(skin)) return;
 
   // Apply with chroma if one is selected, otherwise base skin
   const chroma = getSelectedChroma();

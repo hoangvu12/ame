@@ -1,5 +1,5 @@
 import { loadChampionSkins, getMyChampionId } from './api';
-import { readCurrentSkin, findSkinByName } from './skin';
+import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSend, wsSendApply } from './websocket';
 import { setAppliedSkinName, getAppliedSkinName } from './chroma';
 import { setButtonState } from './ui';
@@ -78,7 +78,7 @@ function debouncePrefetch(championId, skinName) {
     if (!skins || epoch !== startEpoch) return;
 
     const skin = findSkinByName(skins, skinName);
-    if (!skin) return;
+    if (!skin || isDefaultSkin(skin)) return;
 
     // Only send prefetch if still on this skin
     if (lastTrackedSkin === skinName && lastTrackedChampion === championId) {
@@ -123,6 +123,11 @@ export async function forceApplyIfNeeded() {
   const skin = findSkinByName(skins, skinName);
   if (!skin) {
     console.log(`${LOG_PREFIX} forceApply: skin "${skinName}" not found, skipping`);
+    return;
+  }
+
+  if (isDefaultSkin(skin)) {
+    console.log(`${LOG_PREFIX} forceApply: default skin "${skinName}", skipping`);
     return;
   }
 
@@ -280,6 +285,12 @@ async function triggerAutoApply() {
     console.log(`${LOG_PREFIX} Skin not found: ${skinName}, cannot auto-apply`);
     autoApplyTriggered = false;
     stableSince = Date.now();
+    return;
+  }
+
+  if (isDefaultSkin(skin)) {
+    console.log(`${LOG_PREFIX} Default skin "${skinName}", skipping auto-apply`);
+    autoApplyTriggered = false;
     return;
   }
 

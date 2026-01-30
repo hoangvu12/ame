@@ -81,6 +81,11 @@ export function getSkinKeyFromItem(item) {
   return Number.isFinite(id) ? id : null;
 }
 
+export function isDefaultSkin(skin) {
+  if (!skin) return false;
+  return skin.isBase === true || skin.num === 0 || skin.id % 1000 === 0;
+}
+
 export function findSkinByCarouselKey(skins, key) {
   if (!skins || key === null || key === undefined) return null;
   let skin = skins.find(s => s.num === key);
