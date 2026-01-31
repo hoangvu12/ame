@@ -5,6 +5,8 @@ let lastChampionId = null;
 let appliedSkinName = null;
 let selectedChromaId = null;
 let selectedChromaBaseSkinId = null;
+let selectedChromaName = null;
+let selectedBaseSkinName = null;
 let appliedChromaId = null;
 
 // --- Champion ID ---
@@ -31,17 +33,26 @@ export function setAppliedSkinName(name) {
 
 export function getSelectedChroma() {
   if (!selectedChromaId) return null;
-  return { id: selectedChromaId, baseSkinId: selectedChromaBaseSkinId };
+  return {
+    id: selectedChromaId,
+    baseSkinId: selectedChromaBaseSkinId,
+    chromaName: selectedChromaName,
+    baseSkinName: selectedBaseSkinName,
+  };
 }
 
-export function setSelectedChroma(chromaId, baseSkinId) {
+export function setSelectedChroma(chromaId, baseSkinId, chromaName = null, baseSkinName = null) {
   selectedChromaId = chromaId;
   selectedChromaBaseSkinId = baseSkinId;
+  selectedChromaName = chromaName;
+  selectedBaseSkinName = baseSkinName;
 }
 
 export function clearSelectedChroma() {
   selectedChromaId = null;
   selectedChromaBaseSkinId = null;
+  selectedChromaName = null;
+  selectedBaseSkinName = null;
 }
 
 // --- Applied chroma (tracks what was actually sent to backend) ---

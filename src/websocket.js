@@ -106,6 +106,9 @@ export function wsConnect() {
               championId: Number(msg.championId),
               skinId: Number(msg.skinId),
               baseSkinId: msg.baseSkinId ? Number(msg.baseSkinId) : Number(msg.skinId),
+              championName: msg.championName || null,
+              skinName: msg.skinName || null,
+              chromaName: msg.chromaName || null,
             };
           }
           overlayActive = !!msg.overlayActive;
@@ -184,7 +187,10 @@ export function wsSendApply(obj) {
     return;
   }
 
-  lastApplyPayload = { championId: obj.championId, skinId: obj.skinId, baseSkinId: obj.baseSkinId };
+  lastApplyPayload = {
+    championId: obj.championId, skinId: obj.skinId, baseSkinId: obj.baseSkinId,
+    championName: obj.championName || null, skinName: obj.skinName || null, chromaName: obj.chromaName || null,
+  };
 
   const promise = new Promise((resolve, reject) => {
     applyResolve = resolve;

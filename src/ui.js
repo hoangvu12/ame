@@ -1,5 +1,5 @@
 import { BUTTON_ID } from './constants';
-import { getMyChampionId, loadChampionSkins } from './api';
+import { getMyChampionId, loadChampionSkins, getChampionName } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSendApply } from './websocket';
 import { toastError } from './toast';
@@ -61,11 +61,15 @@ async function onApplyClick() {
 
   if (isDefaultSkin(skin)) return;
 
+  const champName = await getChampionName(championId);
   const chroma = getSelectedChroma();
   if (chroma) {
-    wsSendApply({ type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId });
+    wsSendApply({
+      type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId,
+      championName: champName, skinName: chroma.baseSkinName || skin.name, chromaName: chroma.chromaName,
+    });
   } else {
-    wsSendApply({ type: 'apply', championId, skinId: skin.id });
+    wsSendApply({ type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name });
   }
   setAppliedSkinName(skinName);
   setButtonState('Applied', true);

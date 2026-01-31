@@ -19,10 +19,13 @@ import (
 
 // ApplyMessage represents an apply skin request
 type ApplyMessage struct {
-	Type       string      `json:"type"`
-	ChampionID interface{} `json:"championId"`
-	SkinID     interface{} `json:"skinId"`
-	BaseSkinID interface{} `json:"baseSkinId,omitempty"`
+	Type         string      `json:"type"`
+	ChampionID   interface{} `json:"championId"`
+	SkinID       interface{} `json:"skinId"`
+	BaseSkinID   interface{} `json:"baseSkinId,omitempty"`
+	ChampionName string      `json:"championName,omitempty"`
+	SkinName     string      `json:"skinName,omitempty"`
+	ChromaName   string      `json:"chromaName,omitempty"`
 }
 
 // CleanupMessage represents a cleanup request
@@ -43,6 +46,9 @@ type StateMessage struct {
 	ChampionID    string `json:"championId,omitempty"`
 	SkinID        string `json:"skinId,omitempty"`
 	BaseSkinID    string `json:"baseSkinId,omitempty"`
+	ChampionName  string `json:"championName,omitempty"`
+	SkinName      string `json:"skinName,omitempty"`
+	ChromaName    string `json:"chromaName,omitempty"`
 	OverlayActive bool   `json:"overlayActive"`
 }
 
@@ -101,6 +107,9 @@ var clientsMu sync.Mutex
 var lastChampionID string
 var lastSkinID string
 var lastBaseSkinID string
+var lastChampionName string
+var lastSkinName string
+var lastChromaName string
 var stateMu sync.Mutex
 
 // sendStatus sends a status message to the WebSocket client
@@ -123,7 +132,7 @@ func sendStatus(conn *websocket.Conn, status, message string) {
 }
 
 // handleApply handles skin apply request
-func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
+func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
 	// Find game directory
 	gameDir := game.FindGameDir()
 	if gameDir == "" {
@@ -142,7 +151,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 
 	// Download if not cached
 	if zipPath == "" {
-		downloaded, err := skin.Download(championID, skinID, baseSkinID)
+		downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
 		if err != nil {
 			sendStatus(conn, "error", "Skin not available for download")
 			return
@@ -189,19 +198,22 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID string) {
 	lastChampionID = championID
 	lastSkinID = skinID
 	lastBaseSkinID = baseSkinID
+	lastChampionName = championName
+	lastSkinName = skinName
+	lastChromaName = chromaName
 	stateMu.Unlock()
 
 	sendStatus(conn, "ready", "Skin applied!")
 }
 
 // handlePrefetch pre-downloads a skin to cache (no mkoverlay/runoverlay)
-func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID string) {
+func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
 	// Check for cached skin file — if already cached, nothing to do
 	if skin.GetCachedPath(championID, skinID) != "" {
 		return
 	}
 
-	skin.Download(championID, skinID, baseSkinID)
+	skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
 }
 
 // HandleCleanup handles cleanup request
@@ -213,6 +225,9 @@ func HandleCleanup() {
 	lastChampionID = ""
 	lastSkinID = ""
 	lastBaseSkinID = ""
+	lastChampionName = ""
+	lastSkinName = ""
+	lastChromaName = ""
 	stateMu.Unlock()
 }
 
@@ -248,7 +263,7 @@ func handleConnection(conn *websocket.Conn) {
 			championID := toString(applyMsg.ChampionID)
 			skinID := toString(applyMsg.SkinID)
 			baseSkinID := toString(applyMsg.BaseSkinID)
-			handleApply(conn, championID, skinID, baseSkinID)
+			handleApply(conn, championID, skinID, baseSkinID, applyMsg.ChampionName, applyMsg.SkinName, applyMsg.ChromaName)
 
 		case "prefetch":
 			var prefetchMsg ApplyMessage
@@ -258,7 +273,7 @@ func handleConnection(conn *websocket.Conn) {
 			championID := toString(prefetchMsg.ChampionID)
 			skinID := toString(prefetchMsg.SkinID)
 			baseSkinID := toString(prefetchMsg.BaseSkinID)
-			go handlePrefetch(conn, championID, skinID, baseSkinID)
+			go handlePrefetch(conn, championID, skinID, baseSkinID, prefetchMsg.ChampionName, prefetchMsg.SkinName, prefetchMsg.ChromaName)
 
 		case "cleanup":
 			HandleCleanup()
@@ -413,6 +428,9 @@ func handleConnection(conn *websocket.Conn) {
 				ChampionID:    lastChampionID,
 				SkinID:        lastSkinID,
 				BaseSkinID:    lastBaseSkinID,
+				ChampionName:  lastChampionName,
+				SkinName:      lastSkinName,
+				ChromaName:    lastChromaName,
 				OverlayActive: modtools.IsRunning() && lastSkinID != "",
 			}
 			stateMu.Unlock()

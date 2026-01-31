@@ -51,6 +51,13 @@ export async function loadChampionSummary() {
   return data;
 }
 
+export async function getChampionName(championId) {
+  const summary = await loadChampionSummary();
+  if (!summary) return null;
+  const entry = summary.find(c => c.id === championId);
+  return entry ? entry.name : null;
+}
+
 export async function getChampionIdFromLobbyDOM() {
   const selected = document.querySelector(
     '.quick-play-loadout-selection-hitbox.selected .champion-slot-tile'

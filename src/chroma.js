@@ -8,7 +8,7 @@ import {
   getChromaData,
   isItemVisible
 } from './skin';
-import { getMyChampionId, getChampionSkins } from './api';
+import { getMyChampionId, getChampionSkins, getChampionName } from './api';
 import { getLastChampionId } from './state';
 import { onChromaSelected, prefetchChroma } from './autoApply';
 import { el } from './dom';
@@ -183,11 +183,12 @@ function createChromaPanel(skinData, chromas, buttonEl, championId) {
 async function selectChroma(skinData, chroma) {
   const championId = await getMyChampionId();
   if (!championId) return;
+  const championName = await getChampionName(championId);
 
   const triggerButton = activeChromaButton;
 
-  onChromaSelected(chroma.id, skinData.id);
-  prefetchChroma(championId, chroma.id, skinData.id);
+  onChromaSelected(chroma.id, skinData.id, chroma.name, skinData.name);
+  prefetchChroma(championId, chroma.id, skinData.id, championName, skinData.name, chroma.name);
 
   closeChromaPanel();
   document.removeEventListener('click', onClickOutsideChroma, true);

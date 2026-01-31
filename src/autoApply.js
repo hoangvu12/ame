@@ -1,4 +1,4 @@
-import { loadChampionSkins, getMyChampionId, fetchJson } from './api';
+import { loadChampionSkins, getMyChampionId, getChampionName, fetchJson } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSend, wsSendApply } from './websocket';
 import {
@@ -23,9 +23,9 @@ let prefetchTimer = null;
 /**
  * Notify auto-apply that a chroma was selected — resets stability timer.
  */
-export function onChromaSelected(chromaId, baseSkinId) {
+export function onChromaSelected(chromaId, baseSkinId, chromaName = null, baseSkinName = null) {
   console.log(`${LOG} Chroma selected: ${chromaId} (base: ${baseSkinId})`);
-  setSelectedChroma(chromaId, baseSkinId);
+  setSelectedChroma(chromaId, baseSkinId, chromaName, baseSkinName);
   stableSince = Date.now();
   autoApplyTriggered = false;
 }
@@ -33,8 +33,8 @@ export function onChromaSelected(chromaId, baseSkinId) {
 /**
  * Send an immediate prefetch for a chroma (explicit click, no debounce).
  */
-export function prefetchChroma(championId, chromaId, baseSkinId) {
-  wsSend({ type: 'prefetch', championId, skinId: chromaId, baseSkinId });
+export function prefetchChroma(championId, chromaId, baseSkinId, championName = null, skinName = null, chromaName = null) {
+  wsSend({ type: 'prefetch', championId, skinId: chromaId, baseSkinId, championName, skinName, chromaName });
 }
 
 // --- Prefetch debounce ---
@@ -60,7 +60,8 @@ function debouncePrefetch(championId, skinName) {
     if (!skin || isDefaultSkin(skin)) return;
 
     if (lastTrackedSkin === skinName && lastTrackedChampion === championId) {
-      wsSend({ type: 'prefetch', championId, skinId: skin.id });
+      const champName = await getChampionName(championId);
+      wsSend({ type: 'prefetch', championId, skinId: skin.id, championName: champName, skinName: skin.name });
     }
   }, PREFETCH_DEBOUNCE_MS);
 }
@@ -80,11 +81,15 @@ export async function forceApplyIfNeeded() {
   const skin = findSkinByName(skins, skinName);
   if (!skin || isDefaultSkin(skin)) return;
 
+  const champName = await getChampionName(championId);
   const chroma = getSelectedChroma();
   if (chroma) {
-    wsSendApply({ type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId });
+    wsSendApply({
+      type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId,
+      championName: champName, skinName: chroma.baseSkinName || skin.name, chromaName: chroma.chromaName,
+    });
   } else {
-    wsSendApply({ type: 'apply', championId, skinId: skin.id });
+    wsSendApply({ type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name });
   }
 
   setAppliedSkinName(skinName);
@@ -214,10 +219,14 @@ async function triggerAutoApply() {
     return;
   }
 
+  const champName = await getChampionName(championId);
   if (startChroma) {
-    wsSendApply({ type: 'apply', championId, skinId: startChroma.id, baseSkinId: startChroma.baseSkinId });
+    wsSendApply({
+      type: 'apply', championId, skinId: startChroma.id, baseSkinId: startChroma.baseSkinId,
+      championName: champName, skinName: startChroma.baseSkinName || skin.name, chromaName: startChroma.chromaName,
+    });
   } else {
-    wsSendApply({ type: 'apply', championId, skinId: skin.id });
+    wsSendApply({ type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name });
   }
 
   setAppliedSkinName(startSkin);

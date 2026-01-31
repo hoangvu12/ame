@@ -45,12 +45,14 @@ function buildDropdown() {
       onChange: (selected) => {
         const skinId = parseInt(selected.getAttribute('data-skin-id'), 10);
         if (isNaN(skinId)) return;
+        const skinName = selected.getAttribute('data-skin-name') || '';
 
         const lastPayload = getLastApplyPayload();
         const championId = lastPayload?.championId;
+        const championName = lastPayload?.championName || '';
         if (!championId) return;
 
-        wsSendApply({ type: 'apply', championId, skinId });
+        wsSendApply({ type: 'apply', championId, skinId, championName, skinName });
         updateInGameStatus();
       },
     }
@@ -81,11 +83,13 @@ export function ensureInGameUI() {
         const dd = container.querySelector('.ame-ingame-dropdown');
         const selected = dd?.querySelector('lol-uikit-dropdown-option[selected]');
         const skinId = selected ? parseInt(selected.getAttribute('data-skin-id'), 10) : null;
+        const skinName = selected?.getAttribute('data-skin-name') || '';
         const lastPayload = getLastApplyPayload();
         const championId = lastPayload?.championId;
+        const championName = lastPayload?.championName || '';
 
         if (championId && skinId && !isNaN(skinId)) {
-          wsSendApply({ type: 'apply', championId, skinId });
+          wsSendApply({ type: 'apply', championId, skinId, championName, skinName });
           updateInGameStatus();
         }
       }
