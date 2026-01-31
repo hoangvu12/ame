@@ -14,6 +14,7 @@ import (
 	"github.com/hoangvu12/ame/internal/game"
 	"github.com/hoangvu12/ame/internal/modtools"
 	"github.com/hoangvu12/ame/internal/skin"
+	"github.com/hoangvu12/ame/internal/startup"
 )
 
 // ApplyMessage represents an apply skin request
@@ -279,9 +280,10 @@ func handleConnection(conn *websocket.Conn) {
 		case "getSettings":
 			s := config.Get()
 			resp := map[string]interface{}{
-				"type":       "settings",
-				"autoAccept": s.AutoAccept,
-				"benchSwap":  s.BenchSwap,
+				"type":             "settings",
+				"autoAccept":       s.AutoAccept,
+				"benchSwap":        s.BenchSwap,
+				"startWithWindows": s.StartWithWindows,
 			}
 			data, _ := json.Marshal(resp)
 			conn.WriteMessage(websocket.TextMessage, data)
@@ -308,6 +310,27 @@ func handleConnection(conn *websocket.Conn) {
 				sendStatus(conn, "error", "Failed to save bench swap setting")
 			} else {
 				resp := BoolSettingMessage{Type: "benchSwap", Enabled: msg.Enabled}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "setStartWithWindows":
+			var msg BoolSettingMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			var actionErr error
+			if msg.Enabled {
+				actionErr = startup.Enable()
+			} else {
+				actionErr = startup.Disable()
+			}
+			if actionErr != nil {
+				sendStatus(conn, "error", "Failed to register startup task")
+			} else if err := config.SetStartWithWindows(msg.Enabled); err != nil {
+				sendStatus(conn, "error", "Failed to save startup setting")
+			} else {
+				resp := BoolSettingMessage{Type: "startWithWindows", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
 				conn.WriteMessage(websocket.TextMessage, data)
 			}

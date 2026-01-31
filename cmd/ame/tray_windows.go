@@ -7,6 +7,8 @@ import (
 	"syscall"
 
 	"github.com/energye/systray"
+	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/startup"
 )
 
 //go:embed icon.ico
@@ -82,6 +84,24 @@ func onTrayReady() {
 	})
 
 	systray.AddSeparator()
+
+	mStartup := systray.AddMenuItem("Start with Windows", "Launch ame automatically when you log in")
+	if config.StartWithWindows() {
+		mStartup.Check()
+	}
+	mStartup.Click(func() {
+		enabled := !config.StartWithWindows()
+		if enabled {
+			if err := startup.Enable(); err == nil {
+				config.SetStartWithWindows(true)
+				mStartup.Check()
+			}
+		} else {
+			startup.Disable()
+			config.SetStartWithWindows(false)
+			mStartup.Uncheck()
+		}
+	})
 
 	mSettings := systray.AddMenuItem("Settings", "Open settings")
 	mSettings.Click(func() {

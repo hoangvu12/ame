@@ -27,9 +27,10 @@ var (
 
 // Settings holds persisted application settings.
 type Settings struct {
-	GamePath  string `json:"gamePath"`
-	AutoAccept bool  `json:"autoAccept"`
-	BenchSwap  bool  `json:"benchSwap"`
+	GamePath         string `json:"gamePath"`
+	AutoAccept       bool   `json:"autoAccept"`
+	BenchSwap        bool   `json:"benchSwap"`
+	StartWithWindows bool   `json:"startWithWindows"`
 }
 
 // Init loads settings from disk.
@@ -112,6 +113,21 @@ func SetBenchSwap(enabled bool) error {
 	mu.Lock()
 	defer mu.Unlock()
 	settings.BenchSwap = enabled
+	return save()
+}
+
+// StartWithWindows returns the current start-with-windows setting.
+func StartWithWindows() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.StartWithWindows
+}
+
+// SetStartWithWindows updates and persists the start-with-windows setting.
+func SetStartWithWindows(enabled bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.StartWithWindows = enabled
 	return save()
 }
 

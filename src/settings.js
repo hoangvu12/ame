@@ -59,7 +59,9 @@ function buildPanel() {
     el('label', { class: 'ame-settings-description' },
       'Click a champion on the bench while it\'s on cooldown to mark it. When the cooldown ends, it will automatically be swapped to you.'
     ),
-    buildToggle('ameBenchSwap', 'Enable auto bench swap in ARAM', 'benchSwap')
+    buildToggle('ameBenchSwap', 'Enable auto bench swap in ARAM', 'benchSwap'),
+    el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'Startup'),
+    buildToggle('ameStartWithWindows', 'Start ame with Windows', 'startWithWindows')
   );
 }
 

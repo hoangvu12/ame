@@ -19,6 +19,7 @@ import (
 	"github.com/hoangvu12/ame/internal/game"
 	"github.com/hoangvu12/ame/internal/server"
 	"github.com/hoangvu12/ame/internal/setup"
+	"github.com/hoangvu12/ame/internal/startup"
 	"github.com/hoangvu12/ame/internal/updater"
 )
 
@@ -26,6 +27,8 @@ import (
 var Version = "dev"
 
 const PORT = 18765
+
+var minimized bool
 
 // Setup URLs
 var setupConfig = setup.Config{
@@ -253,7 +256,31 @@ func cleanup() {
 	killPenguLoader()
 }
 
+// hasFlag checks if a command-line flag is present.
+func hasFlag(flag string) bool {
+	for _, arg := range os.Args[1:] {
+		if arg == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// syncStartup ensures the Task Scheduler entry matches the saved setting.
+func syncStartup() {
+	enabled := config.StartWithWindows()
+	registered := startup.IsEnabled()
+
+	if enabled && !registered {
+		startup.Enable()
+	} else if !enabled && registered {
+		startup.Disable()
+	}
+}
+
 func main() {
+	minimized = hasFlag("--minimized")
+
 	// Initialize console handle for tray functionality
 	initConsoleHandle()
 
@@ -262,6 +289,11 @@ func main() {
 
 	// Disable close button - users must use tray menu to quit
 	disableCloseButton()
+
+	// Hide console immediately when launched minimized
+	if minimized {
+		hideConsole()
+	}
 
 	// Check for admin privileges
 	if !isAdmin() {
@@ -273,6 +305,9 @@ func main() {
 	if err := config.Init(); err != nil {
 		fmt.Printf("  ! Failed to load settings: %v\n", err)
 	}
+
+	// Sync startup registration with saved setting
+	syncStartup()
 
 	// Print banner
 	printBanner()
@@ -303,29 +338,35 @@ func main() {
 		updater.CleanupUpdateFile()
 	}
 
-	// Check for updates
-	checkForUpdates()
+	// Skip interactive update prompt when running minimized
+	if !minimized {
+		checkForUpdates()
+	}
 
 	// Run setup (downloads dependencies if needed)
 	if !setup.RunSetup(setupConfig) {
 		fmt.Println()
 		fmt.Println("  ! Setup failed. Check your internet connection.")
-		fmt.Println("  Press Enter to exit...")
-		fmt.Scanln()
+		if !minimized {
+			fmt.Println("  Press Enter to exit...")
+			fmt.Scanln()
+		}
 		os.Exit(1)
 	}
 
 	// Save current version after successful setup
 	updater.SaveVersion(Version)
 
-	// Detect game directory (prompt user if auto-detection fails)
+	// Detect game directory (skip interactive prompt when minimized)
 	fmt.Print("  Detecting League of Legends... ")
 	if dir := game.FindGameDir(); dir != "" {
 		fmt.Println("found")
 	} else {
 		fmt.Println("not found")
-		fmt.Println()
-		game.PromptGameDir()
+		if !minimized {
+			fmt.Println()
+			game.PromptGameDir()
+		}
 	}
 
 	// Start WebSocket server in background
