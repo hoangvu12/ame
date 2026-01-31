@@ -291,7 +291,8 @@ func handleConnection(conn *websocket.Conn) {
 			resp := map[string]interface{}{
 				"type":             "settings",
 				"autoAccept":       s.AutoAccept,
-				"benchSwap":        s.BenchSwap,
+				"benchSwap":             s.BenchSwap,
+			"benchSwapSkipCooldown": s.BenchSwapSkipCooldown,
 				"startWithWindows": s.StartWithWindows,
 				"autoUpdate":       s.AutoUpdate,
 				"autoSelect":       s.AutoSelect,
@@ -322,6 +323,19 @@ func handleConnection(conn *websocket.Conn) {
 				sendStatus(conn, "error", "Failed to save bench swap setting")
 			} else {
 				resp := BoolSettingMessage{Type: "benchSwap", Enabled: msg.Enabled}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "setBenchSwapSkipCooldown":
+			var msg BoolSettingMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := config.SetBenchSwapSkipCooldown(msg.Enabled); err != nil {
+				sendStatus(conn, "error", "Failed to save bench swap skip cooldown setting")
+			} else {
+				resp := BoolSettingMessage{Type: "benchSwapSkipCooldown", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
 				conn.WriteMessage(websocket.TextMessage, data)
 			}

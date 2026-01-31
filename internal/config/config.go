@@ -35,7 +35,8 @@ type RoleConfig struct {
 type Settings struct {
 	GamePath         string                `json:"gamePath"`
 	AutoAccept       bool                  `json:"autoAccept"`
-	BenchSwap        bool                  `json:"benchSwap"`
+	BenchSwap             bool                  `json:"benchSwap"`
+	BenchSwapSkipCooldown bool                  `json:"benchSwapSkipCooldown"`
 	StartWithWindows bool                  `json:"startWithWindows"`
 	AutoUpdate       bool                  `json:"autoUpdate"`
 	AutoSelect       bool                  `json:"autoSelect"`
@@ -134,6 +135,21 @@ func SetBenchSwap(enabled bool) error {
 	mu.Lock()
 	defer mu.Unlock()
 	settings.BenchSwap = enabled
+	return save()
+}
+
+// BenchSwapSkipCooldown returns the current bench-swap-skip-cooldown setting.
+func BenchSwapSkipCooldown() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.BenchSwapSkipCooldown
+}
+
+// SetBenchSwapSkipCooldown updates and persists the bench-swap-skip-cooldown setting.
+func SetBenchSwapSkipCooldown(enabled bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.BenchSwapSkipCooldown = enabled
 	return save()
 }
 

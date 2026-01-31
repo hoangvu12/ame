@@ -137,21 +137,49 @@ export function injectStyles() {
     .ame-settings-row lol-uikit-flat-input {
       flex: 1;
     }
-    .ame-settings-section-gap {
-      margin-top: 24px;
+    .ame-section + .ame-section {
+      margin-top: 4px;
+    }
+    .ame-section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 10px 0 6px;
+      font-family: var(--font-display);
+      font-size: 12px;
+      color: #f0e6d2;
+      letter-spacing: 0.075em;
+      text-transform: uppercase;
+      user-select: none;
+      border-bottom: 1px solid rgba(91, 90, 86, 0.25);
+    }
+    .ame-section-header:hover {
+      color: #c8aa6e;
+    }
+    .ame-section-chevron {
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 5px solid currentColor;
+      transition: transform 0.15s;
+      flex-shrink: 0;
+    }
+    .ame-section-chevron.collapsed {
+      transform: rotate(-90deg);
+    }
+    .ame-section-body.collapsed {
+      display: none;
     }
     .ame-settings-toggle-row {
       margin-top: 12px;
       display: flex;
       align-items: center;
     }
-    .ame-settings-description {
-      font-family: var(--font-body);
-      font-size: 12px;
-      color: #a09b8c;
-      margin-top: 4px;
-      line-height: 1.4;
-      display: block;
+    .ame-sub-toggle {
+      padding-left: 20px;
+      opacity: 0.75;
     }
     .ame-bench-mark {
       position: absolute;

@@ -29,6 +29,19 @@ function buildNavGroup() {
   return frag;
 }
 
+function buildSection(title, ...children) {
+  const chevron = el('span', { class: 'ame-section-chevron' });
+  const body = el('div', { class: 'ame-section-body' }, ...children);
+  const header = el('div', {
+    class: 'ame-section-header',
+    onClick: () => {
+      body.classList.toggle('collapsed');
+      chevron.classList.toggle('collapsed');
+    },
+  }, chevron, el('span', null, title));
+  return el('div', { class: 'ame-section' }, header, body);
+}
+
 function buildToggle(id, labelText, settingKey) {
   const { checkbox, input } = createCheckbox(id, labelText, (checked) => {
     wsSend({ type: `set${settingKey.charAt(0).toUpperCase()}${settingKey.slice(1)}`, enabled: checked });
@@ -183,7 +196,6 @@ function buildAutoSelectSection() {
   roleContentEl = el('div', { class: 'ame-role-content' });
 
   const section = el('div', null,
-    el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'Auto Champion Select'),
     buildToggle('ameAutoSelect', 'Enable auto champion select', 'autoSelect'),
     buildRoleTabs(),
     roleContentEl,
@@ -215,30 +227,31 @@ function buildPanel() {
       'scrolled-top': 'true',
     },
       el('div', { class: 'ame-settings-panel-inner' },
-        el('div', { class: 'lol-settings-ingame-section-title' }, 'Game Path'),
-        el('div', { class: 'ame-settings-row' },
-          flatInput,
-          createButton('Save', {
-            class: 'ame-settings-save',
-            onClick: () => {
-              const path = input.value.trim();
-              if (!path) return;
-              wsSend({ type: 'setGamePath', path });
-            },
-          })
+        buildSection('General',
+          el('div', { class: 'ame-settings-row' },
+            flatInput,
+            createButton('Save', {
+              class: 'ame-settings-save',
+              onClick: () => {
+                const path = input.value.trim();
+                if (!path) return;
+                wsSend({ type: 'setGamePath', path });
+              },
+            })
+          ),
+          buildToggle('ameAutoAccept', 'Automatically accept match when found', 'autoAccept'),
+          buildToggle('ameStartWithWindows', 'Start ame with Windows', 'startWithWindows'),
+          buildToggle('ameAutoUpdate', 'Automatically install updates', 'autoUpdate'),
         ),
-        el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'Auto Accept Match'),
-        buildToggle('ameAutoAccept', 'Automatically accept match when found', 'autoAccept'),
-        el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'ARAM Bench Swap'),
-        el('label', { class: 'ame-settings-description' },
-          'Click a champion on the bench while it\'s on cooldown to mark it. When the cooldown ends, it will automatically be swapped to you.'
+        buildSection('ARAM Bench Swap',
+          buildToggle('ameBenchSwap', 'Enable auto bench swap', 'benchSwap'),
+          el('div', { class: 'ame-sub-toggle' },
+            buildToggle('ameBenchSwapSkipCooldown', 'Skip cooldown (experimental)', 'benchSwapSkipCooldown'),
+          ),
         ),
-        buildToggle('ameBenchSwap', 'Enable auto bench swap in ARAM', 'benchSwap'),
-        el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'Startup'),
-        buildToggle('ameStartWithWindows', 'Start ame with Windows', 'startWithWindows'),
-        el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'Updates'),
-        buildToggle('ameAutoUpdate', 'Automatically install updates', 'autoUpdate'),
-        buildAutoSelectSection(),
+        buildSection('Auto Champion Select',
+          buildAutoSelectSection(),
+        ),
       ),
     ),
   );

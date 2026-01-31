@@ -2,6 +2,7 @@ import { onSetting } from './websocket';
 import { el } from './dom';
 
 let enabled = false;
+let skipCooldown = false;
 let markedEl = null;
 let markedId = null;
 let markLabel = null;
@@ -10,6 +11,7 @@ let attached = false;
 
 export function loadBenchSwapSetting() {
   onSetting('benchSwap', (v) => { enabled = v; if (!v) clearMark(); });
+  onSetting('benchSwapSkipCooldown', (v) => { skipCooldown = v; });
 }
 
 function champIdFrom(item) {
@@ -38,11 +40,12 @@ function clearMark() {
 }
 
 function doSwap(championId) {
-  fetch(`/lol-champ-select/v1/session/bench/swap/${championId}`, { method: 'POST' })
-    .catch(() => {});
+  return fetch(`/lol-champ-select/v1/session/bench/swap/${championId}`, { method: 'POST' })
+    .then(r => { console.log('[ame] bench swap', championId, r.status); return r.ok; })
+    .catch(() => false);
 }
 
-function mark(item, id) {
+async function mark(item, id) {
   clearMark();
   markedEl = item;
   markedId = id;
@@ -52,7 +55,18 @@ function mark(item, id) {
   item.appendChild(dot);
   markLabel = dot;
 
-  // Already off cooldown — swap immediately
+  if (skipCooldown) {
+    // Try swapping immediately, ignoring cooldown
+    if (await doSwap(id)) { clearMark(); return; }
+
+    // Swap rejected — if no longer on cooldown or detached, give up
+    if (!markedEl || !markedEl.isConnected || !hasCooldown(markedEl)) {
+      clearMark();
+      return;
+    }
+  }
+
+  // Already off cooldown — swap now
   if (!hasCooldown(item)) {
     const swapId = markedId;
     clearMark();
@@ -60,6 +74,7 @@ function mark(item, id) {
     return;
   }
 
+  // Wait for cooldown to end, then swap
   swapObserver = new MutationObserver(() => {
     if (!markedEl) return;
 
