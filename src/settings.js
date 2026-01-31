@@ -1,4 +1,6 @@
 import { wsSend, onGamePath, onSetting, refreshSettings } from './websocket';
+import { el } from './dom';
+import { createButton, createCheckbox, createInput } from './components';
 
 const NAV_TITLE_CLASS = 'lol-settings-nav-title';
 const AME_NAV_NAME = 'ame-settings';
@@ -10,119 +12,60 @@ let retryTimer = null;
 
 function buildNavGroup() {
   const frag = document.createDocumentFragment();
-
-  const title = document.createElement('div');
-  title.className = NAV_TITLE_CLASS;
-  title.textContent = 'Ame';
-  title.dataset.ame = '1';
-
-  const bar = document.createElement('lol-uikit-navigation-bar');
-  bar.setAttribute('direction', 'down');
-  bar.setAttribute('type', 'tabbed');
-  bar.setAttribute('selectedindex', '-1');
-  bar.dataset.ame = '1';
-
-  const item = document.createElement('lol-uikit-navigation-item');
-  item.setAttribute('name', AME_NAV_NAME);
-  item.className = 'lol-settings-nav';
-
-  const label = document.createElement('div');
-  label.textContent = 'SETTINGS';
-  item.appendChild(label);
-  bar.appendChild(item);
-
-  frag.appendChild(title);
-  frag.appendChild(bar);
+  frag.appendChild(
+    el('div', { class: NAV_TITLE_CLASS, dataset: { ame: '1' } }, 'Ame')
+  );
+  frag.appendChild(
+    el('lol-uikit-navigation-bar', {
+      direction: 'down', type: 'tabbed', selectedindex: '-1', dataset: { ame: '1' },
+    },
+      el('lol-uikit-navigation-item', { name: AME_NAV_NAME, class: 'lol-settings-nav' },
+        el('div', null, 'SETTINGS')
+      )
+    )
+  );
   return frag;
 }
 
 function buildToggle(id, labelText, settingKey) {
-  const row = document.createElement('div');
-  row.className = 'ame-settings-toggle-row';
-
-  const checkbox = document.createElement('lol-uikit-flat-checkbox');
-  checkbox.setAttribute('for', id);
-
-  const input = document.createElement('input');
-  input.setAttribute('slot', 'input');
-  input.setAttribute('name', id);
-  input.type = 'checkbox';
-  input.id = id;
-  checkbox.appendChild(input);
-
-  const cbLabel = document.createElement('label');
-  cbLabel.setAttribute('slot', 'label');
-  cbLabel.textContent = labelText;
-  checkbox.appendChild(cbLabel);
-
-  input.addEventListener('change', () => {
-    wsSend({ type: `set${settingKey.charAt(0).toUpperCase()}${settingKey.slice(1)}`, enabled: input.checked });
+  const { checkbox, input } = createCheckbox(id, labelText, (checked) => {
+    wsSend({ type: `set${settingKey.charAt(0).toUpperCase()}${settingKey.slice(1)}`, enabled: checked });
   });
-
   onSetting(settingKey, (enabled) => { input.checked = enabled; });
-
-  row.appendChild(checkbox);
-  return row;
+  return el('div', { class: 'ame-settings-toggle-row' }, checkbox);
 }
 
 function buildPanel() {
-  const panel = document.createElement('div');
-  panel.className = AME_PANEL_CLASS;
-
-  // Game path section
-  const section = document.createElement('div');
-  section.className = 'lol-settings-ingame-section-title';
-  section.textContent = 'Game Path';
-
-  const row = document.createElement('div');
-  row.className = 'ame-settings-row';
-
-  const flatInput = document.createElement('lol-uikit-flat-input');
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'C:\\Riot Games\\League of Legends\\Game';
-  flatInput.appendChild(input);
-
-  const btn = document.createElement('lol-uikit-flat-button');
-  btn.className = 'ame-settings-save';
-  btn.textContent = 'Save';
-  btn.addEventListener('click', () => {
-    const path = input.value.trim();
-    if (!path) return;
-    wsSend({ type: 'setGamePath', path });
+  const { container: flatInput, input } = createInput({
+    placeholder: 'C:\\Riot Games\\League of Legends\\Game',
   });
 
-  row.appendChild(flatInput);
-  row.appendChild(btn);
-  panel.appendChild(section);
-  panel.appendChild(row);
-
-  // Auto Accept Match toggle
-  const autoAcceptSection = document.createElement('div');
-  autoAcceptSection.className = 'lol-settings-ingame-section-title ame-settings-section-gap';
-  autoAcceptSection.textContent = 'Auto Accept Match';
-  panel.appendChild(autoAcceptSection);
-  panel.appendChild(buildToggle('ameAutoAccept', 'Automatically accept match when found', 'autoAccept'));
-
-  // Bench Swap toggle
-  const benchSwapSection = document.createElement('div');
-  benchSwapSection.className = 'lol-settings-ingame-section-title ame-settings-section-gap';
-  benchSwapSection.textContent = 'ARAM Bench Swap';
-  panel.appendChild(benchSwapSection);
-
-  const benchSwapDesc = document.createElement('label');
-  benchSwapDesc.className = 'ame-settings-description';
-  benchSwapDesc.textContent = 'Click a champion on the bench while it\'s on cooldown to mark it. When the cooldown ends, it will automatically be swapped to you.';
-  panel.appendChild(benchSwapDesc);
-
-  panel.appendChild(buildToggle('ameBenchSwap', 'Enable auto bench swap in ARAM', 'benchSwap'));
-
-  return panel;
+  return el('div', { class: AME_PANEL_CLASS },
+    el('div', { class: 'lol-settings-ingame-section-title' }, 'Game Path'),
+    el('div', { class: 'ame-settings-row' },
+      flatInput,
+      createButton('Save', {
+        class: 'ame-settings-save',
+        onClick: () => {
+          const path = input.value.trim();
+          if (!path) return;
+          wsSend({ type: 'setGamePath', path });
+        },
+      })
+    ),
+    el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'Auto Accept Match'),
+    buildToggle('ameAutoAccept', 'Automatically accept match when found', 'autoAccept'),
+    el('div', { class: 'lol-settings-ingame-section-title ame-settings-section-gap' }, 'ARAM Bench Swap'),
+    el('label', { class: 'ame-settings-description' },
+      'Click a champion on the bench while it\'s on cooldown to mark it. When the cooldown ends, it will automatically be swapped to you.'
+    ),
+    buildToggle('ameBenchSwap', 'Enable auto bench swap in ARAM', 'benchSwap')
+  );
 }
 
 function deselectAllNav(container) {
-  container.querySelectorAll('lol-uikit-navigation-item').forEach(el => {
-    el.removeAttribute('active');
+  container.querySelectorAll('lol-uikit-navigation-item').forEach(item => {
+    item.removeAttribute('active');
   });
   container.querySelectorAll('lol-uikit-navigation-bar').forEach(bar => {
     bar.setAttribute('selectedindex', '-1');

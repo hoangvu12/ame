@@ -1,5 +1,5 @@
 import { CHAMP_SELECT_PHASES, POST_GAME_PHASES, IN_GAME_PHASES, IN_GAME_POLL_MS, POLL_INTERVAL_MS, CHROMA_BTN_CLASS } from './constants';
-import { getMyChampionId, loadChampionSkins, resetSkinsCache } from './api';
+import { getMyChampionId, loadChampionSkins, resetSkinsCache, fetchJson } from './api';
 import { injectStyles, unlockSkinCarousel } from './styles';
 import { wsConnect, wsSend, isOverlayActive } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState } from './ui';
@@ -134,8 +134,7 @@ export function init(context) {
     handlePhase(event.data);
   });
 
-  fetch('/lol-gameflow/v1/gameflow-phase')
-    .then(r => r.ok ? r.json() : null)
-    .then(phase => { if (phase) handlePhase(phase); })
-    .catch(() => {});
+  fetchJson('/lol-gameflow/v1/gameflow-phase').then(phase => {
+    if (phase) handlePhase(phase);
+  });
 }

@@ -11,6 +11,7 @@ import {
 import { getMyChampionId, getChampionSkins } from './api';
 import { getLastChampionId } from './state';
 import { onChromaSelected, prefetchChroma } from './autoApply';
+import { el } from './dom';
 
 let activeChromaPanel = null;
 let activeChromaButton = null;
@@ -36,28 +37,14 @@ function onClickOutsideChroma(e) {
 // --- Button creation ---
 
 function createChromaButton() {
-  const button = document.createElement('div');
-  button.className = CHROMA_BTN_CLASS;
-  button.classList.add('chroma-button', 'chroma-selection', 'uikit-framed-icon', 'ember-view');
-
-  const outerMask = document.createElement('div');
-  outerMask.className = 'outer-mask interactive';
-
-  const frameColor = document.createElement('div');
-  frameColor.className = 'frame-color';
-
-  const content = document.createElement('div');
-  content.className = 'content';
-
-  const innerMask = document.createElement('div');
-  innerMask.className = 'inner-mask inner-shadow';
-
-  frameColor.appendChild(content);
-  frameColor.appendChild(innerMask);
-  outerMask.appendChild(frameColor);
-  button.appendChild(outerMask);
-
-  return button;
+  return el('div', { class: `${CHROMA_BTN_CLASS} chroma-button chroma-selection uikit-framed-icon ember-view` },
+    el('div', { class: 'outer-mask interactive' },
+      el('div', { class: 'frame-color' },
+        el('div', { class: 'content' }),
+        el('div', { class: 'inner-mask inner-shadow' })
+      )
+    )
+  );
 }
 
 function getOrCreateChromaButton(container, data) {
@@ -96,80 +83,60 @@ function getChromaPreviewPath(chroma) {
     || chroma.imagePath || chroma.splashPath || chroma.tilePath || '';
 }
 
+function chromaBackground(colors) {
+  if (colors.length >= 2) return `linear-gradient(135deg, ${colors[0]} 50%, ${colors[1]} 50%)`;
+  if (colors.length === 1) return colors[0];
+  return '#27211C';
+}
+
 function createChromaPanel(skinData, chromas, buttonEl, championId) {
   closeChromaPanel();
 
   const carousel = buttonEl.closest('.skin-selection-carousel') || document.querySelector('.skin-selection-carousel');
   const champId = championId || getLastChampionId();
 
-  const flyout = document.createElement('lol-uikit-flyout-frame');
-  flyout.id = CHROMA_PANEL_ID;
-  flyout.className = 'flyout';
-  flyout.setAttribute('orientation', 'top');
-  flyout.setAttribute('show', 'true');
-  Object.assign(flyout.style, { position: 'absolute', overflow: 'visible', zIndex: '10000' });
+  const flyout = el('lol-uikit-flyout-frame', {
+    id: CHROMA_PANEL_ID,
+    class: 'flyout',
+    orientation: 'top',
+    show: 'true',
+    style: { position: 'absolute', overflow: 'visible', zIndex: '10000' },
+  });
 
   (carousel || document.body).appendChild(flyout);
 
-  const flyoutContent = document.createElement('lc-flyout-content');
-  flyoutContent.dataset.ameChroma = '1';
-
-  const modal = document.createElement('div');
-  modal.className = 'champ-select-chroma-modal chroma-view ember-view';
-
-  // Preview image area
-  const chromaInfo = document.createElement('div');
-  chromaInfo.className = 'chroma-information';
-  chromaInfo.style.backgroundImage = "url('lol-game-data/assets/content/src/LeagueClient/GameModeAssets/Classic_SRU/img/champ-select-flyout-background.jpg')";
-
-  const chromaImage = document.createElement('div');
-  chromaImage.className = 'chroma-information-image';
+  const chromaImage = el('div', { class: 'chroma-information-image' });
   if (chromas.length > 0) {
     const imgUrl = getChromaImageUrl(champId, chromas[0]) || getChromaPreviewPath(chromas[0]);
     if (imgUrl) chromaImage.style.backgroundImage = `url('${imgUrl}')`;
   }
 
-  const skinName = document.createElement('div');
-  skinName.className = 'child-skin-name';
-  skinName.textContent = skinData.name;
-  const disabledNote = document.createElement('div');
-  disabledNote.className = 'child-skin-disabled-notification';
-  skinName.appendChild(disabledNote);
+  const disabledNote = el('div', { class: 'child-skin-disabled-notification' });
+  const skinName = el('div', { class: 'child-skin-name' }, skinData.name, disabledNote);
 
-  chromaInfo.appendChild(chromaImage);
-  chromaInfo.appendChild(skinName);
+  const chromaInfo = el('div', {
+    class: 'chroma-information',
+    style: { backgroundImage: "url('lol-game-data/assets/content/src/LeagueClient/GameModeAssets/Classic_SRU/img/champ-select-flyout-background.jpg')" },
+  }, chromaImage, skinName);
 
-  // Chroma color swatches
-  const scrollable = document.createElement('lol-uikit-scrollable');
-  scrollable.className = 'chroma-selection';
-  scrollable.setAttribute('overflow-masks', 'enabled');
-  scrollable.setAttribute('scrolled-bottom', 'false');
-  scrollable.setAttribute('scrolled-top', 'true');
+  const scrollable = el('lol-uikit-scrollable', {
+    class: 'chroma-selection',
+    'overflow-masks': 'enabled',
+    'scrolled-bottom': 'false',
+    'scrolled-top': 'true',
+  });
 
   for (let i = 0; i < chromas.length; i++) {
     const chroma = chromas[i];
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'ember-view';
-
-    const btn = document.createElement('div');
-    btn.className = 'chroma-skin-button';
-    if (i === 0) btn.classList.add('selected');
-
-    const contents = document.createElement('div');
-    contents.className = 'contents';
     const colors = chroma.colors || [];
-    if (colors.length >= 2) {
-      contents.style.background = `linear-gradient(135deg, ${colors[0]} 50%, ${colors[1]} 50%)`;
-    } else if (colors.length === 1) {
-      contents.style.background = colors[0];
-    } else {
-      contents.style.background = '#27211C';
-    }
 
-    btn.appendChild(contents);
-    wrapper.appendChild(btn);
-    scrollable.appendChild(wrapper);
+    const contents = el('div', {
+      class: 'contents',
+      style: { background: chromaBackground(colors) },
+    });
+
+    const btn = el('div', { class: i === 0 ? 'chroma-skin-button selected' : 'chroma-skin-button' }, contents);
+    scrollable.appendChild(el('div', { class: 'ember-view' }, btn));
 
     btn.addEventListener('click', () => {
       selectChroma(skinData, chroma);
@@ -188,18 +155,20 @@ function createChromaPanel(skinData, chromas, buttonEl, championId) {
     });
   }
 
-  modal.appendChild(chromaInfo);
-  modal.appendChild(scrollable);
-  flyoutContent.appendChild(modal);
-  flyout.querySelectorAll('lc-flyout-content[data-ame-chroma="1"]').forEach(el => el.remove());
+  const modal = el('div', { class: 'champ-select-chroma-modal chroma-view ember-view' },
+    chromaInfo, scrollable
+  );
+
+  const flyoutContent = el('lc-flyout-content', { dataset: { ameChroma: '1' } }, modal);
+  flyout.querySelectorAll('lc-flyout-content[data-ame-chroma="1"]').forEach(old => old.remove());
   flyout.appendChild(flyoutContent);
 
   activeChromaPanel = flyout;
   activeChromaButton = buttonEl;
 
   // Position the flyout above the button
-  const container = carousel || document.body;
-  const containerRect = container.getBoundingClientRect();
+  const panelContainer = carousel || document.body;
+  const containerRect = panelContainer.getBoundingClientRect();
   const btnRect = buttonEl.getBoundingClientRect();
   const modalRect = modal.getBoundingClientRect();
   const width = modalRect.width || 305;
@@ -313,10 +282,10 @@ function syncChromaButtons(skinItems, championSkins) {
       continue;
     }
 
-    const btn = getOrCreateChromaButton(thumb, data);
-    if (!btn) continue;
-    btn.classList.remove('hidden');
-    Object.assign(btn.style, {
+    const chromaBtn = getOrCreateChromaButton(thumb, data);
+    if (!chromaBtn) continue;
+    chromaBtn.classList.remove('hidden');
+    Object.assign(chromaBtn.style, {
       position: 'absolute',
       right: '6px',
       bottom: '6px',

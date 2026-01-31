@@ -1,4 +1,4 @@
-import { loadChampionSkins, getMyChampionId } from './api';
+import { loadChampionSkins, getMyChampionId, fetchJson } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSend, wsSendApply } from './websocket';
 import {
@@ -227,22 +227,10 @@ async function triggerAutoApply() {
 
 // --- Debug helpers ---
 
-export async function fetchAndLogTimer() {
-  try {
-    const res = await fetch('/lol-champ-select/v1/session/timer');
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+export function fetchAndLogTimer() {
+  return fetchJson('/lol-champ-select/v1/session/timer');
 }
 
-export async function fetchAndLogGameflow() {
-  try {
-    const res = await fetch('/lol-gameflow/v1/session');
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+export function fetchAndLogGameflow() {
+  return fetchJson('/lol-gameflow/v1/session');
 }

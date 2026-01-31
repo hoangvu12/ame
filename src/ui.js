@@ -4,31 +4,26 @@ import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSendApply } from './websocket';
 import { toastError } from './toast';
 import { getAppliedSkinName, setAppliedSkinName, getSelectedChroma } from './state';
+import { ensureElement, removeElement } from './dom';
+import { createButton } from './components';
 
 export function ensureApplyButton() {
-  if (document.getElementById(BUTTON_ID)) return;
-  const container = document.querySelector('.toggle-ability-previews-button-container');
-  if (!container) return;
-
-  container.style.justifyContent = 'center';
-  container.style.alignItems = 'center';
-  container.style.gap = '20px';
-  container.querySelectorAll('.framing-line').forEach(line => {
-    line.style.display = 'none';
+  ensureElement(BUTTON_ID, '.toggle-ability-previews-button-container', (container) => {
+    container.style.justifyContent = 'center';
+    container.style.alignItems = 'center';
+    container.style.gap = '20px';
+    container.querySelectorAll('.framing-line').forEach(line => {
+      line.style.display = 'none';
+    });
+    return createButton('Apply Skin', {
+      class: 'toggle-ability-previews-button',
+      onClick: onApplyClick,
+    });
   });
-
-  const btn = document.createElement('lol-uikit-flat-button');
-  btn.id = BUTTON_ID;
-  btn.textContent = 'Apply Skin';
-  btn.classList.add('toggle-ability-previews-button');
-  btn.addEventListener('click', onApplyClick);
-
-  container.appendChild(btn);
 }
 
 export function removeApplyButton() {
-  const btn = document.getElementById(BUTTON_ID);
-  if (btn) btn.remove();
+  removeElement(BUTTON_ID);
 }
 
 export function setButtonState(text, disabled) {

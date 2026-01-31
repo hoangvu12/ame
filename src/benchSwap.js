@@ -1,4 +1,5 @@
 import { onSetting } from './websocket';
+import { el } from './dom';
 
 let enabled = false;
 let markedEl = null;
@@ -11,15 +12,15 @@ export function loadBenchSwapSetting() {
   onSetting('benchSwap', (v) => { enabled = v; if (!v) clearMark(); });
 }
 
-function champIdFrom(el) {
-  const bg = el.querySelector('.bench-champion-background');
+function champIdFrom(item) {
+  const bg = item.querySelector('.bench-champion-background');
   if (!bg) return null;
   const m = bg.style.backgroundImage.match(/champion-icons\/(\d+)\.png/);
   return m ? Number(m[1]) : null;
 }
 
-function hasCooldown(el) {
-  for (const c of el.classList) {
+function hasCooldown(item) {
+  for (const c of item.classList) {
     if (c.startsWith('on-cooldown')) return true;
   }
   return false;
@@ -41,19 +42,18 @@ function doSwap(championId) {
     .catch(() => {});
 }
 
-function mark(el, id) {
+function mark(item, id) {
   clearMark();
-  markedEl = el;
+  markedEl = item;
   markedId = id;
 
-  el.style.position = 'relative';
-  const dot = document.createElement('div');
-  dot.className = 'ame-bench-mark';
-  el.appendChild(dot);
+  item.style.position = 'relative';
+  const dot = el('div', { class: 'ame-bench-mark' });
+  item.appendChild(dot);
   markLabel = dot;
 
   // Already off cooldown — swap immediately
-  if (!hasCooldown(el)) {
+  if (!hasCooldown(item)) {
     const swapId = markedId;
     clearMark();
     doSwap(swapId);
@@ -75,7 +75,7 @@ function mark(el, id) {
     }
   });
 
-  swapObserver.observe(el, { attributes: true, attributeFilter: ['class'] });
+  swapObserver.observe(item, { attributes: true, attributeFilter: ['class'] });
 }
 
 function onClick(e) {
