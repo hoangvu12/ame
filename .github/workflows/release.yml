@@ -39,30 +39,40 @@ jobs:
           cd src
           7z a -tzip ../dist/plugin.zip *.js
 
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat changes.md > release_notes.md
+          cat >> release_notes.md << 'NOTES'
+
+          ---
+
+          ## Installation
+          1. Download `ame.exe`
+          2. Run it - everything is set up automatically on first run
+          3. Open League client to use the skin selector
+
+          ## What happens on first run
+          - Downloads and installs mod-tools
+          - Downloads and installs Pengu Loader
+          - Installs the ame plugin
+          - Asks you to activate Pengu Loader (one-time)
+          - Starts the skin changer server
+
+          ## Usage
+          - Run `ame.exe` before opening League
+          - Pick a champion in champ select
+          - Click "Apply Skin" to use any skin
+
+          ## Uninstall
+          Download and run `uninstall.bat` to remove ame completely.
+          NOTES
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ame ${{ steps.version.outputs.VERSION }}
-          body: |
-            ## Installation
-            1. Download `ame.exe`
-            2. Run it - everything is set up automatically on first run
-            3. Open League client to use the skin selector
-
-            ## What happens on first run
-            - Downloads and installs mod-tools
-            - Downloads and installs Pengu Loader
-            - Installs the ame plugin
-            - Asks you to activate Pengu Loader (one-time)
-            - Starts the skin changer server
-
-            ## Usage
-            - Run `ame.exe` before opening League
-            - Pick a champion in champ select
-            - Click "Apply Skin" to use any skin
-
-            ## Uninstall
-            Download and run `uninstall.bat` to remove ame completely.
+          body_path: ./release_notes.md
           files: |
             dist/ame.exe
             dist/plugin.zip
