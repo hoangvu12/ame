@@ -16,6 +16,7 @@ import (
 	"github.com/hoangvu12/ame/internal/modtools"
 	"github.com/hoangvu12/ame/internal/skin"
 	"github.com/hoangvu12/ame/internal/startup"
+	"github.com/hoangvu12/ame/internal/suspend"
 )
 
 // ApplyMessage represents an apply skin request
@@ -113,6 +114,10 @@ var lastSkinName string
 var lastChromaName string
 var stateMu sync.Mutex
 
+// Prebuild state — tracks overlay pre-built during champion select
+var overlayBuildMu sync.Mutex
+var prebuiltSkinID string
+
 // sendStatus sends a status message to the WebSocket client
 func sendStatus(conn *websocket.Conn, status, message string) {
 	payload := StatusMessage{
@@ -134,6 +139,15 @@ func sendStatus(conn *websocket.Conn, status, message string) {
 
 // handleApply handles skin apply request
 func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
+	// If runoverlay is already running for this exact skin, skip — nothing to do
+	stateMu.Lock()
+	alreadyActive := modtools.IsRunning() && lastSkinID == skinID
+	stateMu.Unlock()
+	if alreadyActive {
+		sendStatus(conn, "ready", "Skin applied!")
+		return
+	}
+
 	// Find game directory
 	gameDir := game.FindGameDir()
 	if gameDir == "" {
@@ -164,30 +178,98 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	modtools.KillModTools()
 	time.Sleep(300 * time.Millisecond)
 
-	// Clean and extract to mods dir
-	os.RemoveAll(config.ModsDir)
-	modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
-	os.MkdirAll(modSubDir, os.ModePerm)
+	// applyDone signals that overlay build + runoverlay start are complete.
+	// The suspend goroutine only freezes the game if it appears BEFORE this closes.
+	applyDone := make(chan struct{})
+	defer close(applyDone)
 
-	if err := skin.Extract(zipPath, modSubDir); err != nil {
-		sendStatus(conn, "error", "Failed to extract skin archive")
-		return
+	// Background: if game appears while we're still building/starting, freeze it.
+	go func() {
+		// Poll for game process, but stop early if apply finishes first
+		var pid uint32
+		deadline := time.Now().Add(120 * time.Second)
+		for time.Now().Before(deadline) {
+			select {
+			case <-applyDone:
+				return // Apply finished, no freeze needed
+			default:
+			}
+			if p := suspend.FindProcess("League of Legends.exe"); p != 0 {
+				pid = p
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if pid == 0 {
+			return
+		}
+
+		// Double-check apply hasn't finished during the FindProcess call
+		select {
+		case <-applyDone:
+			return
+		default:
+		}
+
+		display.Log("Game detected, holding until ready...")
+		s, err := suspend.NewSuspender(pid)
+		if err != nil {
+			return
+		}
+		count, suspendErr := s.Suspend()
+		if suspendErr != nil || count == 0 {
+			s.Close()
+			return
+		}
+
+		// Wait for apply to finish, with a safety timeout
+		select {
+		case <-applyDone:
+		case <-time.After(30 * time.Second):
+		}
+		s.Resume()
+		display.Log("Game released")
+	}()
+
+	// Build overlay (or reuse pre-built one from prefetch).
+	overlayBuildMu.Lock()
+	prebuilt := prebuiltSkinID == skinID
+	if prebuilt {
+		// Verify overlay dir still exists
+		configCheck := filepath.Join(config.OverlayDir, "cslol-config.json")
+		if _, err := os.Stat(configCheck); os.IsNotExist(err) {
+			prebuilt = false
+		}
 	}
+	if prebuilt {
+		prebuiltSkinID = ""
+	} else {
+		prebuiltSkinID = ""
+		os.RemoveAll(config.ModsDir)
+		modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
+		os.MkdirAll(modSubDir, os.ModePerm)
 
-	// Clean overlay dir
-	os.RemoveAll(config.OverlayDir)
-	os.MkdirAll(config.OverlayDir, os.ModePerm)
+		if err := skin.Extract(zipPath, modSubDir); err != nil {
+			overlayBuildMu.Unlock()
+			sendStatus(conn, "error", "Failed to extract skin archive")
+			return
+		}
 
-	// Run mkoverlay
-	modName := fmt.Sprintf("skin_%s", skinID)
-	success, exitCode := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
+		os.RemoveAll(config.OverlayDir)
+		os.MkdirAll(config.OverlayDir, os.ModePerm)
 
-	if !success {
-		sendStatus(conn, "error", fmt.Sprintf("Failed to apply skin (exit code %d)", exitCode))
-		return
+		modName := fmt.Sprintf("skin_%s", skinID)
+		success, exitCode := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
+
+		if !success {
+			overlayBuildMu.Unlock()
+			sendStatus(conn, "error", fmt.Sprintf("Failed to apply skin (code %d)", exitCode))
+			return
+		}
 	}
+	overlayBuildMu.Unlock()
 
-	// Run runoverlay
+	// Start runoverlay (hooks game process when it finds it)
 	configPath := filepath.Join(config.OverlayDir, "cslol-config.json")
 	if err := modtools.RunOverlay(config.OverlayDir, configPath, gameDir); err != nil {
 		sendStatus(conn, "error", fmt.Sprintf("Failed to start overlay: %v", err))
@@ -210,20 +292,71 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	sendStatus(conn, "ready", "Skin applied!")
 }
 
-// handlePrefetch pre-downloads a skin to cache (no mkoverlay/runoverlay)
+// handlePrefetch pre-downloads a skin and pre-builds the overlay during champion select
 func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
-	// Check for cached skin file — if already cached, nothing to do
-	if skin.GetCachedPath(championID, skinID) != "" {
+	// Download if not cached
+	zipPath := skin.GetCachedPath(championID, skinID)
+	if zipPath == "" {
+		downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
+		if err != nil {
+			return
+		}
+		zipPath = downloaded
+	}
+
+	// Don't build if overlay is already active (mid-game)
+	if modtools.IsRunning() {
 		return
 	}
 
-	skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
+	// Find game directory for mkoverlay
+	gameDir := game.FindGameDir()
+	if gameDir == "" {
+		return
+	}
+
+	if !modtools.Exists() {
+		return
+	}
+
+	// Build overlay so handleApply can skip this step
+	overlayBuildMu.Lock()
+	defer overlayBuildMu.Unlock()
+
+	// Skip if already pre-built for this skin
+	if prebuiltSkinID == skinID {
+		return
+	}
+
+	os.RemoveAll(config.ModsDir)
+	modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
+	os.MkdirAll(modSubDir, os.ModePerm)
+
+	if err := skin.Extract(zipPath, modSubDir); err != nil {
+		return
+	}
+
+	os.RemoveAll(config.OverlayDir)
+	os.MkdirAll(config.OverlayDir, os.ModePerm)
+
+	modName := fmt.Sprintf("skin_%s", skinID)
+	success, _ := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
+	if !success {
+		return
+	}
+
+	prebuiltSkinID = skinID
+	display.Log("Skin ready")
 }
 
 // HandleCleanup handles cleanup request
 func HandleCleanup() {
 	modtools.KillModTools()
 	os.RemoveAll(config.OverlayDir)
+
+	overlayBuildMu.Lock()
+	prebuiltSkinID = ""
+	overlayBuildMu.Unlock()
 
 	stateMu.Lock()
 	lastChampionID = ""
@@ -249,7 +382,7 @@ func handleConnection(conn *websocket.Conn) {
 		if remaining == 0 {
 			display.SetStatus("Waiting for client")
 		}
-		display.Log(fmt.Sprintf("Client disconnected (%d active)", remaining))
+		display.Log("Client disconnected")
 	}()
 	clientsMu.Lock()
 	clients[conn] = true

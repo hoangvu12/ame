@@ -1,6 +1,6 @@
 import { loadChampionSkins, getMyChampionId, getChampionName, fetchJson, forceDefaultSkin } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
-import { wsSend, wsSendApply, isApplyInFlight } from './websocket';
+import { wsSend, wsSendApply, isApplyInFlight, isOverlayActive } from './websocket';
 import {
   getAppliedSkinName, setAppliedSkinName,
   getSelectedChroma, setSelectedChroma, clearSelectedChroma,
@@ -71,6 +71,7 @@ function debouncePrefetch(championId, skinName) {
 export async function forceApplyIfNeeded() {
   if (getAppliedSkinName()) return;
   if (isApplyInFlight()) return;
+  if (isOverlayActive()) return;
 
   const skinName = lastTrackedSkin || readCurrentSkin();
   const championId = lastTrackedChampion || await getMyChampionId();

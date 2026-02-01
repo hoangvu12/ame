@@ -7,10 +7,45 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/hoangvu12/ame/internal/config"
 )
+
+// overlayStatus tracks the latest status line from runoverlay stdout.
+var overlayStatus string
+var overlayStatusMu sync.Mutex
+
+func setOverlayStatus(s string) {
+	overlayStatusMu.Lock()
+	overlayStatus = s
+	overlayStatusMu.Unlock()
+}
+
+// IsHooked returns true if runoverlay has already installed the hook.
+func IsHooked() bool {
+	overlayStatusMu.Lock()
+	defer overlayStatusMu.Unlock()
+	return overlayStatus == "Waiting for exit"
+}
+
+// WaitForHook blocks until runoverlay reports the hook is installed
+// (status == "Waiting for exit") or the timeout expires.
+func WaitForHook(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		overlayStatusMu.Lock()
+		status := overlayStatus
+		overlayStatusMu.Unlock()
+		if status == "Waiting for exit" {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
 
 // Running process reference (like bocchi's this.runningProcess)
 var runningProcess *exec.Cmd
@@ -114,10 +149,17 @@ func RunOverlay(overlayDir, configPath, gameDir string) error {
 
 	runningProcess = cmd
 
-	// Drain stdout/stderr to keep pipes alive
+	// Reset overlay status for this run
+	setOverlayStatus("")
+
+	// Read stdout lines and track runoverlay status
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "Status: ") {
+				setOverlayStatus(strings.TrimPrefix(line, "Status: "))
+			}
 		}
 	}()
 	go func() {
