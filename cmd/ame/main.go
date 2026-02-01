@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/display"
 	"github.com/hoangvu12/ame/internal/game"
 	"github.com/hoangvu12/ame/internal/server"
 	"github.com/hoangvu12/ame/internal/setup"
@@ -245,6 +246,7 @@ func clearConsole() {
 
 // promptSettings shows an interactive settings menu in the console
 func promptSettings() {
+	display.Pause()
 	clearConsole()
 	reader := bufio.NewReader(os.Stdin)
 
@@ -270,13 +272,11 @@ func promptSettings() {
 		game.PromptGameDir()
 	}
 
-	clearConsole()
-	printBanner()
-	fmt.Println("  Ready! Open League client to use skins.")
-	fmt.Println()
+	display.Resume()
 }
 
 func cleanup() {
+	display.Pause()
 	fmt.Println("\n  Shutting down...")
 	server.HandleCleanup()
 	killPenguLoader()
@@ -453,14 +453,8 @@ func main() {
 	// Start WebSocket server in background
 	go server.StartServer(PORT)
 
-	fmt.Println()
-	fmt.Println("  +-----------------------------------------+")
-	fmt.Println("  |  Ready! Open League client to use skins |")
-	fmt.Println("  |                                         |")
-	fmt.Println("  |  Keep this window running.              |")
-	fmt.Println("  |  To quit: right-click tray icon > Quit  |")
-	fmt.Println("  +-----------------------------------------+")
-	fmt.Println()
+	display.Init(Version)
+	display.Log("Started")
 
 	// Run system tray (blocks until quit)
 	runTray()

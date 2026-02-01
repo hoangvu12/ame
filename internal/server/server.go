@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/display"
 	"github.com/hoangvu12/ame/internal/game"
 	"github.com/hoangvu12/ame/internal/modtools"
 	"github.com/hoangvu12/ame/internal/skin"
@@ -122,12 +123,12 @@ func sendStatus(conn *websocket.Conn, status, message string) {
 	data, _ := json.Marshal(payload)
 	conn.WriteMessage(websocket.TextMessage, data)
 
-	// Only log important status changes
+	// Log important status changes to the live display
 	switch status {
 	case "ready":
-		fmt.Printf("  > %s\n", message)
+		display.Log(message)
 	case "error":
-		fmt.Printf("  ! %s\n", message)
+		display.Log("! " + message)
 	}
 }
 
@@ -203,6 +204,9 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	lastChromaName = chromaName
 	stateMu.Unlock()
 
+	display.SetSkin(skinName, chromaName)
+	display.SetOverlay("Active")
+
 	sendStatus(conn, "ready", "Skin applied!")
 }
 
@@ -229,6 +233,9 @@ func HandleCleanup() {
 	lastSkinName = ""
 	lastChromaName = ""
 	stateMu.Unlock()
+
+	display.SetSkin("", "")
+	display.SetOverlay("Inactive")
 }
 
 // handleConnection handles a single WebSocket connection
@@ -236,12 +243,19 @@ func handleConnection(conn *websocket.Conn) {
 	defer func() {
 		clientsMu.Lock()
 		delete(clients, conn)
+		remaining := len(clients)
 		clientsMu.Unlock()
 		conn.Close()
+		if remaining == 0 {
+			display.SetStatus("Waiting for client")
+		}
+		display.Log(fmt.Sprintf("Client disconnected (%d active)", remaining))
 	}()
 	clientsMu.Lock()
 	clients[conn] = true
 	clientsMu.Unlock()
+	display.SetStatus("Connected")
+	display.Log("Client connected")
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -467,6 +481,6 @@ func StartServer(port int) {
 
 	addr := fmt.Sprintf(":%d", port)
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		fmt.Printf("  ! Server error: %v\n", err)
+		display.Log(fmt.Sprintf("! Server error: %v", err))
 	}
 }
