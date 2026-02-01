@@ -1,7 +1,7 @@
 import { BUTTON_ID } from './constants';
-import { getMyChampionId, loadChampionSkins, getChampionName } from './api';
+import { getMyChampionId, loadChampionSkins, getChampionName, forceDefaultSkin } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
-import { wsSendApply } from './websocket';
+import { wsSend, wsSendApply, isOverlayActive } from './websocket';
 import { toastError } from './toast';
 import { getAppliedSkinName, setAppliedSkinName, getSelectedChroma } from './state';
 import { ensureElement, removeElement } from './dom';
@@ -61,6 +61,12 @@ async function onApplyClick() {
 
   if (isDefaultSkin(skin)) return;
 
+  const forced = await forceDefaultSkin(championId);
+  if (!forced) {
+    toastError('Could not set default skin — try again');
+    return;
+  }
+
   const champName = await getChampionName(championId);
   const chroma = getSelectedChroma();
   if (chroma) {
@@ -75,12 +81,28 @@ async function onApplyClick() {
   setButtonState('Applied', true);
 }
 
-export function updateButtonState() {
-  const appliedSkinName = getAppliedSkinName();
-  if (!appliedSkinName) return;
+export function updateButtonState(ownership) {
   const current = readCurrentSkin();
   if (!current) return;
-  if (current === appliedSkinName) {
+
+  if (ownership === null) {
+    setButtonState('Loading...', true);
+    return;
+  }
+
+  if (ownership) {
+    if (isOverlayActive()) {
+      wsSend({ type: 'cleanup' });
+    }
+    if (getAppliedSkinName()) {
+      setAppliedSkinName(null);
+    }
+    setButtonState('Owned', true);
+    return;
+  }
+
+  const appliedSkinName = getAppliedSkinName();
+  if (appliedSkinName && current === appliedSkinName) {
     setButtonState('Applied', true);
   } else {
     setButtonState('Apply Skin', false);

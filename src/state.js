@@ -64,3 +64,39 @@ export function getAppliedChromaId() {
 export function setAppliedChromaId(id) {
   appliedChromaId = id;
 }
+
+// --- Owned skin IDs (Set of numeric skin IDs, per champion) ---
+
+let ownedSkinIds = null;
+let ownedSkinChampionId = null;
+
+export function isOwnedSkin(skinId) {
+  if (!ownedSkinIds) return false;
+  return ownedSkinIds.has(skinId);
+}
+
+export function setOwnedSkinIds(championId, ids) {
+  ownedSkinChampionId = championId;
+  ownedSkinIds = new Set(ids);
+}
+
+export function getOwnedSkinChampionId() {
+  return ownedSkinChampionId;
+}
+
+export function resetOwnedSkins() {
+  ownedSkinIds = null;
+  ownedSkinChampionId = null;
+}
+
+// --- Pending force-default flag (for swiftplay -> champ select transition) ---
+
+let pendingForceDefault = false;
+
+export function getPendingForceDefault() {
+  return pendingForceDefault;
+}
+
+export function setPendingForceDefault(v) {
+  pendingForceDefault = v;
+}

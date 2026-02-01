@@ -165,6 +165,7 @@ function wsScheduleReconnect() {
 }
 
 export function getLastApplyPayload() { return lastApplyPayload; }
+export function isApplyInFlight() { return !!applyResolve; }
 export function isOverlayActive() { return overlayActive; }
 export function setOverlayActive(v) { overlayActive = v; }
 export function onGamePath(cb) { gamePathCallback = cb; }

@@ -1,6 +1,6 @@
 import { CHAMP_SELECT_PHASES, POST_GAME_PHASES, IN_GAME_PHASES, IN_GAME_POLL_MS, POLL_INTERVAL_MS, CHROMA_BTN_CLASS } from './constants';
 import { ensureSwiftplayButton, removeSwiftplayButton, updateSwiftplayButtonState, unlockSwiftplayCarousel, isSwiftplaySkinPanelOpen } from './swiftplay';
-import { getMyChampionId, loadChampionSkins, resetSkinsCache, fetchJson } from './api';
+import { getMyChampionId, getChampionSkins, loadChampionSkins, resetSkinsCache, fetchJson, fetchSummonerId, fetchOwnedSkins, forceDefaultSkin, getChampionIdFromLobbyDOM } from './api';
 import { injectStyles, unlockSkinCarousel } from './styles';
 import { wsConnect, wsSend, isOverlayActive } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState } from './ui';
@@ -11,7 +11,8 @@ import { initSettings } from './settings';
 import { handleReadyCheck, cancelPendingAccept, loadAutoAcceptSetting } from './autoAcceptMatch';
 import { ensureBenchSwap, cleanupBenchSwap, loadBenchSwapSetting } from './benchSwap';
 import { loadAutoSelectSetting, handleChampSelectSession, resetAutoSelect } from './autoSelect';
-import { setLastChampionId, setAppliedSkinName } from './state';
+import { setLastChampionId, setAppliedSkinName, setOwnedSkinIds, resetOwnedSkins, getOwnedSkinChampionId, isOwnedSkin, getPendingForceDefault, setPendingForceDefault } from './state';
+import { readCurrentSkin, findSkinByName } from './skin';
 
 let pollTimer = null;
 let observer = null;
@@ -25,6 +26,36 @@ let swiftplayPollRunning = false;
 let lastChampionId = null;
 let injectionTriggered = false;
 let pollRunning = false;
+let ownershipLoading = false;
+
+async function ensureOwnershipCache(championId) {
+  if (!championId) return;
+  if (getOwnedSkinChampionId() === championId) return;
+  if (ownershipLoading) return;
+  ownershipLoading = true;
+  try {
+    const summonerId = await fetchSummonerId();
+    if (!summonerId) return;
+    const ownedIds = await fetchOwnedSkins(summonerId, championId);
+    if (ownedIds) {
+      setOwnedSkinIds(championId, ownedIds);
+    }
+  } finally {
+    ownershipLoading = false;
+  }
+}
+
+// Returns true (owned), false (not owned), or null (data not ready yet).
+function resolveOwnership(champId) {
+  const skinName = readCurrentSkin();
+  if (!skinName) return null;
+  const skins = getChampionSkins();
+  if (!skins) return null;
+  if (getOwnedSkinChampionId() !== champId) return null;
+  const skin = findSkinByName(skins, skinName);
+  if (!skin) return null;
+  return isOwnedSkin(skin.id);
+}
 
 function stopObserving() {
   if (observer) { observer.disconnect(); observer = null; }
@@ -43,15 +74,24 @@ async function pollUI() {
     ensureApplyButton();
     ensureBenchSwap();
     unlockSkinCarousel();
-    updateButtonState();
 
     const champId = lastChampionId || await getMyChampionId();
-    if (champId) {
-      await loadChampionSkins(champId);
-      ensureChromaButton();
+
+    if (champId && getPendingForceDefault()) {
+      await forceDefaultSkin(champId);
+      setPendingForceDefault(false);
     }
 
-    checkAutoApply(champId);
+    let ownership = null;
+    if (champId) {
+      await loadChampionSkins(champId);
+      await ensureOwnershipCache(champId);
+      ensureChromaButton();
+      ownership = resolveOwnership(champId);
+    }
+
+    updateButtonState(ownership);
+    checkAutoApply(champId, ownership);
   } finally {
     pollRunning = false;
   }
@@ -86,7 +126,16 @@ async function pollSwiftplayUI() {
     }
     ensureSwiftplayButton();
     unlockSwiftplayCarousel();
-    updateSwiftplayButtonState();
+
+    let ownership = null;
+    const champId = await getChampionIdFromLobbyDOM();
+    if (champId) {
+      await loadChampionSkins(champId);
+      await ensureOwnershipCache(champId);
+      ownership = resolveOwnership(champId);
+    }
+
+    updateSwiftplayButtonState(ownership);
   } finally {
     swiftplayPollRunning = false;
   }
@@ -122,6 +171,7 @@ export function init(context) {
       lastChampionId = champId;
       setLastChampionId(champId);
       resetSkinsCache();
+      resetOwnedSkins();
     }
   });
 
@@ -142,9 +192,13 @@ export function init(context) {
     inGame = IN_GAME_PHASES.includes(phase);
 
     if (inChampSelect && !wasInChampSelect) {
+      if (wasInSwiftplay && isOverlayActive()) {
+        setPendingForceDefault(true);
+      }
       lastChampionId = null;
       setLastChampionId(null);
       resetSkinsCache();
+      resetOwnedSkins();
       injectionTriggered = false;
       setAppliedSkinName(null);
       resetAutoApply();
@@ -162,6 +216,7 @@ export function init(context) {
 
     if (inSwiftplay && !wasInSwiftplay) {
       setAppliedSkinName(null);
+      resetOwnedSkins();
       startSwiftplayObserving();
     } else if (!inSwiftplay && wasInSwiftplay) {
       stopSwiftplayObserving();

@@ -77,3 +77,37 @@ export async function getChampionIdFromLobbyDOM() {
   );
   return entry ? entry.id : null;
 }
+
+let cachedSummonerId = null;
+
+export async function fetchSummonerId() {
+  if (cachedSummonerId) return cachedSummonerId;
+  const data = await fetchJson('/lol-summoner/v1/current-summoner');
+  if (!data || !data.summonerId) return null;
+  cachedSummonerId = data.summonerId;
+  return cachedSummonerId;
+}
+
+export async function fetchOwnedSkins(summonerId, championId) {
+  const data = await fetchJson(
+    `/lol-champions/v1/inventories/${summonerId}/champions/${championId}/skins`
+  );
+  if (!data || !Array.isArray(data)) return null;
+  return data
+    .filter(s => s.ownership && (s.ownership.owned || s.ownership.rental?.rented))
+    .map(s => s.id);
+}
+
+export async function forceDefaultSkin(championId) {
+  const defaultSkinId = championId * 1000;
+  try {
+    const res = await fetch('/lol-champ-select/v1/session/my-selection', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedSkinId: defaultSkinId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

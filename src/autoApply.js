@@ -1,6 +1,6 @@
-import { loadChampionSkins, getMyChampionId, getChampionName, fetchJson } from './api';
+import { loadChampionSkins, getMyChampionId, getChampionName, fetchJson, forceDefaultSkin } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
-import { wsSend, wsSendApply } from './websocket';
+import { wsSend, wsSendApply, isApplyInFlight } from './websocket';
 import {
   getAppliedSkinName, setAppliedSkinName,
   getSelectedChroma, setSelectedChroma, clearSelectedChroma,
@@ -70,6 +70,7 @@ function debouncePrefetch(championId, skinName) {
 
 export async function forceApplyIfNeeded() {
   if (getAppliedSkinName()) return;
+  if (isApplyInFlight()) return;
 
   const skinName = lastTrackedSkin || readCurrentSkin();
   const championId = lastTrackedChampion || await getMyChampionId();
@@ -80,6 +81,10 @@ export async function forceApplyIfNeeded() {
 
   const skin = findSkinByName(skins, skinName);
   if (!skin || isDefaultSkin(skin)) return;
+
+  // No forceDefaultSkin here — this runs after leaving champ select, so the
+  // PATCH session endpoint is already gone. The overlay still needs to be
+  // applied as a last resort before the game loads.
 
   const champName = await getChampionName(championId);
   const chroma = getSelectedChroma();
@@ -112,7 +117,7 @@ export function resetAutoApply() {
 
 // --- Stability check (called every poll cycle) ---
 
-export function checkAutoApply(championId) {
+export function checkAutoApply(championId, isCurrentSkinOwned) {
   const skinName = readCurrentSkin();
   const chroma = getSelectedChroma();
 
@@ -132,6 +137,12 @@ export function checkAutoApply(championId) {
   }
 
   if (!skinName || !championId) return;
+
+  // null = ownership data not loaded yet; true = owned skin
+  if (isCurrentSkinOwned !== false) {
+    autoApplyTriggered = false;
+    return;
+  }
 
   const skinChanged = skinName !== lastTrackedSkin;
   const champChanged = championId !== lastTrackedChampion;
@@ -214,6 +225,13 @@ async function triggerAutoApply() {
 
   // Final DOM check
   if (readCurrentSkin() !== startSkin) {
+    autoApplyTriggered = false;
+    stableSince = Date.now();
+    return;
+  }
+
+  const forced = await forceDefaultSkin(championId);
+  if (!forced) {
     autoApplyTriggered = false;
     stableSince = Date.now();
     return;

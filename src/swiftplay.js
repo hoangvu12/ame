@@ -1,7 +1,7 @@
 import { SWIFTPLAY_BUTTON_ID } from './constants';
 import { getChampionIdFromLobbyDOM, loadChampionSkins, getChampionName } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
-import { wsSendApply } from './websocket';
+import { wsSend, wsSendApply, isOverlayActive } from './websocket';
 import { toastError } from './toast';
 import { getAppliedSkinName, setAppliedSkinName, getSelectedChroma } from './state';
 import { ensureElement, removeElement } from './dom';
@@ -37,12 +37,28 @@ function setButtonState(text, disabled) {
   }
 }
 
-export function updateSwiftplayButtonState() {
-  const appliedSkinName = getAppliedSkinName();
-  if (!appliedSkinName) return;
+export function updateSwiftplayButtonState(ownership) {
   const current = readCurrentSkin();
   if (!current) return;
-  if (current === appliedSkinName) {
+
+  if (ownership === null) {
+    setButtonState('Loading...', true);
+    return;
+  }
+
+  if (ownership) {
+    if (isOverlayActive()) {
+      wsSend({ type: 'cleanup' });
+    }
+    if (getAppliedSkinName()) {
+      setAppliedSkinName(null);
+    }
+    setButtonState('Owned', true);
+    return;
+  }
+
+  const appliedSkinName = getAppliedSkinName();
+  if (appliedSkinName && current === appliedSkinName) {
     setButtonState('Applied', true);
   } else {
     setButtonState('Apply Skin', false);
