@@ -1,2 +1,1 @@
-- Fixed room party teammate skins not showing up in game
-- Added room party debug logs to help diagnose issues
+- Added fallback suspend methods for better compatibility
