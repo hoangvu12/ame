@@ -1,3 +1,8 @@
+# Commits
+
+- Always use a single-line commit message (no body, no co-authored-by, no credits)
+- Keep messages short and descriptive (e.g. `fix: room party teammate skins not showing`)
+
 # Releasing
 
 When creating a new release (pushing a version tag):

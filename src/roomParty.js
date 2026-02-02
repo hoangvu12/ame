@@ -63,6 +63,7 @@ export async function joinRoom(existingSession) {
 
 export function notifySkinChange(championId, skinId, baseSkinId, championName, skinName, chromaName) {
   if (!enabled || !joined) return;
+  console.log(`[ame] Room party: notifying skin change: ${skinName} (${skinId})`);
   wsSend({
     type: 'roomPartySkin',
     championId,

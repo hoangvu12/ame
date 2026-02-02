@@ -1,1 +1,2 @@
-- Fixed room party not working in custom games and failing to join due to race condition
+- Fixed room party teammate skins not showing up in game
+- Added room party debug logs to help diagnose issues

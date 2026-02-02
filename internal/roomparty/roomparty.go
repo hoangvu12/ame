@@ -140,7 +140,8 @@ func (rs *RoomState) IsActive() bool {
 	return rs.active
 }
 
-// GetAllModNames returns a comma-separated mod directory name list for mkoverlay --mods.
+// GetAllModNames returns a slash-separated mod directory name list for mkoverlay --mods.
+// mod-tools expects slash-separated names (e.g. "skin_1/skin_2/skin_3").
 // It includes the user's own skin and all teammate skins that exist in ModsDir.
 func (rs *RoomState) GetAllModNames(ownSkinID string) string {
 	rs.mu.Lock()
@@ -163,10 +164,11 @@ func (rs *RoomState) GetAllModNames(ownSkinID string) string {
 		}
 	}
 
-	return strings.Join(names, ",")
+	return strings.Join(names, "/")
 }
 
-// ComputeModKey returns a sorted, comma-separated skin ID list for cache-keying the prebuilt overlay.
+// ComputeModKey returns a sorted, deduplicated, comma-separated skin ID list
+// for cache-keying the prebuilt overlay.
 func (rs *RoomState) ComputeModKey(ownSkinID string) string {
 	rs.mu.Lock()
 	teammates := make([]Member, len(rs.teammates))
@@ -174,9 +176,39 @@ func (rs *RoomState) ComputeModKey(ownSkinID string) string {
 	rs.mu.Unlock()
 
 	ids := []string{ownSkinID}
+	seen := map[string]bool{ownSkinID: true}
 	for _, tm := range teammates {
-		if tm.SkinInfo.SkinID != "" {
-			ids = append(ids, tm.SkinInfo.SkinID)
+		sid := tm.SkinInfo.SkinID
+		if sid == "" || seen[sid] {
+			continue
+		}
+		ids = append(ids, sid)
+		seen[sid] = true
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, ",")
+}
+
+// ComputeBuiltModKey returns a sorted, comma-separated skin ID list containing only
+// the own skin and teammate skins whose mod directories actually exist in ModsDir.
+// Use this (instead of ComputeModKey) when recording what was actually built into the overlay.
+func (rs *RoomState) ComputeBuiltModKey(ownSkinID string) string {
+	rs.mu.Lock()
+	teammates := make([]Member, len(rs.teammates))
+	copy(teammates, rs.teammates)
+	rs.mu.Unlock()
+
+	ids := []string{ownSkinID}
+	seen := map[string]bool{ownSkinID: true}
+	for _, tm := range teammates {
+		sid := tm.SkinInfo.SkinID
+		if sid == "" || seen[sid] {
+			continue
+		}
+		modDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", sid))
+		if _, err := os.Stat(modDir); err == nil {
+			ids = append(ids, sid)
+			seen[sid] = true
 		}
 	}
 	sort.Strings(ids)

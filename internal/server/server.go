@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -272,8 +273,12 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	// Compute mod key: includes own skin + teammate skins if room party is active
 	currentModKey := skinID
+	teammateSkinCount := 0
 	if roomState.IsActive() {
 		currentModKey = roomState.ComputeModKey(skinID)
+		display.Log(fmt.Sprintf("Apply: room party active, mod key: %s", currentModKey))
+	} else {
+		display.Log("Apply: room party inactive, own skin only")
 	}
 
 	prebuilt := prebuiltModKey == currentModKey
@@ -285,7 +290,10 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		}
 	}
 	if prebuilt {
+		display.Log("Apply: using prebuilt overlay")
 		prebuiltModKey = ""
+		// Count teammate skins from the mod key
+		teammateSkinCount = strings.Count(currentModKey, ",")
 	} else {
 		prebuiltModKey = ""
 		os.RemoveAll(config.ModsDir)
@@ -311,6 +319,9 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		if roomState.IsActive() {
 			modName = roomState.GetAllModNames(skinID)
 		}
+
+		display.Log(fmt.Sprintf("Apply: building overlay with mods: %s", modName))
+		teammateSkinCount = strings.Count(modName, "/")
 
 		success, exitCode := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
 
@@ -342,7 +353,11 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	display.SetSkin(skinName, chromaName)
 	display.SetOverlay("Active")
 
-	sendStatus(conn, "ready", "Skin applied!")
+	if teammateSkinCount > 0 {
+		sendStatus(conn, "ready", fmt.Sprintf("Skin applied! (+%d teammate skins)", teammateSkinCount))
+	} else {
+		sendStatus(conn, "ready", "Skin applied!")
+	}
 }
 
 // handlePrefetch pre-downloads a skin and pre-builds the overlay during champion select
@@ -409,13 +424,23 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 		modName = roomState.GetAllModNames(skinID)
 	}
 
+	display.Log(fmt.Sprintf("Prefetch: building overlay with mods: %s", modName))
+
 	success, _ := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
 	if !success {
+		display.Log("Prefetch: mkoverlay failed")
 		return
 	}
 
-	prebuiltModKey = currentModKey
-	display.Log("Skin ready")
+	// Record what was actually built (only skins whose mod dirs exist),
+	// not the theoretical set. This avoids false cache hits when a
+	// teammate skin download failed.
+	if roomState.IsActive() {
+		prebuiltModKey = roomState.ComputeBuiltModKey(skinID)
+	} else {
+		prebuiltModKey = skinID
+	}
+	display.Log(fmt.Sprintf("Skin ready (prebuilt key: %s)", prebuiltModKey))
 }
 
 // HandleCleanup handles cleanup request

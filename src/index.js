@@ -215,10 +215,14 @@ export function init(context) {
       fetchAndLogTimer();
       joinRoom();
     } else if (!inChampSelect && wasInChampSelect) {
+      console.log('[ame] Champ select ended, running forceApplyIfNeeded');
       stopObserving();
-      forceApplyIfNeeded().then(() => resetAutoApply());
+      forceApplyIfNeeded().finally(() => {
+        console.log('[ame] forceApplyIfNeeded settled, cleaning up room party');
+        resetAutoApply();
+        leaveRoom();
+      });
       resetAutoSelect();
-      leaveRoom();
       injectionTriggered = true;
     }
 

@@ -71,9 +71,9 @@ function debouncePrefetch(championId, skinName) {
 // --- Force apply (last resort before game starts) ---
 
 export async function forceApplyIfNeeded() {
-  if (getAppliedSkinName()) return;
-  if (isApplyInFlight()) return;
-  if (isOverlayActive()) return;
+  if (getAppliedSkinName()) { console.log(`${LOG} forceApply: skipped (already applied: ${getAppliedSkinName()})`); return; }
+  if (isApplyInFlight()) { console.log(`${LOG} forceApply: skipped (apply in-flight)`); return; }
+  if (isOverlayActive()) { console.log(`${LOG} forceApply: skipped (overlay active)`); return; }
 
   const skinName = lastTrackedSkin || readCurrentSkin();
   const championId = lastTrackedChampion || await getMyChampionId();
@@ -91,6 +91,7 @@ export async function forceApplyIfNeeded() {
 
   const champName = await getChampionName(championId);
   const chroma = getSelectedChroma();
+  console.log(`${LOG} forceApply: applying ${skinName} (champ: ${champName}, skin: ${skin.id}${chroma ? ', chroma: ' + chroma.id : ''})`);
   if (chroma) {
     wsSendApply({
       type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId,
