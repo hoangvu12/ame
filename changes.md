@@ -1,1 +1,1 @@
-- Initial changelog
+- Fixed room party not joining when entering champ select
