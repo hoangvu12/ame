@@ -24,6 +24,10 @@ const settingsListeners = {};
 let autoSelectRolesCache = {};
 const autoSelectRolesListeners = [];
 
+// Chat status: separate cache for non-boolean config
+let chatStatusCache = { availability: '', statusMessage: '' };
+const chatStatusListeners = [];
+
 // Room party: teammate update listeners
 const roomPartyListeners = [];
 
@@ -77,6 +81,25 @@ export function onAutoSelectRoles(cb) {
 
 export function getAutoSelectRolesCache() {
   return autoSelectRolesCache;
+}
+
+/**
+ * Register a listener for chat status config changes.
+ * Fires immediately with cached value and on every update.
+ * Returns an unsubscribe function.
+ */
+export function onChatStatus(cb) {
+  chatStatusListeners.push(cb);
+  cb(chatStatusCache);
+  return () => {
+    const idx = chatStatusListeners.indexOf(cb);
+    if (idx !== -1) chatStatusListeners.splice(idx, 1);
+  };
+}
+
+function applyChatStatusConfig(availability, statusMessage) {
+  chatStatusCache = { availability: availability || '', statusMessage: statusMessage || '' };
+  chatStatusListeners.forEach(cb => cb(chatStatusCache));
 }
 
 /**
@@ -142,8 +165,13 @@ export function wsConnect() {
             if (key in msg) applySetting(key, msg[key]);
           }
           if (msg.autoSelectRoles) applyAutoSelectRoles(msg.autoSelectRoles);
+          if ('chatAvailability' in msg || 'chatStatusMessage' in msg) {
+            applyChatStatusConfig(msg.chatAvailability, msg.chatStatusMessage);
+          }
         } else if (msg.type === 'autoSelectRole') {
           applyAutoSelectRole(msg.role, msg.picks, msg.bans);
+        } else if (msg.type === 'chatStatus') {
+          applyChatStatusConfig(msg.availability, msg.statusMessage);
         } else if (settingsListeners[msg.type] && 'enabled' in msg) {
           // Individual setting response (from set* calls)
           applySetting(msg.type, msg.enabled);

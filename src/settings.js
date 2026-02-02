@@ -1,8 +1,9 @@
-import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles } from './websocket';
+import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus } from './websocket';
 import { el } from './dom';
 import { createButton, createCheckbox, createInput } from './components';
 import { loadChampionSummary } from './api';
-import { AUTO_SELECT_ROLES } from './constants';
+import { AUTO_SELECT_ROLES, CHAT_AVAILABILITY_OPTIONS } from './constants';
+import { applyChatStatus } from './chatStatus';
 
 const NAV_TITLE_CLASS = 'lol-settings-nav-title';
 const AME_NAV_NAME = 'ame-settings';
@@ -215,6 +216,52 @@ function buildAutoSelectSection() {
   return section;
 }
 
+function buildChatStatusSection() {
+  let selectedAvailability = '';
+  const buttons = [];
+
+  function updateButtons() {
+    buttons.forEach(({ btn, value }) => {
+      if (value === selectedAvailability) {
+        btn.classList.add('ame-status-active');
+      } else {
+        btn.classList.remove('ame-status-active');
+      }
+    });
+  }
+
+  async function apply() {
+    const label = CHAT_AVAILABILITY_OPTIONS.find(o => o.value === selectedAvailability)?.label || 'Default';
+    updateButtons();
+    applyChatStatus(selectedAvailability);
+    wsSend({ type: 'setChatStatus', availability: selectedAvailability, statusMessage: '' });
+  }
+
+  const buttonRow = el('div', { class: 'ame-status-buttons' },
+    ...CHAT_AVAILABILITY_OPTIONS.map(opt => {
+      const btn = el('div', {
+        class: 'ame-status-btn',
+        onClick: () => {
+          selectedAvailability = opt.value;
+          apply();
+        },
+      }, opt.label);
+      buttons.push({ btn, value: opt.value });
+      return btn;
+    })
+  );
+
+  onChatStatus(({ availability }) => {
+    selectedAvailability = availability || '';
+    updateButtons();
+  });
+
+  return el('div', null,
+    el('span', { class: 'ame-list-label', style: 'font-family: var(--font-body)' }, 'Availability'),
+    buttonRow,
+  );
+}
+
 function buildPanel() {
   const { container: flatInput, input } = createInput({
     placeholder: 'C:\\Riot Games\\League of Legends\\Game',
@@ -240,20 +287,14 @@ function buildPanel() {
             })
           ),
           buildToggle('ameAutoAccept', 'Automatically accept match when found', 'autoAccept'),
+          buildToggle('ameBenchSwap', 'Automatically swap ARAM bench for preferred champion', 'benchSwap'),
+          el('div', { class: 'ame-sub-toggle' },
+            buildToggle('ameBenchSwapSkipCooldown', 'Skip bench swap cooldown (experimental)', 'benchSwapSkipCooldown'),
+          ),
+          buildToggle('ameRoomParty', 'Share skins with teammates using Ame', 'roomParty'),
           buildToggle('ameStartWithWindows', 'Start ame with Windows', 'startWithWindows'),
           buildToggle('ameAutoUpdate', 'Automatically install updates', 'autoUpdate'),
-        ),
-        buildSection('ARAM Bench Swap',
-          buildToggle('ameBenchSwap', 'Enable auto bench swap', 'benchSwap'),
-          el('div', { class: 'ame-sub-toggle' },
-            buildToggle('ameBenchSwapSkipCooldown', 'Skip cooldown (experimental)', 'benchSwapSkipCooldown'),
-          ),
-        ),
-        buildSection('Room Party (Experiment)',
-          buildToggle('ameRoomParty', 'Share skins with teammates using Ame', 'roomParty'),
-          el('div', { class: 'ame-settings-description' },
-            'When enabled, teammates also running Ame can see and use each other\'s modded skins in game.'
-          ),
+          buildChatStatusSection(),
         ),
         buildSection('Auto Champion Select',
           buildAutoSelectSection(),

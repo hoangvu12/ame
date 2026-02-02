@@ -24,6 +24,14 @@ export const AUTO_SELECT_ROLES = [
   { key: 'bottom', label: 'Bot', icon: '/fe/lol-parties/icon-position-bottom.png' },
   { key: 'utility', label: 'Sup', icon: '/fe/lol-parties/icon-position-utility.png' },
 ];
+export const CHAT_AVAILABILITY_OPTIONS = [
+  { value: '', label: 'Default' },
+  { value: 'chat', label: 'Online' },
+  { value: 'away', label: 'Away' },
+  { value: 'dnd', label: 'Busy' },
+  { value: 'mobile', label: 'Mobile' },
+  { value: 'offline', label: 'Offline' },
+];
 export const SWIFTPLAY_BUTTON_ID = 'ame-swiftplay-apply-btn';
 export const STYLE_ID = 'ame-styles';
 export const ROOM_PARTY_INDICATOR_CLASS = 'ame-room-party-indicator';

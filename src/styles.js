@@ -371,6 +371,34 @@ export function injectStyles() {
       color: #5b5a56;
       line-height: 1.4;
     }
+    .ame-status-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .ame-status-btn {
+      padding: 4px 12px;
+      font-family: var(--font-body);
+      font-size: 12px;
+      color: #a09b8c;
+      background: rgba(30, 35, 40, 0.6);
+      border: 1px solid #5b5a56;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .ame-status-btn:hover {
+      border-color: #c8aa6e;
+      color: #f0e6d2;
+      background: rgba(50, 55, 60, 0.8);
+    }
+    .ame-status-btn.ame-status-active {
+      border-color: #c8aa6e;
+      color: #c8aa6e;
+      background: rgba(60, 50, 30, 0.6);
+    }
   `;
   document.head.appendChild(style);
 }

@@ -100,6 +100,13 @@ type RoomPartyUpdateMessage struct {
 	Teammates []roomparty.Member `json:"teammates"`
 }
 
+// ChatStatusSettingMessage represents a chat status get/set
+type ChatStatusSettingMessage struct {
+	Type          string `json:"type"`
+	Availability  string `json:"availability"`
+	StatusMessage string `json:"statusMessage"`
+}
+
 // IncomingMessage is used for parsing the message type first
 type IncomingMessage struct {
 	Type string `json:"type"`
@@ -544,6 +551,8 @@ func handleConnection(conn *websocket.Conn) {
 				"autoSelect":            s.AutoSelect,
 				"autoSelectRoles":       roles,
 				"roomParty":             s.RoomParty,
+				"chatAvailability":      s.ChatAvailability,
+				"chatStatusMessage":     s.ChatStatusMessage,
 			}
 			data, _ := json.Marshal(resp)
 			conn.WriteMessage(websocket.TextMessage, data)
@@ -662,6 +671,19 @@ func handleConnection(conn *websocket.Conn) {
 				sendStatus(conn, "error", "Failed to save room party setting")
 			} else {
 				resp := BoolSettingMessage{Type: "roomParty", Enabled: msg.Enabled}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "setChatStatus":
+			var msg ChatStatusSettingMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := config.SetChatStatus(msg.Availability, msg.StatusMessage); err != nil {
+				sendStatus(conn, "error", "Failed to save chat status setting")
+			} else {
+				resp := ChatStatusSettingMessage{Type: "chatStatus", Availability: msg.Availability, StatusMessage: msg.StatusMessage}
 				data, _ := json.Marshal(resp)
 				conn.WriteMessage(websocket.TextMessage, data)
 			}

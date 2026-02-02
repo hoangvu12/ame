@@ -14,6 +14,7 @@ import { loadAutoSelectSetting, handleChampSelectSession, resetAutoSelect } from
 import { setLastChampionId, setAppliedSkinName, setOwnedSkinIds, resetOwnedSkins, getOwnedSkinChampionId, isOwnedSkin, getPendingForceDefault, setPendingForceDefault } from './state';
 import { readCurrentSkin, findSkinByName } from './skin';
 import { joinRoom, leaveRoom, loadRoomPartySetting } from './roomParty';
+import { initChatStatus } from './chatStatus';
 
 
 let pollTimer = null;
@@ -163,6 +164,7 @@ export function init(context) {
   loadBenchSwapSetting();
   loadAutoSelectSetting();
   loadRoomPartySetting();
+  initChatStatus(context);
 
   context.socket.observe('/lol-champ-select/v1/session', (event) => {
     if (event.eventType === 'Delete' || !inChampSelect) return;

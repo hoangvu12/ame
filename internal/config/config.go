@@ -40,8 +40,10 @@ type Settings struct {
 	StartWithWindows bool                  `json:"startWithWindows"`
 	AutoUpdate       bool                  `json:"autoUpdate"`
 	AutoSelect       bool                  `json:"autoSelect"`
-	AutoSelectRoles  map[string]RoleConfig `json:"autoSelectRoles"`
-	RoomParty        bool                  `json:"roomParty"`
+	AutoSelectRoles   map[string]RoleConfig `json:"autoSelectRoles"`
+	RoomParty         bool                  `json:"roomParty"`
+	ChatAvailability  string                `json:"chatAvailability"`
+	ChatStatusMessage string                `json:"chatStatusMessage"`
 }
 
 // Init loads settings from disk.
@@ -235,6 +237,29 @@ func SetAutoSelectRole(role string, picks, bans []int) error {
 	defer mu.Unlock()
 	ensureAutoSelectRoles()
 	settings.AutoSelectRoles[role] = RoleConfig{Picks: picks, Bans: bans}
+	return save()
+}
+
+// ChatAvailability returns the current chat availability override.
+func ChatAvailability() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.ChatAvailability
+}
+
+// ChatStatusMessage returns the current chat status message.
+func ChatStatusMessage() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.ChatStatusMessage
+}
+
+// SetChatStatus updates and persists both chat availability and status message.
+func SetChatStatus(availability, statusMessage string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.ChatAvailability = availability
+	settings.ChatStatusMessage = statusMessage
 	return save()
 }
 
