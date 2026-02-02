@@ -1,1 +1,1 @@
-- Fixed room party not joining when entering champ select
+- Fixed room party not working in custom games and failing to join due to race condition
