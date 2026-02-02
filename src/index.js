@@ -176,7 +176,7 @@ export function init(context) {
       resetSkinsCache();
       resetOwnedSkins();
     }
-    joinRoom();
+    joinRoom(session);
   });
 
   function handlePhase(phase) {

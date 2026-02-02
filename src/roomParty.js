@@ -20,7 +20,7 @@ export function loadRoomPartySetting() {
   });
 }
 
-export async function joinRoom() {
+export async function joinRoom(existingSession) {
   if (!enabled || joined || joining) {
     console.log('[ame] joinRoom skipped:', !enabled ? 'not enabled' : joined ? 'already joined' : 'join in progress');
     return;
@@ -28,23 +28,18 @@ export async function joinRoom() {
   joining = true;
 
   try {
-    const gameflow = await fetchJson('/lol-gameflow/v1/session');
-    if (!gameflow) { console.log('[ame] joinRoom: no gameflow session'); return; }
-
-    const gameId = gameflow.gameData?.gameId;
-    if (!gameId) { console.log('[ame] joinRoom: no gameId'); return; }
-
     const summoner = await fetchJson('/lol-summoner/v1/current-summoner');
     if (!summoner?.puuid) { console.log('[ame] joinRoom: no puuid'); return; }
 
-    const session = await fetchJson('/lol-champ-select/v1/session');
+    const session = existingSession || await fetchJson('/lol-champ-select/v1/session');
     if (!session?.myTeam) { console.log('[ame] joinRoom: no myTeam'); return; }
+
+    const roomKey = session.chatDetails?.multiUserChatId;
+    if (!roomKey) { console.log('[ame] joinRoom: no multiUserChatId'); return; }
 
     const teamPuuids = session.myTeam
       .map(p => p.puuid)
       .filter(p => p && p !== '' && p !== summoner.puuid);
-
-    const roomKey = `${gameId}`;
 
     console.log('[ame] joinRoom: joining room', roomKey, 'with', teamPuuids.length, 'teammates');
 
