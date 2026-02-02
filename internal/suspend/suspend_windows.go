@@ -20,6 +20,7 @@ const (
 	processVMWrite       = 0x0020
 	processQueryInfo     = 0x0400
 	processDupHandle     = 0x0040
+	processSuspendResume = 0x0800
 )
 
 var (
@@ -29,6 +30,16 @@ var (
 	procThread32First      = kernel32.NewProc("Thread32First")
 	procThread32Next       = kernel32.NewProc("Thread32Next")
 	procGetExitCodeThread  = kernel32.NewProc("GetExitCodeThread")
+	procSuspendThread      = kernel32.NewProc("SuspendThread")
+	procResumeThread       = kernel32.NewProc("ResumeThread")
+
+	procDebugActiveProcess     = kernel32.NewProc("DebugActiveProcess")
+	procDebugActiveProcessStop = kernel32.NewProc("DebugActiveProcessStop")
+	procDebugSetKillOnExit     = kernel32.NewProc("DebugSetProcessKillOnExit")
+
+	ntdll                = windows.NewLazySystemDLL("ntdll.dll")
+	procNtSuspendProcess = ntdll.NewProc("NtSuspendProcess")
+	procNtResumeProcess  = ntdll.NewProc("NtResumeProcess")
 )
 
 type threadEntry32 struct {
@@ -47,11 +58,23 @@ type frozenThread struct {
 	tid          uint32
 }
 
-// Suspender manages suspending and resuming a process via remote thread injection.
+type suspendMethod int
+
+const (
+	methodRemoteThread  suspendMethod = iota // CreateRemoteThread + DuplicateHandle
+	methodDirectSuspend                      // SuspendThread called from our process
+	methodNtSuspend                          // NtSuspendProcess
+	methodDebugger                           // DebugActiveProcess
+)
+
+// Suspender manages suspending and resuming a process.
+// Tries multiple methods in order: remote thread injection, direct SuspendThread,
+// NtSuspendProcess, and DebugActiveProcess.
 type Suspender struct {
 	pid     uint32
 	hProc   windows.Handle
 	threads []frozenThread
+	method  suspendMethod
 
 	addrSuspendThread uintptr
 	addrResumeThread  uintptr
@@ -143,7 +166,7 @@ func callRemote(hProc windows.Handle, funcAddr uintptr, param uintptr) (uint32, 
 // NewSuspender opens the target process and prepares for suspension.
 func NewSuspender(pid uint32) (*Suspender, error) {
 	access := uint32(processCreateThread | processVMOperation | processVMWrite |
-		processVMRead | processQueryInfo | processDupHandle)
+		processVMRead | processQueryInfo | processDupHandle | processSuspendResume)
 	hProc, err := windows.OpenProcess(access, false, pid)
 	if err != nil {
 		return nil, fmt.Errorf("OpenProcess: %w", err)
@@ -166,55 +189,95 @@ func NewSuspender(pid uint32) (*Suspender, error) {
 	}, nil
 }
 
-// Suspend freezes all threads in the target process by calling SuspendThread
-// from inside the process via CreateRemoteThread + DuplicateHandle.
-// Returns the number of successfully suspended threads.
+// Suspend freezes the target process. Tries four methods in order:
+// 1. Remote thread injection (CreateRemoteThread + DuplicateHandle)
+// 2. Direct SuspendThread on each thread
+// 3. NtSuspendProcess
+// 4. DebugActiveProcess
 func (s *Suspender) Suspend() (int, error) {
-	tids, err := getThreadIDs(s.pid)
-	if err != nil {
-		return 0, err
+	tids, _ := getThreadIDs(s.pid)
+
+	// Method 1: Remote thread injection
+	if len(tids) > 0 {
+		for _, tid := range tids {
+			hLocal, _, _ := procOpenThread.Call(threadSuspendResume, 0, uintptr(tid))
+			if hLocal == 0 {
+				continue
+			}
+
+			var hRemote windows.Handle
+			err := windows.DuplicateHandle(
+				windows.CurrentProcess(),
+				windows.Handle(hLocal),
+				s.hProc,
+				&hRemote,
+				threadSuspendResume,
+				false,
+				0,
+			)
+			if err != nil {
+				windows.CloseHandle(windows.Handle(hLocal))
+				continue
+			}
+
+			exitCode, err := callRemote(s.hProc, s.addrSuspendThread, uintptr(hRemote))
+			if err != nil || exitCode == 0xFFFFFFFF {
+				callRemote(s.hProc, s.addrCloseHandle, uintptr(hRemote))
+				windows.CloseHandle(windows.Handle(hLocal))
+				continue
+			}
+
+			s.threads = append(s.threads, frozenThread{
+				localHandle:  windows.Handle(hLocal),
+				remoteHandle: uintptr(hRemote),
+				tid:          tid,
+			})
+		}
+		if len(s.threads) > 0 {
+			s.method = methodRemoteThread
+			return len(s.threads), nil
+		}
 	}
 
-	for _, tid := range tids {
-		hLocal, _, err := procOpenThread.Call(threadSuspendResume, 0, uintptr(tid))
-		if hLocal == 0 {
-			continue
+	// Method 2: Direct SuspendThread from our process
+	if len(tids) > 0 {
+		for _, tid := range tids {
+			hThread, _, _ := procOpenThread.Call(threadSuspendResume, 0, uintptr(tid))
+			if hThread == 0 {
+				continue
+			}
+			ret, _, _ := procSuspendThread.Call(hThread)
+			if ret == 0xFFFFFFFF {
+				windows.CloseHandle(windows.Handle(hThread))
+				continue
+			}
+			s.threads = append(s.threads, frozenThread{
+				localHandle: windows.Handle(hThread),
+				tid:         tid,
+			})
 		}
-
-		var hRemote windows.Handle
-		err2 := windows.DuplicateHandle(
-			windows.CurrentProcess(),
-			windows.Handle(hLocal),
-			s.hProc,
-			&hRemote,
-			threadSuspendResume,
-			false,
-			0,
-		)
-		if err2 != nil {
-			windows.CloseHandle(windows.Handle(hLocal))
-			continue
+		if len(s.threads) > 0 {
+			s.method = methodDirectSuspend
+			return len(s.threads), nil
 		}
-
-		exitCode, err := callRemote(s.hProc, s.addrSuspendThread, uintptr(hRemote))
-		if err != nil || exitCode == 0xFFFFFFFF {
-			// Clean up remote handle on failure
-			callRemote(s.hProc, s.addrCloseHandle, uintptr(hRemote))
-			windows.CloseHandle(windows.Handle(hLocal))
-			continue
-		}
-
-		s.threads = append(s.threads, frozenThread{
-			localHandle:  windows.Handle(hLocal),
-			remoteHandle: uintptr(hRemote),
-			tid:          tid,
-		})
 	}
 
-	if len(s.threads) == 0 {
-		return 0, fmt.Errorf("could not suspend any threads")
+	// Method 3: NtSuspendProcess
+	r, _, _ := procNtSuspendProcess.Call(uintptr(s.hProc))
+	if r == 0 {
+		s.method = methodNtSuspend
+		return 1, nil
 	}
-	return len(s.threads), nil
+
+	// Method 4: DebugActiveProcess
+	r, _, _ = procDebugActiveProcess.Call(uintptr(s.pid))
+	if r != 0 {
+		procDebugSetKillOnExit.Call(0)
+		s.method = methodDebugger
+		return 1, nil
+	}
+
+	return 0, fmt.Errorf("all suspend methods failed")
 }
 
 // Close releases the process handle without resuming threads.
@@ -226,14 +289,31 @@ func (s *Suspender) Close() {
 	}
 }
 
-// Resume unfreezes all suspended threads and releases handles.
+// Resume unfreezes the process and releases handles.
 func (s *Suspender) Resume() error {
-	for _, ft := range s.threads {
-		callRemote(s.hProc, s.addrResumeThread, uintptr(ft.remoteHandle))
-		callRemote(s.hProc, s.addrCloseHandle, uintptr(ft.remoteHandle))
-		windows.CloseHandle(ft.localHandle)
+	switch s.method {
+	case methodRemoteThread:
+		for _, ft := range s.threads {
+			callRemote(s.hProc, s.addrResumeThread, uintptr(ft.remoteHandle))
+			callRemote(s.hProc, s.addrCloseHandle, uintptr(ft.remoteHandle))
+			windows.CloseHandle(ft.localHandle)
+		}
+		s.threads = nil
+
+	case methodDirectSuspend:
+		for _, ft := range s.threads {
+			procResumeThread.Call(uintptr(ft.localHandle))
+			windows.CloseHandle(ft.localHandle)
+		}
+		s.threads = nil
+
+	case methodNtSuspend:
+		procNtResumeProcess.Call(uintptr(s.hProc))
+
+	case methodDebugger:
+		procDebugActiveProcessStop.Call(uintptr(s.pid))
 	}
-	s.threads = nil
+
 	windows.CloseHandle(s.hProc)
 	s.hProc = 0
 	return nil
