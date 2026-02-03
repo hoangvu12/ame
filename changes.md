@@ -1,3 +1,3 @@
-- Fixed teammate skin being removed when room party polling temporarily loses a teammate
-- Reduced unnecessary overlay rebuilds when teammates browse skins during champion select
-- Teammate skin changes are now debounced and applied once at the end of champion select
+- Fixed auto champion select not working consistently during pick and ban phase
+- Fixed auto champion select not matching your role correctly
+- Fixed skin not applying when browsing skins before locking in
