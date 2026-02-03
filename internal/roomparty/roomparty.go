@@ -88,7 +88,7 @@ func (rs *RoomState) Join(roomKey, puuid string, teamPuuids []string) {
 	rs.postJoin()
 
 	// Start polling
-	go rs.pollLoop(ctx)
+	go rs.pollLoop(ctx, roomKey, puuid)
 }
 
 // UpdateSkin updates the local user's skin info and re-registers with the CF Worker.
@@ -116,12 +116,15 @@ func (rs *RoomState) Leave() {
 		rs.cancelPoll = nil
 	}
 	rs.teammates = nil
+	roomKey := rs.roomKey
+	puuid := rs.puuid
 	rs.mu.Unlock()
 
 	display.SetParty("Off")
 
-	// Best-effort leave
-	go rs.postLeave()
+	// Best-effort leave — use captured values to avoid racing with a
+	// subsequent Join() that may overwrite rs.roomKey before the goroutine runs.
+	go rs.postLeaveFor(roomKey, puuid)
 }
 
 // GetTeammates returns the current list of Ame-using teammates.
@@ -258,7 +261,9 @@ func (rs *RoomState) DownloadTeammateSkins() {
 }
 
 // pollLoop polls the CF Worker for room members every pollInterval.
-func (rs *RoomState) pollLoop(ctx context.Context) {
+// roomKey identifies which room this loop belongs to; if rs.roomKey has
+// changed (rapid Leave→Join), the stale result is discarded.
+func (rs *RoomState) pollLoop(ctx context.Context, roomKey, puuid string) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -267,13 +272,13 @@ func (rs *RoomState) pollLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			members, err := rs.fetchMembers()
+			members, err := rs.fetchMembersFor(roomKey, puuid)
 			if err != nil {
 				continue
 			}
 
 			rs.mu.Lock()
-			if !rs.active {
+			if !rs.active || rs.roomKey != roomKey {
 				rs.mu.Unlock()
 				return
 			}
@@ -375,12 +380,7 @@ type membersResponse struct {
 	Members []Member `json:"members"`
 }
 
-func (rs *RoomState) fetchMembers() ([]Member, error) {
-	rs.mu.Lock()
-	roomKey := rs.roomKey
-	puuid := rs.puuid
-	rs.mu.Unlock()
-
+func (rs *RoomState) fetchMembersFor(roomKey, puuid string) ([]Member, error) {
 	u := fmt.Sprintf("%s/rooms/members?roomKey=%s&puuid=%s",
 		workerURL,
 		url.QueryEscape(roomKey),
@@ -400,12 +400,7 @@ func (rs *RoomState) fetchMembers() ([]Member, error) {
 	return result.Members, nil
 }
 
-func (rs *RoomState) postLeave() {
-	rs.mu.Lock()
-	roomKey := rs.roomKey
-	puuid := rs.puuid
-	rs.mu.Unlock()
-
+func (rs *RoomState) postLeaveFor(roomKey, puuid string) {
 	body := map[string]interface{}{
 		"roomKey": roomKey,
 		"puuid":   puuid,

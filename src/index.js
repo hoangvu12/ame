@@ -217,6 +217,7 @@ export function init(context) {
       startObserving();
       fetchAndLogGameflow();
       fetchAndLogTimer();
+      leaveRoom();
       joinRoom();
     } else if (!inChampSelect && wasInChampSelect) {
       console.log('[ame] Champ select ended, flushing retrigger + forceApply');

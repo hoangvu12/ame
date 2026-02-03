@@ -1,3 +1,1 @@
-- Fixed auto champion select not working consistently during pick and ban phase
-- Fixed auto champion select not matching your role correctly
-- Fixed skin not applying when browsing skins before locking in
+- Fixed room party disconnecting when starting a new match
