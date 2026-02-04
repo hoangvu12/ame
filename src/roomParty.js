@@ -3,6 +3,7 @@ import { fetchJson } from './api';
 import { el } from './dom';
 import { ROOM_PARTY_INDICATOR_CLASS } from './constants';
 import { retriggerPrefetch } from './autoApply';
+import { t } from './i18n';
 
 const RETRIGGER_DEBOUNCE_MS = 5000;
 
@@ -160,7 +161,7 @@ async function renderTeammateIndicators() {
 
     const badge = el('div', {
       class: ROOM_PARTY_INDICATOR_CLASS,
-      title: `Ame: ${label}`,
+      title: t('room_party.tooltip', { label }),
     }, el('span', null, label));
 
     slot.appendChild(badge);

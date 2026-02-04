@@ -1,0 +1,77 @@
+{
+  "ui": {
+    "apply_skin": "应用皮肤",
+    "applied": "已应用",
+    "owned": "已拥有",
+    "loading": "加载中...",
+    "open_ame": "打开 ame.exe",
+    "connection_banner": "Ame 未运行。打开 ame.exe 以启用应用。",
+    "remove_skin": "移除皮肤"
+  },
+  "errors": {
+    "pick_champion_first": "请先选择英雄",
+    "could_not_load_skin_data": "无法加载皮肤数据",
+    "skin_not_found": "在游戏数据中找不到皮肤",
+    "could_not_set_default": "无法设置默认皮肤 — 请重试",
+    "could_not_identify_champion": "无法识别英雄"
+  },
+  "toast": {
+    "apply": {
+      "loading": "正在应用皮肤...",
+      "success": "皮肤已应用！",
+      "error": "应用皮肤失败"
+    }
+  },
+  "settings": {
+    "nav_title": "Ame",
+    "nav_item": "设置",
+    "sections": {
+      "general": "常规",
+      "auto_select": "自动选人"
+    },
+    "general": {
+      "game_path_placeholder": "C:\\Riot Games\\League of Legends\\Game",
+      "save": "保存",
+      "auto_accept": "匹配到对局时自动接受",
+      "bench_swap": "自动将 ARAM 替补席换为优先英雄",
+      "bench_swap_skip_cooldown": "跳过替补席换人冷却（实验性）",
+      "room_party": "与使用 Ame 的队友分享皮肤",
+      "start_with_windows": "随 Windows 启动 ame",
+      "auto_update": "自动安装更新"
+    },
+    "auto_select": {
+      "enable": "启用自动选人",
+      "search_placeholder": "搜索英雄...",
+      "pick_priority": "优先选择：",
+      "ban_priority": "优先禁用："
+    },
+    "chat_status": {
+      "title": "状态"
+    },
+    "uninstall": {
+      "button": "卸载 Ame",
+      "title": "卸载 AME",
+      "body": "确定要卸载 Ame 吗？这将删除所有 Ame 文件和设置。",
+      "confirm": "卸载",
+      "cancel": "取消"
+    }
+  },
+  "roles": {
+    "top": "上路",
+    "jungle": "打野",
+    "middle": "中路",
+    "bottom": "下路",
+    "utility": "辅助"
+  },
+  "chat_status": {
+    "default": "默认",
+    "online": "在线",
+    "away": "离开",
+    "busy": "忙碌",
+    "mobile": "移动端",
+    "offline": "离线"
+  },
+  "room_party": {
+    "tooltip": "Ame：{label}"
+  }
+}

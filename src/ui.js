@@ -7,6 +7,7 @@ import { getAppliedSkinName, setAppliedSkinName, getSelectedChroma, getSkinForce
 import { ensureElement, removeElement, el } from './dom';
 import { createButton } from './components';
 import { notifySkinChange } from './roomParty';
+import { t } from './i18n';
 
 export function ensureApplyButton() {
   ensureElement(BUTTON_ID, '.toggle-ability-previews-button-container', (container) => {
@@ -16,7 +17,7 @@ export function ensureApplyButton() {
     container.querySelectorAll('.framing-line').forEach(line => {
       line.style.display = 'none';
     });
-    return createButton('Apply Skin', {
+    return createButton(t('ui.apply_skin'), {
       class: 'toggle-ability-previews-button',
       onClick: onApplyClick,
     });
@@ -35,7 +36,7 @@ export function ensureConnectionBanner() {
 
   const banner = el('div', { class: 'ame-connection-banner' },
     el('span', { class: 'ame-connection-dot' }),
-    el('span', { class: 'ame-connection-text' }, 'Ame is not running. Open ame.exe to enable apply.')
+    el('span', { class: 'ame-connection-text' }, t('ui.connection_banner'))
   );
   banner.id = CONNECTION_BANNER_ID;
 
@@ -67,7 +68,7 @@ export function initConnectionStatus() {
   onConnection((connected) => {
     setConnectionBanner(connected);
     if (!connected) {
-      setButtonState('Open ame.exe', true);
+      setButtonState(t('ui.open_ame'), true);
     }
   });
 }
@@ -89,19 +90,19 @@ async function onApplyClick() {
 
   const championId = await getMyChampionId();
   if (!championId) {
-    toastError('Pick a champion first');
+    toastError(t('errors.pick_champion_first'));
     return;
   }
 
   const skins = await loadChampionSkins(championId);
   if (!skins) {
-    toastError('Could not load skin data');
+    toastError(t('errors.could_not_load_skin_data'));
     return;
   }
 
   const skin = findSkinByName(skins, skinName);
   if (!skin) {
-    toastError('Skin not found in game data');
+    toastError(t('errors.skin_not_found'));
     return;
   }
 
@@ -111,7 +112,7 @@ async function onApplyClick() {
   const forced = await forceDefaultSkin(championId);
   console.log(`[ame:ui] forceDefaultSkin result: ${forced}`);
   if (!forced) {
-    toastError('Could not set default skin — try again');
+    toastError(t('errors.could_not_set_default'));
     return;
   }
   setSkinForced(true);
@@ -130,12 +131,12 @@ async function onApplyClick() {
     notifySkinChange(championId, skin.id, '', champName, skin.name, '');
   }
   setAppliedSkinName(skinName);
-  setButtonState('Applied', true);
+  setButtonState(t('ui.applied'), true);
 }
 
 export function updateButtonState(ownership) {
   if (!isConnected()) {
-    setButtonState('Open ame.exe', true);
+    setButtonState(t('ui.open_ame'), true);
     return;
   }
 
@@ -143,7 +144,7 @@ export function updateButtonState(ownership) {
   if (!current) return;
 
   if (ownership === null) {
-    setButtonState('Loading...', true);
+    setButtonState(t('ui.loading'), true);
     return;
   }
 
@@ -159,14 +160,14 @@ export function updateButtonState(ownership) {
     if (getAppliedSkinName()) {
       setAppliedSkinName(null);
     }
-    setButtonState('Owned', true);
+    setButtonState(t('ui.owned'), true);
     return;
   }
 
   const appliedSkinName = getAppliedSkinName();
   if (appliedSkinName && current === appliedSkinName) {
-    setButtonState('Applied', true);
+    setButtonState(t('ui.applied'), true);
   } else {
-    setButtonState('Apply Skin', false);
+    setButtonState(t('ui.apply_skin'), false);
   }
 }

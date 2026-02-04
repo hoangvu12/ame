@@ -1,6 +1,7 @@
 import { WS_URL, WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS } from './constants';
 import { toastError, toastPromise } from './toast';
 import { el } from './dom';
+import { t } from './i18n';
 
 let ws = null;
 let wsReconnectDelay = WS_RECONNECT_BASE_MS;
@@ -272,9 +273,9 @@ export function wsSendApply(obj) {
   promise.then(() => { overlayActive = true; });
 
   toastPromise(promise, {
-    loading: 'Applying skin...',
-    success: 'Skin applied!',
-    error: 'Failed to apply skin',
+    loading: t('toast.apply.loading'),
+    success: t('toast.apply.success'),
+    error: t('toast.apply.error'),
   });
 
   wsSend(obj);

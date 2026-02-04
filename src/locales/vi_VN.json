@@ -1,0 +1,77 @@
+{
+  "ui": {
+    "apply_skin": "Áp dụng trang phục",
+    "applied": "Đã áp dụng",
+    "owned": "Đã sở hữu",
+    "loading": "Đang tải...",
+    "open_ame": "Mở ame.exe",
+    "connection_banner": "Ame chưa chạy. Mở ame.exe để bật áp dụng.",
+    "remove_skin": "Gỡ trang phục"
+  },
+  "errors": {
+    "pick_champion_first": "Hãy chọn tướng trước",
+    "could_not_load_skin_data": "Không thể tải dữ liệu trang phục",
+    "skin_not_found": "Không tìm thấy trang phục trong dữ liệu trò chơi",
+    "could_not_set_default": "Không thể đặt trang phục mặc định — hãy thử lại",
+    "could_not_identify_champion": "Không thể xác định tướng"
+  },
+  "toast": {
+    "apply": {
+      "loading": "Đang áp dụng trang phục...",
+      "success": "Đã áp dụng trang phục!",
+      "error": "Áp dụng trang phục thất bại"
+    }
+  },
+  "settings": {
+    "nav_title": "Ame",
+    "nav_item": "CÀI ĐẶT",
+    "sections": {
+      "general": "Chung",
+      "auto_select": "Tự động chọn tướng"
+    },
+    "general": {
+      "game_path_placeholder": "C:\\Riot Games\\League of Legends\\Game",
+      "save": "Lưu",
+      "auto_accept": "Tự động chấp nhận khi tìm thấy trận",
+      "bench_swap": "Tự đổi tướng ARAM trên băng ghế theo ưu tiên",
+      "bench_swap_skip_cooldown": "Bỏ qua hồi chiêu đổi tướng (thử nghiệm)",
+      "room_party": "Chia sẻ trang phục với đồng đội dùng Ame",
+      "start_with_windows": "Mở ame cùng Windows",
+      "auto_update": "Tự động cài đặt cập nhật"
+    },
+    "auto_select": {
+      "enable": "Bật tự động chọn tướng",
+      "search_placeholder": "Tìm tướng...",
+      "pick_priority": "Ưu tiên chọn:",
+      "ban_priority": "Ưu tiên cấm:"
+    },
+    "chat_status": {
+      "title": "Trạng thái"
+    },
+    "uninstall": {
+      "button": "Gỡ cài đặt Ame",
+      "title": "GỠ CÀI ĐẶT AME",
+      "body": "Bạn có chắc muốn gỡ cài đặt Ame? Thao tác này sẽ xóa toàn bộ tệp và cài đặt của Ame.",
+      "confirm": "GỠ CÀI ĐẶT",
+      "cancel": "HỦY"
+    }
+  },
+  "roles": {
+    "top": "Đường trên",
+    "jungle": "Đi rừng",
+    "middle": "Đường giữa",
+    "bottom": "Đường dưới",
+    "utility": "Hỗ trợ"
+  },
+  "chat_status": {
+    "default": "Mặc định",
+    "online": "Trực tuyến",
+    "away": "Vắng mặt",
+    "busy": "Bận",
+    "mobile": "Di động",
+    "offline": "Ngoại tuyến"
+  },
+  "room_party": {
+    "tooltip": "Ame: {label}"
+  }
+}

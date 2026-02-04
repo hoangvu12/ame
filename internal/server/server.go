@@ -431,7 +431,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	display.Log(fmt.Sprintf("Apply: stored lastModKey=%s (wanted=%s)", actualModKey, currentModKey))
 
 	display.SetSkin(skinName, chromaName)
-	display.SetOverlay("Active")
+	display.SetOverlayKey("display.value.overlay_active", nil)
 
 	if teammateSkinCount > 0 {
 		sendStatus(conn, "ready", fmt.Sprintf("Skin applied! (+%d teammate skins)", teammateSkinCount))
@@ -545,7 +545,7 @@ func HandleCleanup() {
 	stateMu.Unlock()
 
 	display.SetSkin("", "")
-	display.SetOverlay("Inactive")
+	display.SetOverlayKey("display.value.overlay_inactive", nil)
 }
 
 // broadcastRoomUpdate sends room party teammate info to all connected clients.
@@ -576,14 +576,14 @@ func handleConnection(conn *websocket.Conn) {
 		clientsMu.Unlock()
 		conn.Close()
 		if remaining == 0 {
-			display.SetStatus("Waiting for client")
+			display.SetStatusKey("display.value.waiting_client", nil)
 		}
 		display.Log("Client disconnected")
 	}()
 	clientsMu.Lock()
 	clients[conn] = true
 	clientsMu.Unlock()
-	display.SetStatus("Connected")
+	display.SetStatusKey("display.value.connected", nil)
 	display.Log("Client connected")
 
 	for {

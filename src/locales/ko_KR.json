@@ -1,0 +1,77 @@
+{
+  "ui": {
+    "apply_skin": "스킨 적용",
+    "applied": "적용됨",
+    "owned": "보유함",
+    "loading": "로딩 중...",
+    "open_ame": "ame.exe 열기",
+    "connection_banner": "Ame가 실행 중이 아닙니다. ame.exe를 열어 적용을 활성화하세요.",
+    "remove_skin": "스킨 제거"
+  },
+  "errors": {
+    "pick_champion_first": "먼저 챔피언을 선택하세요",
+    "could_not_load_skin_data": "스킨 데이터를 불러올 수 없습니다",
+    "skin_not_found": "게임 데이터에서 스킨을 찾을 수 없습니다",
+    "could_not_set_default": "기본 스킨을 설정할 수 없습니다 — 다시 시도하세요",
+    "could_not_identify_champion": "챔피언을 식별할 수 없습니다"
+  },
+  "toast": {
+    "apply": {
+      "loading": "스킨 적용 중...",
+      "success": "스킨이 적용되었습니다!",
+      "error": "스킨 적용 실패"
+    }
+  },
+  "settings": {
+    "nav_title": "Ame",
+    "nav_item": "설정",
+    "sections": {
+      "general": "일반",
+      "auto_select": "자동 챔피언 선택"
+    },
+    "general": {
+      "game_path_placeholder": "C:\\Riot Games\\League of Legends\\Game",
+      "save": "저장",
+      "auto_accept": "매치가 잡히면 자동 수락",
+      "bench_swap": "ARAM 벤치에서 우선 순위 챔피언으로 자동 교체",
+      "bench_swap_skip_cooldown": "벤치 교체 쿨타임 무시(실험적)",
+      "room_party": "Ame를 사용하는 팀원과 스킨 공유",
+      "start_with_windows": "Windows 시작 시 ame 실행",
+      "auto_update": "업데이트 자동 설치"
+    },
+    "auto_select": {
+      "enable": "자동 챔피언 선택 활성화",
+      "search_placeholder": "챔피언 검색...",
+      "pick_priority": "선호 선택:",
+      "ban_priority": "선호 밴:"
+    },
+    "chat_status": {
+      "title": "상태"
+    },
+    "uninstall": {
+      "button": "Ame 제거",
+      "title": "AME 제거",
+      "body": "Ame를 제거하시겠습니까? 모든 Ame 파일과 설정이 삭제됩니다.",
+      "confirm": "제거",
+      "cancel": "취소"
+    }
+  },
+  "roles": {
+    "top": "탑",
+    "jungle": "정글",
+    "middle": "미드",
+    "bottom": "바텀",
+    "utility": "서폿"
+  },
+  "chat_status": {
+    "default": "기본",
+    "online": "온라인",
+    "away": "자리 비움",
+    "busy": "다른 용무",
+    "mobile": "모바일",
+    "offline": "오프라인"
+  },
+  "room_party": {
+    "tooltip": "Ame: {label}"
+  }
+}

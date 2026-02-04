@@ -4,6 +4,7 @@ import { getChampionSkins } from './api';
 import { isDefaultSkin } from './skin';
 import { removeElement } from './dom';
 import { createButton, createDropdown } from './components';
+import { t } from './i18n';
 
 const RECONNECT_SELECTORS = [
   '.game-in-progress-container',
@@ -123,12 +124,12 @@ export function updateInGameStatus() {
   const hasSkins = !!dropdown;
 
   if (active) {
-    btn.textContent = 'Remove Skin';
+    btn.textContent = t('ui.remove_skin');
     btn.removeAttribute('disabled');
     btn.style.display = '';
     if (dropdown) dropdown.style.display = 'none';
   } else if (hasSkins) {
-    btn.textContent = 'Apply Skin';
+    btn.textContent = t('ui.apply_skin');
     btn.removeAttribute('disabled');
     btn.style.display = '';
     dropdown.style.display = '';

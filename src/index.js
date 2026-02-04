@@ -15,6 +15,7 @@ import { setLastChampionId, setAppliedSkinName, setOwnedSkinIds, resetOwnedSkins
 import { readCurrentSkin, findSkinByName } from './skin';
 import { joinRoom, leaveRoom, loadRoomPartySetting, flushPendingRetrigger } from './roomParty';
 import { initChatStatus } from './chatStatus';
+import { initI18n } from './i18n';
 
 
 let pollTimer = null;
@@ -163,7 +164,8 @@ function startSwiftplayObserving() {
   pollSwiftplayUI();
 }
 
-export function init(context) {
+export async function init(context) {
+  await initI18n();
   injectStyles();
   wsConnect();
   initConnectionStatus();

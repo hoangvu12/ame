@@ -11,6 +11,7 @@ import {
 import { setButtonState } from './ui';
 import { PREFETCH_DEBOUNCE_MS } from './constants';
 import { notifySkinChange } from './roomParty';
+import { t } from './i18n';
 
 const AUTO_APPLY_STABLE_MS = 10000;
 const LOG = '[ame:auto]';
@@ -153,7 +154,7 @@ export async function forceApplyIfNeeded() {
     }
     setAppliedSkinName(savedPayload.skinName);
     setAppliedChromaId(chroma?.id || null);
-    setButtonState('Applied', true);
+    setButtonState(t('ui.applied'), true);
     return;
   }
 
@@ -189,7 +190,7 @@ export async function forceApplyIfNeeded() {
 
   setAppliedSkinName(skinName);
   setAppliedChromaId(chroma?.id || null);
-  setButtonState('Applied', true);
+  setButtonState(t('ui.applied'), true);
 }
 
 // --- Reset ---
@@ -285,7 +286,7 @@ export function checkAutoApply(championId, isCurrentSkinOwned) {
     if (currentKey !== appliedKey) {
       setAppliedSkinName(null);
       setAppliedChromaId(null);
-      setButtonState('Apply Skin', false);
+      setButtonState(t('ui.apply_skin'), false);
       autoApplyTriggered = false;
     } else {
       return;
@@ -413,7 +414,7 @@ async function triggerAutoApply() {
 
   setAppliedSkinName(startSkin);
   setAppliedChromaId(startChroma?.id || null);
-  setButtonState('Applied', true);
+  setButtonState(t('ui.applied'), true);
 }
 
 // --- Debug helpers ---

@@ -1,0 +1,77 @@
+{
+  "ui": {
+    "apply_skin": "Apply Skin",
+    "applied": "Applied",
+    "owned": "Owned",
+    "loading": "Loading...",
+    "open_ame": "Open ame.exe",
+    "connection_banner": "Ame is not running. Open ame.exe to enable apply.",
+    "remove_skin": "Remove Skin"
+  },
+  "errors": {
+    "pick_champion_first": "Pick a champion first",
+    "could_not_load_skin_data": "Could not load skin data",
+    "skin_not_found": "Skin not found in game data",
+    "could_not_set_default": "Could not set default skin — try again",
+    "could_not_identify_champion": "Could not identify champion"
+  },
+  "toast": {
+    "apply": {
+      "loading": "Applying skin...",
+      "success": "Skin applied!",
+      "error": "Failed to apply skin"
+    }
+  },
+  "settings": {
+    "nav_title": "Ame",
+    "nav_item": "SETTINGS",
+    "sections": {
+      "general": "General",
+      "auto_select": "Auto Champion Select"
+    },
+    "general": {
+      "game_path_placeholder": "C:\\Riot Games\\League of Legends\\Game",
+      "save": "Save",
+      "auto_accept": "Automatically accept match when found",
+      "bench_swap": "Automatically swap ARAM bench for preferred champion",
+      "bench_swap_skip_cooldown": "Skip bench swap cooldown (experimental)",
+      "room_party": "Share skins with teammates using Ame",
+      "start_with_windows": "Start ame with Windows",
+      "auto_update": "Automatically install updates"
+    },
+    "auto_select": {
+      "enable": "Enable auto champion select",
+      "search_placeholder": "Search champion...",
+      "pick_priority": "Pick priority:",
+      "ban_priority": "Ban priority:"
+    },
+    "chat_status": {
+      "title": "Availability"
+    },
+    "uninstall": {
+      "button": "Uninstall Ame",
+      "title": "UNINSTALL AME",
+      "body": "Are you sure you want to uninstall Ame? This will remove all Ame files and settings.",
+      "confirm": "UNINSTALL",
+      "cancel": "CANCEL"
+    }
+  },
+  "roles": {
+    "top": "Top",
+    "jungle": "Jungle",
+    "middle": "Mid",
+    "bottom": "Bot",
+    "utility": "Sup"
+  },
+  "chat_status": {
+    "default": "Default",
+    "online": "Online",
+    "away": "Away",
+    "busy": "Busy",
+    "mobile": "Mobile",
+    "offline": "Offline"
+  },
+  "room_party": {
+    "tooltip": "Ame: {label}"
+  }
+}

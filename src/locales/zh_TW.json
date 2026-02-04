@@ -1,0 +1,77 @@
+{
+  "ui": {
+    "apply_skin": "套用造型",
+    "applied": "已套用",
+    "owned": "已擁有",
+    "loading": "載入中...",
+    "open_ame": "開啟 ame.exe",
+    "connection_banner": "Ame 尚未執行。開啟 ame.exe 以啟用套用。",
+    "remove_skin": "移除造型"
+  },
+  "errors": {
+    "pick_champion_first": "請先選擇英雄",
+    "could_not_load_skin_data": "無法載入造型資料",
+    "skin_not_found": "在遊戲資料中找不到造型",
+    "could_not_set_default": "無法設定預設造型 — 請再試一次",
+    "could_not_identify_champion": "無法辨識英雄"
+  },
+  "toast": {
+    "apply": {
+      "loading": "正在套用造型...",
+      "success": "造型已套用！",
+      "error": "套用造型失敗"
+    }
+  },
+  "settings": {
+    "nav_title": "Ame",
+    "nav_item": "設定",
+    "sections": {
+      "general": "一般",
+      "auto_select": "自動選角"
+    },
+    "general": {
+      "game_path_placeholder": "C:\\Riot Games\\League of Legends\\Game",
+      "save": "儲存",
+      "auto_accept": "匹配到對局時自動接受",
+      "bench_swap": "自動將 ARAM 替補席換成優先英雄",
+      "bench_swap_skip_cooldown": "略過替補席換人冷卻（實驗性）",
+      "room_party": "與使用 Ame 的隊友分享造型",
+      "start_with_windows": "隨 Windows 啟動 ame",
+      "auto_update": "自動安裝更新"
+    },
+    "auto_select": {
+      "enable": "啟用自動選角",
+      "search_placeholder": "搜尋英雄...",
+      "pick_priority": "優先選擇：",
+      "ban_priority": "優先禁用："
+    },
+    "chat_status": {
+      "title": "狀態"
+    },
+    "uninstall": {
+      "button": "解除安裝 Ame",
+      "title": "解除安裝 AME",
+      "body": "確定要解除安裝 Ame 嗎？這將移除所有 Ame 檔案與設定。",
+      "confirm": "解除安裝",
+      "cancel": "取消"
+    }
+  },
+  "roles": {
+    "top": "上路",
+    "jungle": "打野",
+    "middle": "中路",
+    "bottom": "下路",
+    "utility": "輔助"
+  },
+  "chat_status": {
+    "default": "預設",
+    "online": "線上",
+    "away": "離開",
+    "busy": "忙碌",
+    "mobile": "行動",
+    "offline": "離線"
+  },
+  "room_party": {
+    "tooltip": "Ame：{label}"
+  }
+}

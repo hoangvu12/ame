@@ -1,0 +1,77 @@
+{
+  "ui": {
+    "apply_skin": "スキンを適用",
+    "applied": "適用済み",
+    "owned": "所持",
+    "loading": "読み込み中...",
+    "open_ame": "ame.exe を開く",
+    "connection_banner": "Ame が起動していません。ame.exe を開いて適用を有効にしてください。",
+    "remove_skin": "スキンを解除"
+  },
+  "errors": {
+    "pick_champion_first": "先にチャンピオンを選択してください",
+    "could_not_load_skin_data": "スキンデータを読み込めませんでした",
+    "skin_not_found": "ゲームデータにスキンが見つかりません",
+    "could_not_set_default": "デフォルトスキンを設定できません — もう一度お試しください",
+    "could_not_identify_champion": "チャンピオンを特定できません"
+  },
+  "toast": {
+    "apply": {
+      "loading": "スキンを適用中...",
+      "success": "スキンを適用しました！",
+      "error": "スキンの適用に失敗しました"
+    }
+  },
+  "settings": {
+    "nav_title": "Ame",
+    "nav_item": "設定",
+    "sections": {
+      "general": "一般",
+      "auto_select": "自動チャンピオン選択"
+    },
+    "general": {
+      "game_path_placeholder": "C:\\Riot Games\\League of Legends\\Game",
+      "save": "保存",
+      "auto_accept": "マッチが見つかったら自動で受諾",
+      "bench_swap": "ARAM のベンチを優先チャンピオンに自動交換",
+      "bench_swap_skip_cooldown": "ベンチ交換のクールダウンを無視（実験的）",
+      "room_party": "Ame を使うチームメイトとスキンを共有",
+      "start_with_windows": "Windows 起動時に ame を起動",
+      "auto_update": "更新を自動でインストール"
+    },
+    "auto_select": {
+      "enable": "自動チャンピオン選択を有効化",
+      "search_placeholder": "チャンピオンを検索...",
+      "pick_priority": "優先ピック：",
+      "ban_priority": "優先バン："
+    },
+    "chat_status": {
+      "title": "ステータス"
+    },
+    "uninstall": {
+      "button": "Ame をアンインストール",
+      "title": "AME をアンインストール",
+      "body": "Ame をアンインストールしますか？すべての Ame ファイルと設定が削除されます。",
+      "confirm": "アンインストール",
+      "cancel": "キャンセル"
+    }
+  },
+  "roles": {
+    "top": "トップ",
+    "jungle": "ジャングル",
+    "middle": "ミッド",
+    "bottom": "ボット",
+    "utility": "サポート"
+  },
+  "chat_status": {
+    "default": "デフォルト",
+    "online": "オンライン",
+    "away": "離席中",
+    "busy": "取り込み中",
+    "mobile": "モバイル",
+    "offline": "オフライン"
+  },
+  "room_party": {
+    "tooltip": "Ame：{label}"
+  }
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/hoangvu12/ame/internal/config"
 	"github.com/hoangvu12/ame/internal/display"
 	"github.com/hoangvu12/ame/internal/game"
+	"github.com/hoangvu12/ame/internal/i18n"
 	"github.com/hoangvu12/ame/internal/lcu"
 	"github.com/hoangvu12/ame/internal/server"
 	"github.com/hoangvu12/ame/internal/setup"
@@ -390,6 +391,9 @@ func main() {
 	if err := config.Init(); err != nil {
 		fmt.Printf("  ! Failed to load settings: %v\n", err)
 	}
+
+	// Initialize console locale (best-effort)
+	i18n.Init()
 
 	// Sync startup registration with saved setting
 	syncStartup()

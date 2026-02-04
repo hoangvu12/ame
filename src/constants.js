@@ -19,19 +19,19 @@ export const IN_GAME_POLL_MS = 500;
 export const AUTO_ACCEPT_DELAY_MS = 2000;
 export const AUTO_SELECT_DELAY_MS = 1500;
 export const AUTO_SELECT_ROLES = [
-  { key: 'top', label: 'Top', icon: '/fe/lol-parties/icon-position-top.png' },
-  { key: 'jungle', label: 'Jungle', icon: '/fe/lol-parties/icon-position-jungle.png' },
-  { key: 'middle', label: 'Mid', icon: '/fe/lol-parties/icon-position-middle.png' },
-  { key: 'bottom', label: 'Bot', icon: '/fe/lol-parties/icon-position-bottom.png' },
-  { key: 'utility', label: 'Sup', icon: '/fe/lol-parties/icon-position-utility.png' },
+  { key: 'top', labelKey: 'roles.top', icon: '/fe/lol-parties/icon-position-top.png' },
+  { key: 'jungle', labelKey: 'roles.jungle', icon: '/fe/lol-parties/icon-position-jungle.png' },
+  { key: 'middle', labelKey: 'roles.middle', icon: '/fe/lol-parties/icon-position-middle.png' },
+  { key: 'bottom', labelKey: 'roles.bottom', icon: '/fe/lol-parties/icon-position-bottom.png' },
+  { key: 'utility', labelKey: 'roles.utility', icon: '/fe/lol-parties/icon-position-utility.png' },
 ];
 export const CHAT_AVAILABILITY_OPTIONS = [
-  { value: '', label: 'Default' },
-  { value: 'chat', label: 'Online' },
-  { value: 'away', label: 'Away' },
-  { value: 'dnd', label: 'Busy' },
-  { value: 'mobile', label: 'Mobile' },
-  { value: 'offline', label: 'Offline' },
+  { value: '', labelKey: 'chat_status.default' },
+  { value: 'chat', labelKey: 'chat_status.online' },
+  { value: 'away', labelKey: 'chat_status.away' },
+  { value: 'dnd', labelKey: 'chat_status.busy' },
+  { value: 'mobile', labelKey: 'chat_status.mobile' },
+  { value: 'offline', labelKey: 'chat_status.offline' },
 ];
 export const SWIFTPLAY_BUTTON_ID = 'ame-swiftplay-apply-btn';
 export const STYLE_ID = 'ame-styles';

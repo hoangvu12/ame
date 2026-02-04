@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -296,31 +297,39 @@ func SetupPluginFromLocal(srcDir string) bool {
 	os.RemoveAll(PLUGIN_DIR)
 	os.MkdirAll(PLUGIN_DIR, os.ModePerm)
 
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
+	if err := copyPluginDir(srcDir); err != nil {
 		statusFail("Plugin setup")
 		return false
 	}
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		srcPath := filepath.Join(srcDir, entry.Name())
-		dstPath := filepath.Join(PLUGIN_DIR, entry.Name())
-
-		data, err := os.ReadFile(srcPath)
-		if err != nil {
-			statusFail("Plugin setup")
-			return false
-		}
-		if err := os.WriteFile(dstPath, data, 0644); err != nil {
-			statusFail("Plugin setup")
-			return false
-		}
-	}
-
 	return true
+}
+
+func copyPluginDir(srcDir string) error {
+	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		dstPath := filepath.Join(PLUGIN_DIR, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, os.ModePerm)
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dstPath, data, 0644)
+	})
 }
 
 // SetupPlugin downloads and extracts plugin zip (exported for use after updates)

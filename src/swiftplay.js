@@ -6,6 +6,7 @@ import { toastError } from './toast';
 import { getAppliedSkinName, setAppliedSkinName, getSelectedChroma } from './state';
 import { ensureElement, removeElement, el } from './dom';
 import { createButton } from './components';
+import { t } from './i18n';
 
 const CONTAINER_SELECTOR = '.quick-play-skin-select-component .top-part';
 const SWIFTPLAY_BANNER_ID = `${CONNECTION_BANNER_ID}-swiftplay`;
@@ -16,7 +17,7 @@ export function ensureSwiftplayButton() {
     container.style.justifyContent = 'center';
     container.style.alignItems = 'center';
     container.style.padding = '8px 0';
-    return createButton('Apply Skin', {
+    return createButton(t('ui.apply_skin'), {
       class: 'toggle-ability-previews-button',
       onClick: onSwiftplayApplyClick,
     });
@@ -35,7 +36,7 @@ export function ensureSwiftplayConnectionBanner() {
 
   const banner = el('div', { class: 'ame-connection-banner' },
     el('span', { class: 'ame-connection-dot' }),
-    el('span', { class: 'ame-connection-text' }, 'Ame is not running. Open ame.exe to enable apply.')
+    el('span', { class: 'ame-connection-text' }, t('ui.connection_banner'))
   );
   banner.id = SWIFTPLAY_BANNER_ID;
   container.prepend(banner);
@@ -61,7 +62,7 @@ function setButtonState(text, disabled) {
 
 export function updateSwiftplayButtonState(ownership) {
   if (!isConnected()) {
-    setButtonState('Open ame.exe', true);
+    setButtonState(t('ui.open_ame'), true);
     return;
   }
 
@@ -69,7 +70,7 @@ export function updateSwiftplayButtonState(ownership) {
   if (!current) return;
 
   if (ownership === null) {
-    setButtonState('Loading...', true);
+    setButtonState(t('ui.loading'), true);
     return;
   }
 
@@ -80,15 +81,15 @@ export function updateSwiftplayButtonState(ownership) {
     if (getAppliedSkinName()) {
       setAppliedSkinName(null);
     }
-    setButtonState('Owned', true);
+    setButtonState(t('ui.owned'), true);
     return;
   }
 
   const appliedSkinName = getAppliedSkinName();
   if (appliedSkinName && current === appliedSkinName) {
-    setButtonState('Applied', true);
+    setButtonState(t('ui.applied'), true);
   } else {
-    setButtonState('Apply Skin', false);
+    setButtonState(t('ui.apply_skin'), false);
   }
 }
 
@@ -98,19 +99,19 @@ async function onSwiftplayApplyClick() {
 
   const championId = await getChampionIdFromLobbyDOM();
   if (!championId) {
-    toastError('Could not identify champion');
+    toastError(t('errors.could_not_identify_champion'));
     return;
   }
 
   const skins = await loadChampionSkins(championId);
   if (!skins) {
-    toastError('Could not load skin data');
+    toastError(t('errors.could_not_load_skin_data'));
     return;
   }
 
   const skin = findSkinByName(skins, skinName);
   if (!skin) {
-    toastError('Skin not found in game data');
+    toastError(t('errors.skin_not_found'));
     return;
   }
 
@@ -127,7 +128,7 @@ async function onSwiftplayApplyClick() {
     wsSendApply({ type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name });
   }
   setAppliedSkinName(skinName);
-  setButtonState('Applied', true);
+  setButtonState(t('ui.applied'), true);
 }
 
 export function unlockSwiftplayCarousel() {

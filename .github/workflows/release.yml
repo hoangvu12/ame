@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           cd src
-          7z a -tzip ../dist/plugin.zip *.js
+          7z a -tzip ../dist/plugin.zip *.js locales
 
       - name: Prepare release notes
         shell: bash

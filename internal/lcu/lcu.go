@@ -3,6 +3,7 @@ package lcu
 import (
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -55,6 +56,53 @@ func RestartClient() error {
 	}
 
 	return nil
+}
+
+type regionLocaleResponse struct {
+	Locale string `json:"locale"`
+}
+
+// GetRegionLocale fetches the client locale (e.g. en_US, vi_VN) from the LCU API.
+func GetRegionLocale() (string, error) {
+	port, token, err := getCredentials()
+	if err != nil {
+		return "", err
+	}
+
+	auth := base64.StdEncoding.EncodeToString([]byte("riot:" + token))
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://127.0.0.1:%s/riotclient/region-locale", port), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Basic "+auth)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("LCU returned status %d", resp.StatusCode)
+	}
+
+	var payload regionLocaleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+
+	if payload.Locale == "" {
+		return "", fmt.Errorf("LCU returned empty locale")
+	}
+
+	return payload.Locale, nil
 }
 
 var (

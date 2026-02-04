@@ -1,0 +1,77 @@
+{
+  "ui": {
+    "apply_skin": "Aplicar skin",
+    "applied": "Aplicada",
+    "owned": "En posesión",
+    "loading": "Cargando...",
+    "open_ame": "Abrir ame.exe",
+    "connection_banner": "Ame no está en ejecución. Abre ame.exe para habilitar la aplicación.",
+    "remove_skin": "Quitar skin"
+  },
+  "errors": {
+    "pick_champion_first": "Elige un campeón primero",
+    "could_not_load_skin_data": "No se pudieron cargar los datos de la skin",
+    "skin_not_found": "No se encontró la skin en los datos del juego",
+    "could_not_set_default": "No se pudo establecer la skin predeterminada — inténtalo de nuevo",
+    "could_not_identify_champion": "No se pudo identificar el campeón"
+  },
+  "toast": {
+    "apply": {
+      "loading": "Aplicando skin...",
+      "success": "¡Skin aplicada!",
+      "error": "Error al aplicar la skin"
+    }
+  },
+  "settings": {
+    "nav_title": "Ame",
+    "nav_item": "AJUSTES",
+    "sections": {
+      "general": "General",
+      "auto_select": "Selección automática"
+    },
+    "general": {
+      "game_path_placeholder": "C:\\Riot Games\\League of Legends\\Game",
+      "save": "Guardar",
+      "auto_accept": "Aceptar automáticamente cuando se encuentre partida",
+      "bench_swap": "Cambiar automáticamente el banco de ARAM por el campeón preferido",
+      "bench_swap_skip_cooldown": "Omitir el enfriamiento del cambio de banco (experimental)",
+      "room_party": "Compartir skins con compañeros que usen Ame",
+      "start_with_windows": "Iniciar ame con Windows",
+      "auto_update": "Instalar actualizaciones automáticamente"
+    },
+    "auto_select": {
+      "enable": "Activar selección automática de campeón",
+      "search_placeholder": "Buscar campeón...",
+      "pick_priority": "Prioridad de selección:",
+      "ban_priority": "Prioridad de bloqueo:"
+    },
+    "chat_status": {
+      "title": "Estado"
+    },
+    "uninstall": {
+      "button": "Desinstalar Ame",
+      "title": "DESINSTALAR AME",
+      "body": "¿Seguro que deseas desinstalar Ame? Esto eliminará todos los archivos y ajustes de Ame.",
+      "confirm": "DESINSTALAR",
+      "cancel": "CANCELAR"
+    }
+  },
+  "roles": {
+    "top": "Superior",
+    "jungle": "Jungla",
+    "middle": "Central",
+    "bottom": "Inferior",
+    "utility": "Soporte"
+  },
+  "chat_status": {
+    "default": "Predeterminado",
+    "online": "En línea",
+    "away": "Ausente",
+    "busy": "Ocupado",
+    "mobile": "Móvil",
+    "offline": "Desconectado"
+  },
+  "room_party": {
+    "tooltip": "Ame: {label}"
+  }
+}

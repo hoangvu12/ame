@@ -81,7 +81,7 @@ func (rs *RoomState) Join(roomKey, puuid string, teamPuuids []string) {
 	rs.cancelPoll = cancel
 	rs.mu.Unlock()
 
-	display.SetParty(fmt.Sprintf("In room (%d teammates)", len(teamPuuids)))
+	display.SetPartyKey("display.value.party_in_room_teammates", map[string]interface{}{"count": len(teamPuuids)})
 	display.Log(fmt.Sprintf("Room key: %s", roomKey))
 
 	// Register with CF Worker
@@ -120,7 +120,7 @@ func (rs *RoomState) Leave() {
 	puuid := rs.puuid
 	rs.mu.Unlock()
 
-	display.SetParty("Off")
+	display.SetPartyKey("display.value.party_off", nil)
 
 	// Best-effort leave — use captured values to avoid racing with a
 	// subsequent Join() that may overwrite rs.roomKey before the goroutine runs.
@@ -292,9 +292,9 @@ func (rs *RoomState) pollLoop(ctx context.Context, roomKey, puuid string) {
 			// Update display if teammate count changed
 			if len(newTeammates) != len(oldTeammates) {
 				if len(newTeammates) > 0 {
-					display.SetParty(fmt.Sprintf("Active (%d Ame users)", len(newTeammates)))
+					display.SetPartyKey("display.value.party_active_users", map[string]interface{}{"count": len(newTeammates)})
 				} else {
-					display.SetParty("In room (waiting)")
+					display.SetPartyKey("display.value.party_in_room_waiting", nil)
 				}
 			}
 

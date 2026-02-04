@@ -4,6 +4,7 @@ import { createButton, createCheckbox, createInput } from './components';
 import { loadChampionSummary } from './api';
 import { AUTO_SELECT_ROLES, CHAT_AVAILABILITY_OPTIONS } from './constants';
 import { applyChatStatus } from './chatStatus';
+import { t } from './i18n';
 
 const NAV_TITLE_CLASS = 'lol-settings-nav-title';
 const AME_NAV_NAME = 'ame-settings';
@@ -17,14 +18,14 @@ let retryTimer = null;
 function buildNavGroup() {
   const frag = document.createDocumentFragment();
   frag.appendChild(
-    el('div', { class: NAV_TITLE_CLASS, dataset: { ame: '1' } }, 'Ame')
+    el('div', { class: NAV_TITLE_CLASS, dataset: { ame: '1' } }, t('settings.nav_title'))
   );
   frag.appendChild(
     el('lol-uikit-navigation-bar', {
       direction: 'down', type: 'tabbed', selectedindex: '-1', dataset: { ame: '1' },
     },
       el('lol-uikit-navigation-item', { name: AME_NAV_NAME, class: 'lol-settings-nav' },
-        el('div', null, 'SETTINGS')
+        el('div', null, t('settings.nav_item'))
       )
     )
   );
@@ -94,7 +95,7 @@ function buildChampionEntry(id, index, listType) {
 }
 
 function buildChampionPicker(listType) {
-  const { container: flatInput, input } = createInput({ placeholder: 'Search champion...' });
+  const { container: flatInput, input } = createInput({ placeholder: t('settings.auto_select.search_placeholder') });
   const resultsList = el('lol-uikit-scrollable', {
     class: 'ame-search-results',
     'overflow-masks': 'enabled',
@@ -173,8 +174,8 @@ let roleContentEl = null;
 function renderRoleContent() {
   if (!roleContentEl) return;
   roleContentEl.innerHTML = '';
-  roleContentEl.appendChild(buildChampionList('picks', 'Pick priority:'));
-  roleContentEl.appendChild(buildChampionList('bans', 'Ban priority:'));
+  roleContentEl.appendChild(buildChampionList('picks', t('settings.auto_select.pick_priority')));
+  roleContentEl.appendChild(buildChampionList('bans', t('settings.auto_select.ban_priority')));
 }
 
 function buildRoleTabs() {
@@ -187,7 +188,7 @@ function buildRoleTabs() {
         tab.classList.add('active');
         renderRoleContent();
       },
-    }, el('img', { src: role.icon, alt: role.label }));
+    }, el('img', { src: role.icon, alt: t(role.labelKey) }));
     return tab;
   });
 
@@ -198,7 +199,7 @@ function buildAutoSelectSection() {
   roleContentEl = el('div', { class: 'ame-role-content' });
 
   const section = el('div', null,
-    buildToggle('ameAutoSelect', 'Enable auto champion select', 'autoSelect'),
+    buildToggle('ameAutoSelect', t('settings.auto_select.enable'), 'autoSelect'),
     buildRoleTabs(),
     roleContentEl,
   );
@@ -232,7 +233,6 @@ function buildChatStatusSection() {
   }
 
   async function apply() {
-    const label = CHAT_AVAILABILITY_OPTIONS.find(o => o.value === selectedAvailability)?.label || 'Default';
     updateButtons();
     applyChatStatus(selectedAvailability);
     wsSend({ type: 'setChatStatus', availability: selectedAvailability, statusMessage: '' });
@@ -246,7 +246,7 @@ function buildChatStatusSection() {
           selectedAvailability = opt.value;
           apply();
         },
-      }, opt.label);
+      }, t(opt.labelKey));
       buttons.push({ btn, value: opt.value });
       return btn;
     })
@@ -258,7 +258,7 @@ function buildChatStatusSection() {
   });
 
   return el('div', null,
-    el('span', { class: 'ame-list-label', style: 'font-family: var(--font-body)' }, 'Availability'),
+    el('span', { class: 'ame-list-label', style: 'font-family: var(--font-body)' }, t('settings.chat_status.title')),
     buttonRow,
   );
 }
@@ -278,9 +278,9 @@ function showUninstallDialog() {
       el('lol-uikit-dialog-frame', { class: 'dialog-frame', orientation: 'bottom' },
         el('div', { class: 'dialog-content' },
           el('lol-uikit-content-block', { class: 'app-controls-exit-dialog', type: 'dialog-small' },
-            el('h4', null, 'UNINSTALL AME'),
+            el('h4', null, t('settings.uninstall.title')),
             el('hr', { class: 'heading-spacer' }),
-            el('p', null, 'Are you sure you want to uninstall Ame? This will remove all Ame files and settings.'),
+            el('p', null, t('settings.uninstall.body')),
           ),
         ),
         el('lol-uikit-flat-button-group', { type: 'dialog-frame' },
@@ -291,12 +291,12 @@ function showUninstallDialog() {
               wsSend({ type: 'uninstall' });
               modal.remove();
             },
-          }, 'UNINSTALL'),
+          }, t('settings.uninstall.confirm')),
           el('lol-uikit-flat-button', {
             tabindex: '2',
             class: 'button-decline',
             onClick: () => modal.remove(),
-          }, 'CANCEL'),
+          }, t('settings.uninstall.cancel')),
         ),
       ),
     ),
@@ -307,7 +307,7 @@ function showUninstallDialog() {
 
 function buildPanel() {
   const { container: flatInput, input } = createInput({
-    placeholder: 'C:\\Riot Games\\League of Legends\\Game',
+    placeholder: t('settings.general.game_path_placeholder'),
   });
 
   return el('div', { class: AME_PANEL_CLASS },
@@ -317,10 +317,10 @@ function buildPanel() {
       'scrolled-top': 'true',
     },
       el('div', { class: 'ame-settings-panel-inner' },
-        buildSection('General',
+        buildSection(t('settings.sections.general'),
           el('div', { class: 'ame-settings-row' },
             flatInput,
-            createButton('Save', {
+            createButton(t('settings.general.save'), {
               class: 'ame-settings-save',
               onClick: () => {
                 const path = input.value.trim();
@@ -329,21 +329,21 @@ function buildPanel() {
               },
             })
           ),
-          buildToggle('ameAutoAccept', 'Automatically accept match when found', 'autoAccept'),
-          buildToggle('ameBenchSwap', 'Automatically swap ARAM bench for preferred champion', 'benchSwap'),
+          buildToggle('ameAutoAccept', t('settings.general.auto_accept'), 'autoAccept'),
+          buildToggle('ameBenchSwap', t('settings.general.bench_swap'), 'benchSwap'),
           el('div', { class: 'ame-sub-toggle' },
-            buildToggle('ameBenchSwapSkipCooldown', 'Skip bench swap cooldown (experimental)', 'benchSwapSkipCooldown'),
+            buildToggle('ameBenchSwapSkipCooldown', t('settings.general.bench_swap_skip_cooldown'), 'benchSwapSkipCooldown'),
           ),
-          buildToggle('ameRoomParty', 'Share skins with teammates using Ame', 'roomParty'),
-          buildToggle('ameStartWithWindows', 'Start ame with Windows', 'startWithWindows'),
-          buildToggle('ameAutoUpdate', 'Automatically install updates', 'autoUpdate'),
+          buildToggle('ameRoomParty', t('settings.general.room_party'), 'roomParty'),
+          buildToggle('ameStartWithWindows', t('settings.general.start_with_windows'), 'startWithWindows'),
+          buildToggle('ameAutoUpdate', t('settings.general.auto_update'), 'autoUpdate'),
           buildChatStatusSection(),
         ),
-        buildSection('Auto Champion Select',
+        buildSection(t('settings.sections.auto_select'),
           buildAutoSelectSection(),
         ),
         el('div', { class: 'ame-settings-toggle-row', style: { marginTop: '16px' } },
-          createButton('Uninstall Ame', {
+          createButton(t('settings.uninstall.button'), {
             class: 'ame-settings-uninstall',
             onClick: () => showUninstallDialog(),
           }),
