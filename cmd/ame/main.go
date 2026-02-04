@@ -281,13 +281,6 @@ func cleanup() {
 	fmt.Println("\n  Shutting down...")
 	server.HandleCleanup()
 
-	if setup.IsPenguActivated() {
-		setup.DeactivatePengu()
-		if lcu.IsClientRunning() {
-			server.BroadcastRestartPrompt()
-		}
-	}
-
 	killPenguLoader()
 }
 

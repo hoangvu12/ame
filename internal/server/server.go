@@ -548,20 +548,6 @@ func HandleCleanup() {
 	display.SetOverlay("Inactive")
 }
 
-// PendingRestart is set when the client should be prompted to restart.
-// Sent to new WebSocket clients on connect.
-var PendingRestart bool
-
-// BroadcastRestartPrompt sends a needsRestart message to all connected clients.
-func BroadcastRestartPrompt() {
-	data, _ := json.Marshal(map[string]string{"type": "needsRestart"})
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-	for conn := range clients {
-		conn.WriteMessage(websocket.TextMessage, data)
-	}
-}
-
 // broadcastRoomUpdate sends room party teammate info to all connected clients.
 func broadcastRoomUpdate(teammates []roomparty.Member) {
 	msg := RoomPartyUpdateMessage{
@@ -599,12 +585,6 @@ func handleConnection(conn *websocket.Conn) {
 	clientsMu.Unlock()
 	display.SetStatus("Connected")
 	display.Log("Client connected")
-
-	if PendingRestart {
-		PendingRestart = false
-		data, _ := json.Marshal(map[string]string{"type": "needsRestart"})
-		conn.WriteMessage(websocket.TextMessage, data)
-	}
 
 	for {
 		_, message, err := conn.ReadMessage()

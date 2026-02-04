@@ -32,50 +32,6 @@ const chatStatusListeners = [];
 // Room party: teammate update listeners
 const roomPartyListeners = [];
 
-const RESTART_DIALOG_ID = 'ame-restart-dialog';
-
-function showRestartDialog() {
-  if (document.getElementById(RESTART_DIALOG_ID)) return;
-
-  const modal = el('div', { id: RESTART_DIALOG_ID, class: 'modal', style: { position: 'absolute', inset: '0px' } },
-    el('lol-uikit-full-page-backdrop', {
-      class: 'backdrop',
-      style: { display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', inset: '0px' },
-    }),
-    el('div', {
-      class: 'dialog-confirm',
-      style: { display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', inset: '0px' },
-    },
-      el('lol-uikit-dialog-frame', { class: 'dialog-frame', orientation: 'bottom' },
-        el('div', { class: 'dialog-content' },
-          el('lol-uikit-content-block', { class: 'app-controls-exit-dialog', type: 'dialog-small' },
-            el('h4', null, 'RESTART REQUIRED'),
-            el('hr', { class: 'heading-spacer' }),
-            el('p', null, 'League Client needs to restart to apply changes. Restart now?'),
-          ),
-        ),
-        el('lol-uikit-flat-button-group', { type: 'dialog-frame' },
-          el('lol-uikit-flat-button', {
-            tabindex: '1',
-            class: 'button-accept',
-            onClick: () => {
-              fetch('/riotclient/kill-and-restart-ux', { method: 'POST' });
-              modal.remove();
-            },
-          }, 'RESTART'),
-          el('lol-uikit-flat-button', {
-            tabindex: '2',
-            class: 'button-decline',
-            onClick: () => modal.remove(),
-          }, 'LATER'),
-        ),
-      ),
-    ),
-  );
-
-  document.body.appendChild(modal);
-}
-
 /**
  * Register a listener for a boolean setting.
  * Fires immediately with cached value (if available) and on every update.
@@ -217,8 +173,6 @@ export function wsConnect() {
           applyAutoSelectRole(msg.role, msg.picks, msg.bans);
         } else if (msg.type === 'chatStatus') {
           applyChatStatusConfig(msg.availability, msg.statusMessage);
-        } else if (msg.type === 'needsRestart') {
-          showRestartDialog();
         } else if (settingsListeners[msg.type] && 'enabled' in msg) {
           // Individual setting response (from set* calls)
           applySetting(msg.type, msg.enabled);

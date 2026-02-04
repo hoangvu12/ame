@@ -253,21 +253,22 @@ func setupModTools(toolsURL string) bool {
 	return true
 }
 
-// setupPenguLoader detects existing installation or downloads Pengu Loader
-func setupPenguLoader(penguURL string) bool {
+// setupPenguLoader detects existing installation or downloads Pengu Loader.
+// Returns (ok, freshInstall).
+func setupPenguLoader(penguURL string) (bool, bool) {
 	// Check for existing Pengu installation via registry
 	existingDir := GetExistingPenguDir()
 	if existingDir != "" {
 		PENGU_DIR = existingDir
 		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
-		return true
+		return true, false
 	}
 
 	// Check if we already downloaded Pengu to our directory
 	penguExe := filepath.Join(PENGU_DIR, "Pengu Loader.exe")
 	if _, err := os.Stat(penguExe); err == nil {
 		PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
-		return true
+		return true, false
 	}
 
 	// Fresh download needed
@@ -277,17 +278,17 @@ func setupPenguLoader(penguURL string) bool {
 
 	if err := downloadFile(penguURL, zipPath); err != nil {
 		statusFail("Pengu Loader download")
-		return false
+		return false, false
 	}
 
 	if err := extractZip(zipPath, PENGU_DIR); err != nil {
 		statusFail("Pengu Loader setup")
-		return false
+		return false, false
 	}
 
 	os.Remove(zipPath)
 	PLUGIN_DIR = filepath.Join(PENGU_DIR, "plugins", "ame")
-	return true
+	return true, true
 }
 
 // SetupPluginFromLocal copies plugin source files from a local directory
@@ -370,7 +371,8 @@ func RunSetup(config Config) bool {
 	}
 
 	// Setup Pengu Loader
-	if !setupPenguLoader(config.PenguURL) {
+	ok, freshInstall := setupPenguLoader(config.PenguURL)
+	if !ok {
 		return false
 	}
 
@@ -385,8 +387,10 @@ func RunSetup(config Config) bool {
 		}
 	}
 
-	// Check activation
-	checkPenguActivation()
+	// Only auto-activate on fresh install
+	if freshInstall {
+		checkPenguActivation()
+	}
 
 	return true
 }
