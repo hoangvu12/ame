@@ -1,3 +1,1 @@
-- Added logging to help diagnose game not opening issues
-- Improved game suspend/resume reliability
-- Fixed client restarting on every launch (now only restarts on fresh install)
+- Added "I'm stuck" button to release frozen game on reconnect screen

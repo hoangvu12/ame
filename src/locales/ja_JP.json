@@ -6,7 +6,8 @@
     "loading": "読み込み中...",
     "open_ame": "ame.exe を開く",
     "connection_banner": "Ame が起動していません。ame.exe を開いて適用を有効にしてください。",
-    "remove_skin": "スキンを解除"
+    "remove_skin": "スキンを解除",
+    "im_stuck": "フリーズした"
   },
   "errors": {
     "pick_champion_first": "先にチャンピオンを選択してください",
@@ -20,6 +21,11 @@
       "loading": "スキンを適用中...",
       "success": "スキンを適用しました！",
       "error": "スキンの適用に失敗しました"
+    },
+    "unstuck": {
+      "loading": "ゲームを解放中...",
+      "success": "ゲームを解放しました！",
+      "error": "ゲームの解放に失敗しました"
     }
   },
   "settings": {

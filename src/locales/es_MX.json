@@ -6,7 +6,8 @@
     "loading": "Cargando...",
     "open_ame": "Abrir ame.exe",
     "connection_banner": "Ame no está en ejecución. Abre ame.exe para habilitar la aplicación.",
-    "remove_skin": "Quitar skin"
+    "remove_skin": "Quitar skin",
+    "im_stuck": "Estoy atorado"
   },
   "errors": {
     "pick_champion_first": "Elige un campeón primero",
@@ -20,6 +21,11 @@
       "loading": "Aplicando skin...",
       "success": "¡Skin aplicada!",
       "error": "Error al aplicar la skin"
+    },
+    "unstuck": {
+      "loading": "Liberando juego...",
+      "success": "¡Juego liberado!",
+      "error": "Error al liberar el juego"
     }
   },
   "settings": {

@@ -1,5 +1,5 @@
 import { IN_GAME_CONTAINER_ID } from './constants';
-import { wsSend, wsSendApply, getLastApplyPayload, isOverlayActive, setOverlayActive } from './websocket';
+import { wsSend, wsSendApply, wsSendUnstuck, getLastApplyPayload, isOverlayActive, setOverlayActive } from './websocket';
 import { getChampionSkins } from './api';
 import { isDefaultSkin } from './skin';
 import { removeElement } from './dom';
@@ -98,6 +98,14 @@ export function ensureInGameUI() {
   });
 
   container.appendChild(btn);
+
+  const unstuckBtn = createButton(t('ui.im_stuck'), {
+    class: 'ame-ingame-unstuck',
+    onClick: () => {
+      wsSendUnstuck();
+    },
+  });
+  container.appendChild(unstuckBtn);
 
   if (!dropdown) btn.style.display = 'none';
 

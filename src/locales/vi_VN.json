@@ -6,7 +6,8 @@
     "loading": "Đang tải...",
     "open_ame": "Mở ame.exe",
     "connection_banner": "Ame chưa chạy. Mở ame.exe để bật áp dụng.",
-    "remove_skin": "Gỡ trang phục"
+    "remove_skin": "Gỡ trang phục",
+    "im_stuck": "Tôi bị kẹt"
   },
   "errors": {
     "pick_champion_first": "Hãy chọn tướng trước",
@@ -20,6 +21,11 @@
       "loading": "Đang áp dụng trang phục...",
       "success": "Đã áp dụng trang phục!",
       "error": "Áp dụng trang phục thất bại"
+    },
+    "unstuck": {
+      "loading": "Đang giải phóng game...",
+      "success": "Đã giải phóng game!",
+      "error": "Giải phóng game thất bại"
     }
   },
   "settings": {

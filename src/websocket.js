@@ -270,6 +270,46 @@ export function wsSend(obj) {
 }
 
 /**
+ * Send an unstuck message to kill the game process.
+ * Shows a Toast.promise tracking the result.
+ */
+export function wsSendUnstuck() {
+  const promise = new Promise((resolve, reject) => {
+    const originalOnMessage = ws.onmessage;
+    const timeout = setTimeout(() => {
+      ws.onmessage = originalOnMessage;
+      reject(new Error('Timeout'));
+    }, 10000);
+
+    ws.onmessage = (e) => {
+      originalOnMessage(e);
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'status') {
+          clearTimeout(timeout);
+          ws.onmessage = originalOnMessage;
+          if (msg.status === 'ready') {
+            resolve();
+          } else if (msg.status === 'error') {
+            reject(new Error(msg.message));
+          }
+        }
+      } catch {}
+    };
+  });
+
+  promise.then(() => { overlayActive = false; });
+
+  toastPromise(promise, {
+    loading: t('toast.unstuck.loading'),
+    success: t('toast.unstuck.success'),
+    error: t('toast.unstuck.error'),
+  });
+
+  wsSend({ type: 'unstuck' });
+}
+
+/**
  * Send an apply message and show a single Toast.promise tracking the result.
  * If an apply is already in-flight, skip (let the existing one finish).
  */

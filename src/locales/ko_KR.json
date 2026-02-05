@@ -6,7 +6,8 @@
     "loading": "로딩 중...",
     "open_ame": "ame.exe 열기",
     "connection_banner": "Ame가 실행 중이 아닙니다. ame.exe를 열어 적용을 활성화하세요.",
-    "remove_skin": "스킨 제거"
+    "remove_skin": "스킨 제거",
+    "im_stuck": "멈췄어요"
   },
   "errors": {
     "pick_champion_first": "먼저 챔피언을 선택하세요",
@@ -20,6 +21,11 @@
       "loading": "스킨 적용 중...",
       "success": "스킨이 적용되었습니다!",
       "error": "스킨 적용 실패"
+    },
+    "unstuck": {
+      "loading": "게임 해제 중...",
+      "success": "게임이 해제되었습니다!",
+      "error": "게임 해제 실패"
     }
   },
   "settings": {

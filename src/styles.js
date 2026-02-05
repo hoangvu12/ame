@@ -144,6 +144,15 @@ export function injectStyles() {
       line-height: 24px !important;
       margin: 0 !important;
     }
+    .ame-ingame-unstuck {
+      font-size: 11px;
+      white-space: nowrap;
+      padding: 0 8px !important;
+      min-width: 0 !important;
+      height: 24px !important;
+      line-height: 24px !important;
+      margin: 0 !important;
+    }
     .ame-settings-panel {
       height: 100%;
     }

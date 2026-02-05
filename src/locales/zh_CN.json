@@ -6,7 +6,8 @@
     "loading": "加载中...",
     "open_ame": "打开 ame.exe",
     "connection_banner": "Ame 未运行。打开 ame.exe 以启用应用。",
-    "remove_skin": "移除皮肤"
+    "remove_skin": "移除皮肤",
+    "im_stuck": "我卡住了"
   },
   "errors": {
     "pick_champion_first": "请先选择英雄",
@@ -20,6 +21,11 @@
       "loading": "正在应用皮肤...",
       "success": "皮肤已应用！",
       "error": "应用皮肤失败"
+    },
+    "unstuck": {
+      "loading": "正在释放游戏...",
+      "success": "游戏已释放！",
+      "error": "释放游戏失败"
     }
   },
   "settings": {

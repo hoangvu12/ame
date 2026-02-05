@@ -553,6 +553,43 @@ func HandleCleanup() {
 	display.SetOverlayKey("display.value.overlay_inactive", nil)
 }
 
+// handleUnstuck releases suspended game and kills the process to help users who are stuck
+func handleUnstuck(conn *websocket.Conn) {
+	display.Log("Unstuck: releasing game...")
+
+	// Try to find and resume the game process first (in case it's suspended)
+	pid := suspend.FindProcess("League of Legends.exe")
+	if pid != 0 {
+		display.Log(fmt.Sprintf("Unstuck: found game process PID %d, attempting resume...", pid))
+		s, err := suspend.NewSuspender(pid)
+		if err == nil {
+			s.Resume()
+			display.Log("Unstuck: resume attempted")
+		}
+	}
+
+	// Small delay to let the resume take effect
+	time.Sleep(200 * time.Millisecond)
+
+	// Kill the game process
+	hiddenAttr := &syscall.SysProcAttr{HideWindow: true}
+	kill := exec.Command("taskkill", "/F", "/IM", "League of Legends.exe")
+	kill.SysProcAttr = hiddenAttr
+	err := kill.Run()
+
+	if err != nil {
+		display.Log(fmt.Sprintf("Unstuck: failed to kill game: %v", err))
+		sendStatus(conn, "error", "Failed to kill game process")
+		return
+	}
+
+	// Also cleanup overlay state
+	HandleCleanup()
+
+	display.Log("Unstuck: game process killed")
+	sendStatus(conn, "ready", "Game released")
+}
+
 // broadcastRoomUpdate sends room party teammate info to all connected clients.
 func broadcastRoomUpdate(teammates []roomparty.Member) {
 	msg := RoomPartyUpdateMessage{
@@ -831,6 +868,9 @@ func handleConnection(conn *websocket.Conn) {
 		case "roomPartyLeave":
 			roomState.Leave()
 			display.Log("Room Party: left room")
+
+		case "unstuck":
+			go handleUnstuck(conn)
 
 		case "uninstall":
 			go handleUninstall(conn)

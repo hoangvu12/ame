@@ -6,7 +6,8 @@
     "loading": "載入中...",
     "open_ame": "開啟 ame.exe",
     "connection_banner": "Ame 尚未執行。開啟 ame.exe 以啟用套用。",
-    "remove_skin": "移除造型"
+    "remove_skin": "移除造型",
+    "im_stuck": "我卡住了"
   },
   "errors": {
     "pick_champion_first": "請先選擇英雄",
@@ -20,6 +21,11 @@
       "loading": "正在套用造型...",
       "success": "造型已套用！",
       "error": "套用造型失敗"
+    },
+    "unstuck": {
+      "loading": "正在釋放遊戲...",
+      "success": "遊戲已釋放！",
+      "error": "釋放遊戲失敗"
     }
   },
   "settings": {
