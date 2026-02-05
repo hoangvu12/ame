@@ -324,21 +324,26 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		default:
 		}
 
-		display.Log("Game detected, holding until ready...")
+		display.Log(fmt.Sprintf("Game detected (PID %d), holding until ready...", pid))
 		s, err := suspend.NewSuspender(pid)
 		if err != nil {
+			display.Log(fmt.Sprintf("Failed to create suspender: %v", err))
 			return
 		}
 		count, suspendErr := s.Suspend()
 		if suspendErr != nil || count == 0 {
+			display.Log(fmt.Sprintf("Failed to suspend game: count=%d, err=%v", count, suspendErr))
 			s.Close()
 			return
 		}
+		display.Log(fmt.Sprintf("Game suspended successfully (count=%d)", count))
 
 		// Wait for apply to finish, with a safety timeout
 		select {
 		case <-applyDone:
+			display.Log("Apply finished, releasing game...")
 		case <-time.After(30 * time.Second):
+			display.Log("Safety timeout reached (30s), releasing game...")
 		}
 		s.Resume()
 		display.Log("Game released")

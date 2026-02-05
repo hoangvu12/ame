@@ -425,14 +425,6 @@ func main() {
 		setup.SetupPlugin(setupConfig.PluginURL)
 		updater.SaveVersion(Version)
 		updater.CleanupUpdateFile()
-
-		// Restart League Client so it loads the updated plugin
-		if lcu.IsClientRunning() {
-			fmt.Println("  Restarting League Client...")
-			if err := lcu.RestartClient(); err != nil {
-				fmt.Printf("  ! Could not restart client: %v\n", err)
-			}
-		}
 	}
 
 	// Check for updates (auto-applies when minimized or autoUpdate is on)
@@ -452,7 +444,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// If Pengu was freshly activated and client is running, restart it
+	// If Pengu was freshly activated (installed) and client is running, restart it
 	if !wasActivated && setup.IsPenguActivated() && lcu.IsClientRunning() {
 		fmt.Println("  Restarting League Client...")
 		lcu.RestartClient()

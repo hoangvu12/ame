@@ -8,6 +8,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/hoangvu12/ame/internal/display"
 	"golang.org/x/sys/windows"
 )
 
@@ -33,10 +34,6 @@ var (
 	procSuspendThread      = kernel32.NewProc("SuspendThread")
 	procResumeThread       = kernel32.NewProc("ResumeThread")
 
-	procDebugActiveProcess     = kernel32.NewProc("DebugActiveProcess")
-	procDebugActiveProcessStop = kernel32.NewProc("DebugActiveProcessStop")
-	procDebugSetKillOnExit     = kernel32.NewProc("DebugSetProcessKillOnExit")
-
 	ntdll                = windows.NewLazySystemDLL("ntdll.dll")
 	procNtSuspendProcess = ntdll.NewProc("NtSuspendProcess")
 	procNtResumeProcess  = ntdll.NewProc("NtResumeProcess")
@@ -61,10 +58,8 @@ type frozenThread struct {
 type suspendMethod int
 
 const (
-	methodRemoteThread  suspendMethod = iota // CreateRemoteThread + DuplicateHandle
-	methodDirectSuspend                      // SuspendThread called from our process
-	methodNtSuspend                          // NtSuspendProcess
-	methodDebugger                           // DebugActiveProcess
+	methodRemoteThread suspendMethod = iota // CreateRemoteThread + DuplicateHandle
+	methodNtSuspend                         // NtSuspendProcess
 )
 
 // Suspender manages suspending and resuming a process.
@@ -189,24 +184,25 @@ func NewSuspender(pid uint32) (*Suspender, error) {
 	}, nil
 }
 
-// Suspend freezes the target process. Tries four methods in order:
+// Suspend freezes the target process. Tries two methods in order:
 // 1. Remote thread injection (CreateRemoteThread + DuplicateHandle)
-// 2. Direct SuspendThread on each thread
-// 3. NtSuspendProcess
-// 4. DebugActiveProcess
+// 2. NtSuspendProcess
 func (s *Suspender) Suspend() (int, error) {
 	tids, _ := getThreadIDs(s.pid)
+	display.Log(fmt.Sprintf("[Suspend] PID %d has %d threads", s.pid, len(tids)))
 
 	// Method 1: Remote thread injection
 	if len(tids) > 0 {
+		display.Log("[Suspend] Trying method 1: Remote thread injection")
 		for _, tid := range tids {
-			hLocal, _, _ := procOpenThread.Call(threadSuspendResume, 0, uintptr(tid))
+			hLocal, _, err := procOpenThread.Call(threadSuspendResume, 0, uintptr(tid))
 			if hLocal == 0 {
+				display.Log(fmt.Sprintf("[Suspend] OpenThread failed for TID %d: %v", tid, err))
 				continue
 			}
 
 			var hRemote windows.Handle
-			err := windows.DuplicateHandle(
+			dupErr := windows.DuplicateHandle(
 				windows.CurrentProcess(),
 				windows.Handle(hLocal),
 				s.hProc,
@@ -215,18 +211,21 @@ func (s *Suspender) Suspend() (int, error) {
 				false,
 				0,
 			)
-			if err != nil {
+			if dupErr != nil {
+				display.Log(fmt.Sprintf("[Suspend] DuplicateHandle failed for TID %d: %v", tid, dupErr))
 				windows.CloseHandle(windows.Handle(hLocal))
 				continue
 			}
 
-			exitCode, err := callRemote(s.hProc, s.addrSuspendThread, uintptr(hRemote))
-			if err != nil || exitCode == 0xFFFFFFFF {
+			exitCode, callErr := callRemote(s.hProc, s.addrSuspendThread, uintptr(hRemote))
+			if callErr != nil || exitCode == 0xFFFFFFFF {
+				display.Log(fmt.Sprintf("[Suspend] Remote SuspendThread failed for TID %d: exitCode=%d, err=%v", tid, exitCode, callErr))
 				callRemote(s.hProc, s.addrCloseHandle, uintptr(hRemote))
 				windows.CloseHandle(windows.Handle(hLocal))
 				continue
 			}
 
+			display.Log(fmt.Sprintf("[Suspend] Suspended TID %d (previous suspend count: %d)", tid, exitCode))
 			s.threads = append(s.threads, frozenThread{
 				localHandle:  windows.Handle(hLocal),
 				remoteHandle: uintptr(hRemote),
@@ -235,47 +234,21 @@ func (s *Suspender) Suspend() (int, error) {
 		}
 		if len(s.threads) > 0 {
 			s.method = methodRemoteThread
+			display.Log(fmt.Sprintf("[Suspend] Method 1 success: suspended %d/%d threads", len(s.threads), len(tids)))
 			return len(s.threads), nil
 		}
+		display.Log("[Suspend] Method 1 failed: no threads suspended")
 	}
 
-	// Method 2: Direct SuspendThread from our process
-	if len(tids) > 0 {
-		for _, tid := range tids {
-			hThread, _, _ := procOpenThread.Call(threadSuspendResume, 0, uintptr(tid))
-			if hThread == 0 {
-				continue
-			}
-			ret, _, _ := procSuspendThread.Call(hThread)
-			if ret == 0xFFFFFFFF {
-				windows.CloseHandle(windows.Handle(hThread))
-				continue
-			}
-			s.threads = append(s.threads, frozenThread{
-				localHandle: windows.Handle(hThread),
-				tid:         tid,
-			})
-		}
-		if len(s.threads) > 0 {
-			s.method = methodDirectSuspend
-			return len(s.threads), nil
-		}
-	}
-
-	// Method 3: NtSuspendProcess
-	r, _, _ := procNtSuspendProcess.Call(uintptr(s.hProc))
+	// Method 2: NtSuspendProcess
+	display.Log("[Suspend] Trying method 2: NtSuspendProcess")
+	r, _, ntErr := procNtSuspendProcess.Call(uintptr(s.hProc))
 	if r == 0 {
 		s.method = methodNtSuspend
+		display.Log("[Suspend] Method 2 success: NtSuspendProcess returned 0")
 		return 1, nil
 	}
-
-	// Method 4: DebugActiveProcess
-	r, _, _ = procDebugActiveProcess.Call(uintptr(s.pid))
-	if r != 0 {
-		procDebugSetKillOnExit.Call(0)
-		s.method = methodDebugger
-		return 1, nil
-	}
+	display.Log(fmt.Sprintf("[Suspend] Method 2 failed: NtSuspendProcess returned %d, err=%v", r, ntErr))
 
 	return 0, fmt.Errorf("all suspend methods failed")
 }
@@ -290,31 +263,60 @@ func (s *Suspender) Close() {
 }
 
 // Resume unfreezes the process and releases handles.
+// Guarantees all threads are fully resumed by looping until suspend count reaches 0.
 func (s *Suspender) Resume() error {
+	display.Log(fmt.Sprintf("[Resume] Resuming PID %d using method %d", s.pid, s.method))
+
 	switch s.method {
 	case methodRemoteThread:
+		display.Log(fmt.Sprintf("[Resume] Resuming %d threads via remote thread", len(s.threads)))
 		for _, ft := range s.threads {
-			callRemote(s.hProc, s.addrResumeThread, uintptr(ft.remoteHandle))
+			// ResumeThread returns the PREVIOUS suspend count
+			// Keep calling until it returns 1 (was 1, now 0 = running) or 0 (was already running)
+			// or until we hit a max iteration limit
+			const maxIterations = 100
+			for i := 0; i < maxIterations; i++ {
+				prevCount, err := callRemote(s.hProc, s.addrResumeThread, uintptr(ft.remoteHandle))
+				if err != nil {
+					display.Log(fmt.Sprintf("[Resume] ResumeThread failed for TID %d: %v", ft.tid, err))
+					break
+				}
+				// prevCount is the suspend count BEFORE this call
+				// If prevCount <= 1, thread is now running (count is now 0)
+				if prevCount <= 1 {
+					display.Log(fmt.Sprintf("[Resume] TID %d fully resumed (was %d, now 0)", ft.tid, prevCount))
+					break
+				}
+				display.Log(fmt.Sprintf("[Resume] TID %d still suspended (was %d, now %d), continuing...", ft.tid, prevCount, prevCount-1))
+			}
 			callRemote(s.hProc, s.addrCloseHandle, uintptr(ft.remoteHandle))
 			windows.CloseHandle(ft.localHandle)
 		}
 		s.threads = nil
 
-	case methodDirectSuspend:
-		for _, ft := range s.threads {
-			procResumeThread.Call(uintptr(ft.localHandle))
-			windows.CloseHandle(ft.localHandle)
-		}
-		s.threads = nil
-
 	case methodNtSuspend:
-		procNtResumeProcess.Call(uintptr(s.hProc))
-
-	case methodDebugger:
-		procDebugActiveProcessStop.Call(uintptr(s.pid))
+		// NtResumeProcess respects suspend count, call once since we only suspended once
+		display.Log("[Resume] Calling NtResumeProcess")
+		r, _, err := procNtResumeProcess.Call(uintptr(s.hProc))
+		if r != 0 {
+			display.Log(fmt.Sprintf("[Resume] NtResumeProcess returned %d: %v", r, err))
+		} else {
+			display.Log("[Resume] NtResumeProcess success")
+		}
 	}
 
 	windows.CloseHandle(s.hProc)
 	s.hProc = 0
+
+	// Verify process is still running after resume
+	time.Sleep(100 * time.Millisecond)
+	if pid := FindProcess("League of Legends.exe"); pid == s.pid {
+		display.Log(fmt.Sprintf("[Resume] Process %d still exists after resume", s.pid))
+	} else if pid != 0 {
+		display.Log(fmt.Sprintf("[Resume] Different game process found: %d (was %d)", pid, s.pid))
+	} else {
+		display.Log(fmt.Sprintf("[Resume] WARNING: Process %d no longer exists after resume!", s.pid))
+	}
+
 	return nil
 }
