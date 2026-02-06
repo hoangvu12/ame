@@ -330,6 +330,14 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 			display.Log(fmt.Sprintf("Failed to create suspender: %v", err))
 			return
 		}
+
+		// Wait for the process to accept remote threads (loader lock released)
+		if err := s.WaitReady(applyDone, 30*time.Second); err != nil {
+			display.Log(fmt.Sprintf("Suspend skipped: %v", err))
+			s.Close()
+			return
+		}
+
 		count, suspendErr := s.Suspend()
 		if suspendErr != nil || count == 0 {
 			display.Log(fmt.Sprintf("Failed to suspend game: count=%d, err=%v", count, suspendErr))

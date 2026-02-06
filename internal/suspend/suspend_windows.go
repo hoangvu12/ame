@@ -141,9 +141,11 @@ func getThreadIDs(pid uint32) ([]uint32, error) {
 	return tids, nil
 }
 
-// callRemote executes funcAddr inside the target process with a single parameter.
-// Returns the thread exit code.
-func callRemote(hProc windows.Handle, funcAddr uintptr, param uintptr) (uint32, error) {
+const stillActive = 259 // STILL_ACTIVE (0x103) - thread hasn't exited yet
+
+// callRemoteTimeout executes funcAddr inside the target process with a single parameter.
+// Returns the thread exit code. timeoutMs controls how long to wait.
+func callRemoteTimeout(hProc windows.Handle, funcAddr uintptr, param uintptr, timeoutMs uint32) (uint32, error) {
 	hThread, _, err := procCreateRemoteThread.Call(
 		uintptr(hProc), 0, 0, funcAddr, param, 0, 0,
 	)
@@ -151,11 +153,52 @@ func callRemote(hProc windows.Handle, funcAddr uintptr, param uintptr) (uint32, 
 		return 0, fmt.Errorf("CreateRemoteThread: %v", err)
 	}
 	defer windows.CloseHandle(windows.Handle(hThread))
-	windows.WaitForSingleObject(windows.Handle(hThread), 10000)
 
+	event, _ := windows.WaitForSingleObject(windows.Handle(hThread), timeoutMs)
 	var exitCode uint32
 	procGetExitCodeThread.Call(hThread, uintptr(unsafe.Pointer(&exitCode)))
+
+	if event == uint32(windows.WAIT_TIMEOUT) || exitCode == stillActive {
+		return 0, fmt.Errorf("remote thread timed out (%dms)", timeoutMs)
+	}
 	return exitCode, nil
+}
+
+// callRemote executes funcAddr inside the target process with a 5s timeout.
+func callRemote(hProc windows.Handle, funcAddr uintptr, param uintptr) (uint32, error) {
+	return callRemoteTimeout(hProc, funcAddr, param, 5000)
+}
+
+// WaitReady polls until the process can execute remote threads (loader lock released).
+// Returns nil when ready, or an error if the done channel closes or timeout is reached.
+func (s *Suspender) WaitReady(done <-chan struct{}, timeout time.Duration) error {
+	addrGetPID := resolveProc("GetCurrentProcessId")
+	if addrGetPID == 0 {
+		return fmt.Errorf("failed to resolve GetCurrentProcessId")
+	}
+
+	display.Log(fmt.Sprintf("[Suspend] Waiting for process %d to be ready...", s.pid))
+	start := time.Now()
+	deadline := start.Add(timeout)
+	attempts := 0
+	for time.Now().Before(deadline) {
+		select {
+		case <-done:
+			return fmt.Errorf("cancelled")
+		default:
+		}
+
+		attempts++
+		// Test with a short timeout — if the process can execute remote threads, this returns instantly
+		_, err := callRemoteTimeout(s.hProc, addrGetPID, 0, 500)
+		if err == nil {
+			display.Log(fmt.Sprintf("[Suspend] Process %d ready after %dms (%d attempts)", s.pid, time.Since(start).Milliseconds(), attempts))
+			return nil
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("process not ready after %v (%d attempts)", timeout, attempts)
 }
 
 // NewSuspender opens the target process and prepares for suspension.
@@ -271,23 +314,26 @@ func (s *Suspender) Resume() error {
 	case methodRemoteThread:
 		display.Log(fmt.Sprintf("[Resume] Resuming %d threads via remote thread", len(s.threads)))
 		for _, ft := range s.threads {
-			// ResumeThread returns the PREVIOUS suspend count
-			// Keep calling until it returns 1 (was 1, now 0 = running) or 0 (was already running)
-			// or until we hit a max iteration limit
-			const maxIterations = 100
+			// ResumeThread returns the PREVIOUS suspend count.
+			// Keep calling until it returns 1 (was 1, now 0 = running) or 0.
+			// Since we waited for process readiness before suspend, these calls should be fast.
+			const maxIterations = 20
+			resumed := false
 			for i := 0; i < maxIterations; i++ {
 				prevCount, err := callRemote(s.hProc, s.addrResumeThread, uintptr(ft.remoteHandle))
 				if err != nil {
 					display.Log(fmt.Sprintf("[Resume] ResumeThread failed for TID %d: %v", ft.tid, err))
 					break
 				}
-				// prevCount is the suspend count BEFORE this call
-				// If prevCount <= 1, thread is now running (count is now 0)
 				if prevCount <= 1 {
 					display.Log(fmt.Sprintf("[Resume] TID %d fully resumed (was %d, now 0)", ft.tid, prevCount))
+					resumed = true
 					break
 				}
 				display.Log(fmt.Sprintf("[Resume] TID %d still suspended (was %d, now %d), continuing...", ft.tid, prevCount, prevCount-1))
+			}
+			if !resumed {
+				display.Log(fmt.Sprintf("[Resume] TID %d may not be fully resumed, cleaning up handle", ft.tid))
 			}
 			callRemote(s.hProc, s.addrCloseHandle, uintptr(ft.remoteHandle))
 			windows.CloseHandle(ft.localHandle)

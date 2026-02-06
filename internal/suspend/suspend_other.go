@@ -19,6 +19,7 @@ func NewSuspender(pid uint32) (*Suspender, error) {
 	return nil, fmt.Errorf("suspend not supported on this platform")
 }
 
-func (s *Suspender) Suspend() (int, error) { return 0, nil }
-func (s *Suspender) Resume() error         { return nil }
-func (s *Suspender) Close()                {}
+func (s *Suspender) WaitReady(done <-chan struct{}, timeout time.Duration) error { return nil }
+func (s *Suspender) Suspend() (int, error)                                      { return 0, nil }
+func (s *Suspender) Resume() error                                              { return nil }
+func (s *Suspender) Close()                                                     {}
