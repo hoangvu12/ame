@@ -1,4 +1,4 @@
-name = "ame-rooms"
+name = "ame-rooms-ws"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 

@@ -1,12 +1,10 @@
 package roomparty
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,13 +12,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/hoangvu12/ame/internal/config"
 	"github.com/hoangvu12/ame/internal/display"
 	"github.com/hoangvu12/ame/internal/skin"
 )
 
-const workerURL = "https://ame-rooms.kaguya-gindex.workers.dev"
-const pollInterval = 3 * time.Second
+const workerURL = "wss://ame-rooms-ws.kaguya-gindex.workers.dev"
+const heartbeatInterval = 30 * time.Second
+const reconnectDelay = 3 * time.Second
 
 // SkinInfo describes a skin selection shared between Ame users.
 type SkinInfo struct {
@@ -43,32 +43,39 @@ type OnUpdateFunc func(teammates []Member)
 
 // RoomState manages a room party session.
 type RoomState struct {
-	mu           sync.Mutex
-	active       bool
-	roomKey      string
-	puuid        string
-	teamPuuids   []string
-	mySkinInfo   SkinInfo
-	teammates    []Member
-	cancelPoll   context.CancelFunc
-	OnUpdate     OnUpdateFunc
-	client       *http.Client
+	mu         sync.Mutex
+	active     bool
+	roomKey    string
+	puuid      string
+	teamPuuids []string
+	mySkinInfo SkinInfo
+	teammates  []Member
+	conn       *websocket.Conn
+	cancelRead context.CancelFunc
+	OnUpdate   OnUpdateFunc
+	dialer     *websocket.Dialer
 }
 
 // NewRoomState creates a new room state manager.
 func NewRoomState() *RoomState {
 	return &RoomState{
-		client: &http.Client{Timeout: 10 * time.Second},
+		dialer: &websocket.Dialer{
+			HandshakeTimeout: 10 * time.Second,
+		},
 	}
 }
 
-// Join starts a room party session. Registers with the CF Worker and starts polling.
+// Join starts a room party session. Connects WS and sends join message.
 func (rs *RoomState) Join(roomKey, puuid string, teamPuuids []string) {
 	rs.mu.Lock()
 
-	// If already in a room, leave first
-	if rs.active && rs.cancelPoll != nil {
-		rs.cancelPoll()
+	// If already in a room, close existing connection
+	if rs.active && rs.cancelRead != nil {
+		rs.cancelRead()
+	}
+	if rs.conn != nil {
+		rs.conn.Close()
+		rs.conn = nil
 	}
 
 	rs.active = true
@@ -76,22 +83,15 @@ func (rs *RoomState) Join(roomKey, puuid string, teamPuuids []string) {
 	rs.puuid = puuid
 	rs.teamPuuids = teamPuuids
 	rs.teammates = nil
-
-	ctx, cancel := context.WithCancel(context.Background())
-	rs.cancelPoll = cancel
 	rs.mu.Unlock()
 
 	display.SetPartyKey("display.value.party_in_room_teammates", map[string]interface{}{"count": len(teamPuuids)})
 	display.Log(fmt.Sprintf("Room key: %s", roomKey))
 
-	// Register with CF Worker
-	rs.postJoin()
-
-	// Start polling
-	go rs.pollLoop(ctx, roomKey, puuid)
+	go rs.connectAndRun(roomKey, puuid)
 }
 
-// UpdateSkin updates the local user's skin info and re-registers with the CF Worker.
+// UpdateSkin updates the local user's skin info and sends it over WS.
 func (rs *RoomState) UpdateSkin(info SkinInfo) {
 	rs.mu.Lock()
 	rs.mySkinInfo = info
@@ -99,11 +99,14 @@ func (rs *RoomState) UpdateSkin(info SkinInfo) {
 	rs.mu.Unlock()
 
 	if active {
-		rs.postJoin()
+		rs.sendJSON(map[string]interface{}{
+			"type":     "skin",
+			"skinInfo": info,
+		})
 	}
 }
 
-// Leave stops polling and sends a leave request.
+// Leave stops the WS connection and sends a leave message.
 func (rs *RoomState) Leave() {
 	rs.mu.Lock()
 	if !rs.active {
@@ -111,20 +114,23 @@ func (rs *RoomState) Leave() {
 		return
 	}
 	rs.active = false
-	if rs.cancelPoll != nil {
-		rs.cancelPoll()
-		rs.cancelPoll = nil
+	if rs.cancelRead != nil {
+		rs.cancelRead()
+		rs.cancelRead = nil
 	}
+	conn := rs.conn
+	rs.conn = nil
 	rs.teammates = nil
-	roomKey := rs.roomKey
-	puuid := rs.puuid
 	rs.mu.Unlock()
 
 	display.SetPartyKey("display.value.party_off", nil)
 
-	// Best-effort leave — use captured values to avoid racing with a
-	// subsequent Join() that may overwrite rs.roomKey before the goroutine runs.
-	go rs.postLeaveFor(roomKey, puuid)
+	if conn != nil {
+		// Best-effort leave message
+		data, _ := json.Marshal(map[string]string{"type": "leave"})
+		conn.WriteMessage(websocket.TextMessage, data)
+		conn.Close()
+	}
 }
 
 // GetTeammates returns the current list of Ame-using teammates.
@@ -260,53 +266,176 @@ func (rs *RoomState) DownloadTeammateSkins() {
 	wg.Wait()
 }
 
-// pollLoop polls the CF Worker for room members every pollInterval.
-// roomKey identifies which room this loop belongs to; if rs.roomKey has
-// changed (rapid Leave→Join), the stale result is discarded.
-func (rs *RoomState) pollLoop(ctx context.Context, roomKey, puuid string) {
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
+// connectAndRun connects the WS, sends join, runs readLoop, and auto-reconnects on drop.
+func (rs *RoomState) connectAndRun(roomKey, puuid string) {
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			members, err := rs.fetchMembersFor(roomKey, puuid)
-			if err != nil {
-				continue
-			}
-
-			rs.mu.Lock()
-			if !rs.active || rs.roomKey != roomKey {
-				rs.mu.Unlock()
-				return
-			}
-			oldTeammates := rs.teammates
-			rs.teammates = filterTeammates(members, rs.teamPuuids)
-			newTeammates := make([]Member, len(rs.teammates))
-			copy(newTeammates, rs.teammates)
-			onUpdate := rs.OnUpdate
+		rs.mu.Lock()
+		if !rs.active || rs.roomKey != roomKey {
 			rs.mu.Unlock()
+			return
+		}
+		skinInfo := rs.mySkinInfo
+		rs.mu.Unlock()
 
-			// Update display if teammate count changed
-			if len(newTeammates) != len(oldTeammates) {
-				if len(newTeammates) > 0 {
-					display.SetPartyKey("display.value.party_active_users", map[string]interface{}{"count": len(newTeammates)})
-				} else {
-					display.SetPartyKey("display.value.party_in_room_waiting", nil)
+		conn, err := rs.connectWS(roomKey)
+		if err != nil {
+			time.Sleep(reconnectDelay)
+			continue
+		}
+
+		rs.mu.Lock()
+		if !rs.active || rs.roomKey != roomKey {
+			rs.mu.Unlock()
+			conn.Close()
+			return
+		}
+		rs.conn = conn
+		ctx, cancel := context.WithCancel(context.Background())
+		rs.cancelRead = cancel
+		rs.mu.Unlock()
+
+		// Send join message
+		joinMsg, _ := json.Marshal(map[string]interface{}{
+			"type":     "join",
+			"puuid":    puuid,
+			"skinInfo": skinInfo,
+		})
+		rs.mu.Lock()
+		if rs.conn != nil {
+			rs.conn.WriteMessage(websocket.TextMessage, joinMsg)
+		}
+		rs.mu.Unlock()
+
+		rs.readLoop(ctx, roomKey)
+
+		// readLoop exited — check if we should reconnect
+		rs.mu.Lock()
+		shouldReconnect := rs.active && rs.roomKey == roomKey
+		rs.mu.Unlock()
+
+		if !shouldReconnect {
+			return
+		}
+
+		time.Sleep(reconnectDelay)
+	}
+}
+
+// connectWS dials the WebSocket endpoint.
+func (rs *RoomState) connectWS(roomKey string) (*websocket.Conn, error) {
+	u := fmt.Sprintf("%s/?roomKey=%s", workerURL, roomKey)
+	header := http.Header{}
+	conn, _, err := rs.dialer.Dial(u, header)
+	return conn, err
+}
+
+// readLoop reads WS messages and runs a heartbeat goroutine.
+func (rs *RoomState) readLoop(ctx context.Context, roomKey string) {
+	// Start heartbeat goroutine
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(heartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				rs.mu.Lock()
+				if rs.conn == nil {
+					rs.mu.Unlock()
+					return
+				}
+				err := rs.conn.WriteMessage(websocket.TextMessage, []byte("ping"))
+				rs.mu.Unlock()
+				if err != nil {
+					return
 				}
 			}
-
-			// Notify plugin of updates
-			if onUpdate != nil {
-				onUpdate(newTeammates)
-			}
-
-			// Prefetch new/changed teammate skins
-			go rs.prefetchTeammateSkins(oldTeammates, newTeammates)
 		}
+	}()
+
+	defer func() {
+		rs.mu.Lock()
+		if rs.cancelRead != nil {
+			rs.cancelRead()
+		}
+		rs.mu.Unlock()
+		<-heartbeatDone
+	}()
+
+	for {
+		rs.mu.Lock()
+		conn := rs.conn
+		rs.mu.Unlock()
+
+		if conn == nil {
+			return
+		}
+
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+
+		text := string(message)
+		if text == "pong" {
+			continue
+		}
+
+		var msg struct {
+			Type    string   `json:"type"`
+			Members []Member `json:"members"`
+		}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			continue
+		}
+
+		if msg.Type != "members" {
+			continue
+		}
+
+		rs.mu.Lock()
+		if !rs.active || rs.roomKey != roomKey {
+			rs.mu.Unlock()
+			return
+		}
+		oldTeammates := rs.teammates
+		rs.teammates = filterTeammates(msg.Members, rs.teamPuuids)
+		newTeammates := make([]Member, len(rs.teammates))
+		copy(newTeammates, rs.teammates)
+		onUpdate := rs.OnUpdate
+		rs.mu.Unlock()
+
+		if len(newTeammates) != len(oldTeammates) {
+			if len(newTeammates) > 0 {
+				display.SetPartyKey("display.value.party_active_users", map[string]interface{}{"count": len(newTeammates)})
+			} else {
+				display.SetPartyKey("display.value.party_in_room_waiting", nil)
+			}
+		}
+
+		if onUpdate != nil {
+			onUpdate(newTeammates)
+		}
+
+		go rs.prefetchTeammateSkins(oldTeammates, newTeammates)
 	}
+}
+
+// sendJSON marshals v and writes it to the WS connection under lock.
+func (rs *RoomState) sendJSON(v interface{}) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.conn == nil {
+		return
+	}
+	rs.conn.WriteMessage(websocket.TextMessage, data)
 }
 
 // prefetchTeammateSkins downloads skins for newly discovered teammates or changed skins.
@@ -351,65 +480,4 @@ func filterTeammates(members []Member, teamPuuids []string) []Member {
 		}
 	}
 	return result
-}
-
-// --- HTTP client methods ---
-
-func (rs *RoomState) postJoin() {
-	rs.mu.Lock()
-	roomKey := rs.roomKey
-	puuid := rs.puuid
-	skinInfo := rs.mySkinInfo
-	rs.mu.Unlock()
-
-	body := map[string]interface{}{
-		"roomKey":  roomKey,
-		"puuid":    puuid,
-		"skinInfo": skinInfo,
-	}
-	data, _ := json.Marshal(body)
-
-	resp, err := rs.client.Post(workerURL+"/rooms/join", "application/json", bytes.NewReader(data))
-	if err != nil {
-		return
-	}
-	resp.Body.Close()
-}
-
-type membersResponse struct {
-	Members []Member `json:"members"`
-}
-
-func (rs *RoomState) fetchMembersFor(roomKey, puuid string) ([]Member, error) {
-	u := fmt.Sprintf("%s/rooms/members?roomKey=%s&puuid=%s",
-		workerURL,
-		url.QueryEscape(roomKey),
-		url.QueryEscape(puuid),
-	)
-
-	resp, err := rs.client.Get(u)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result membersResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return result.Members, nil
-}
-
-func (rs *RoomState) postLeaveFor(roomKey, puuid string) {
-	body := map[string]interface{}{
-		"roomKey": roomKey,
-		"puuid":   puuid,
-	}
-	data, _ := json.Marshal(body)
-
-	resp, err := rs.client.Post(workerURL+"/rooms/leave", "application/json", bytes.NewReader(data))
-	if err != nil {
-		return
-	}
-	resp.Body.Close()
 }

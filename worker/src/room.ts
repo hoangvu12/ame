@@ -1,5 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
 
+interface Env {
+  ROOM: DurableObjectNamespace;
+}
+
 interface SkinInfo {
   championId: string;
   skinId: string;
@@ -9,154 +13,113 @@ interface SkinInfo {
   chromaName: string;
 }
 
-interface MemberRow {
+interface MemberAttachment {
   puuid: string;
-  champion_id: string;
-  skin_id: string;
-  base_skin_id: string;
-  champion_name: string;
-  skin_name: string;
-  chroma_name: string;
-  last_seen: number;
+  skinInfo: SkinInfo;
 }
 
-export class RoomDurableObject extends DurableObject {
-  private initialized = false;
+interface JoinMessage {
+  type: 'join';
+  puuid: string;
+  skinInfo: SkinInfo;
+}
 
-  private ensureTable() {
-    if (this.initialized) return;
-    this.ctx.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS members (
-        puuid TEXT PRIMARY KEY,
-        champion_id TEXT NOT NULL DEFAULT '',
-        skin_id TEXT NOT NULL DEFAULT '',
-        base_skin_id TEXT NOT NULL DEFAULT '',
-        champion_name TEXT NOT NULL DEFAULT '',
-        skin_name TEXT NOT NULL DEFAULT '',
-        chroma_name TEXT NOT NULL DEFAULT '',
-        last_seen INTEGER NOT NULL
-      )
-    `);
-    this.initialized = true;
+interface SkinMessage {
+  type: 'skin';
+  skinInfo: SkinInfo;
+}
+
+interface LeaveMessage {
+  type: 'leave';
+}
+
+type ClientMessage = JoinMessage | SkinMessage | LeaveMessage;
+
+export class RoomDurableObject extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.ctx.setWebSocketAutoResponse(
+      new WebSocketRequestResponsePair('ping', 'pong'),
+    );
   }
 
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.ctx.acceptWebSocket(server);
+    return new Response(null, { status: 101, webSocket: client });
+  }
 
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    if (typeof message !== 'string') return;
+    if (message === 'pong') return;
+
+    let msg: ClientMessage;
     try {
-      if (request.method === 'POST' && path === '/rooms/join') {
-        return this.handleJoin(request);
+      msg = JSON.parse(message);
+    } catch {
+      return;
+    }
+
+    switch (msg.type) {
+      case 'join': {
+        const attachment: MemberAttachment = {
+          puuid: msg.puuid,
+          skinInfo: msg.skinInfo || ({} as SkinInfo),
+        };
+        ws.serializeAttachment(attachment);
+        this.broadcastMembers();
+        break;
       }
-      if (request.method === 'GET' && path === '/rooms/members') {
-        return this.handleMembers(url);
+      case 'skin': {
+        const existing = ws.deserializeAttachment() as MemberAttachment | null;
+        if (existing) {
+          existing.skinInfo = msg.skinInfo || ({} as SkinInfo);
+          ws.serializeAttachment(existing);
+          this.broadcastMembers();
+        }
+        break;
       }
-      if (request.method === 'POST' && path === '/rooms/leave') {
-        return this.handleLeave(request);
+      case 'leave': {
+        ws.close(1000, 'client left');
+        break;
       }
-      return json({ error: 'Not found' }, 404);
-    } catch (e) {
-      return json({ error: 'Internal error' }, 500);
     }
   }
 
-  private async handleJoin(request: Request): Promise<Response> {
-    this.ensureTable();
-    const body = await request.json<{
-      puuid: string;
-      skinInfo?: SkinInfo;
-    }>();
-
-    if (!body.puuid) {
-      return json({ error: 'Missing puuid' }, 400);
-    }
-
-    const skin = body.skinInfo || {} as SkinInfo;
-    const now = Math.floor(Date.now() / 1000);
-
-    this.ctx.storage.sql.exec(
-      `INSERT OR REPLACE INTO members (puuid, champion_id, skin_id, base_skin_id, champion_name, skin_name, chroma_name, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      body.puuid,
-      skin.championId || '',
-      skin.skinId || '',
-      skin.baseSkinId || '',
-      skin.championName || '',
-      skin.skinName || '',
-      skin.chromaName || '',
-      now,
-    );
-
-    // Set auto-expire alarm if not already set
-    const alarm = await this.ctx.storage.getAlarm();
-    if (!alarm) {
-      await this.ctx.storage.setAlarm(Date.now() + 30 * 60 * 1000);
-    }
-
-    return json({ ok: true });
+  async webSocketClose() {
+    this.broadcastMembers();
   }
 
-  private handleMembers(url: URL): Response {
-    this.ensureTable();
-    const puuid = url.searchParams.get('puuid') || '';
-    const now = Math.floor(Date.now() / 1000);
-    const staleThreshold = now - 120;
+  async webSocketError() {
+    this.broadcastMembers();
+  }
 
-    // Update caller's last_seen
-    if (puuid) {
-      this.ctx.storage.sql.exec(
-        `UPDATE members SET last_seen = ? WHERE puuid = ?`,
-        now,
-        puuid,
-      );
+  private broadcastMembers() {
+    const sockets = this.ctx.getWebSockets();
+    const members: MemberAttachment[] = [];
+
+    for (const ws of sockets) {
+      try {
+        if (ws.readyState !== WebSocket.READY_STATE_OPEN) continue;
+        const att = ws.deserializeAttachment() as MemberAttachment | null;
+        if (att?.puuid) {
+          members.push(att);
+        }
+      } catch {
+        // skip broken sockets
+      }
     }
 
-    // Delete stale members
-    this.ctx.storage.sql.exec(
-      `DELETE FROM members WHERE last_seen < ?`,
-      staleThreshold,
-    );
-
-    // Return all other members
-    const rows = this.ctx.storage.sql.exec(
-      `SELECT puuid, champion_id, skin_id, base_skin_id, champion_name, skin_name, chroma_name, last_seen
-       FROM members WHERE puuid != ?`,
-      puuid,
-    ).toArray() as MemberRow[];
-
-    const members = rows.map(row => ({
-      puuid: row.puuid,
-      skinInfo: {
-        championId: row.champion_id,
-        skinId: row.skin_id,
-        baseSkinId: row.base_skin_id,
-        championName: row.champion_name,
-        skinName: row.skin_name,
-        chromaName: row.chroma_name,
-      },
-    }));
-
-    return json({ members });
-  }
-
-  private async handleLeave(request: Request): Promise<Response> {
-    this.ensureTable();
-    const body = await request.json<{ puuid: string }>();
-    if (body.puuid) {
-      this.ctx.storage.sql.exec(`DELETE FROM members WHERE puuid = ?`, body.puuid);
+    const payload = JSON.stringify({ type: 'members', members });
+    for (const ws of sockets) {
+      try {
+        if (ws.readyState === WebSocket.READY_STATE_OPEN) {
+          ws.send(payload);
+        }
+      } catch {
+        // skip
+      }
     }
-    return json({ ok: true });
   }
-
-  async alarm() {
-    this.ensureTable();
-    this.ctx.storage.sql.exec(`DELETE FROM members`);
-  }
-}
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
 }
