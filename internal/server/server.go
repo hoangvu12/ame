@@ -105,6 +105,12 @@ type RoomPartyUpdateMessage struct {
 	Teammates []roomparty.Member `json:"teammates"`
 }
 
+// RandomSkinMessage represents a random skin mode get/set
+type RandomSkinMessage struct {
+	Type string `json:"type"`
+	Mode string `json:"mode"`
+}
+
 // ChatStatusSettingMessage represents a chat status get/set
 type ChatStatusSettingMessage struct {
 	Type          string `json:"type"`
@@ -369,9 +375,20 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	prebuilt := prebuiltModKey == currentModKey
 	if prebuilt {
-		// Verify overlay dir still exists
-		configCheck := filepath.Join(config.OverlayDir, "cslol-config.json")
-		if _, err := os.Stat(configCheck); os.IsNotExist(err) {
+		// Verify overlay still exists (mkoverlay writes .wad files, not a config)
+		overlayOK := false
+		if entries, err := os.ReadDir(config.OverlayDir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				if strings.HasSuffix(strings.ToLower(entry.Name()), ".wad") {
+					overlayOK = true
+					break
+				}
+			}
+		}
+		if !overlayOK {
 			prebuilt = false
 		}
 	}
@@ -431,6 +448,12 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	actualModKey := skinID
 	if roomState.IsActive() {
 		actualModKey = roomState.ComputeBuiltModKey(skinID)
+		// Fallback: if teammates were part of the requested mod key but
+		// ComputeBuiltModKey didn't pick them up (e.g., timing/race), store the
+		// requested key so we don't thrash with redundant rebuilds.
+		if strings.Contains(currentModKey, ",") && !strings.Contains(actualModKey, ",") {
+			actualModKey = currentModKey
+		}
 	}
 	stateMu.Lock()
 	lastChampionID = championID
@@ -521,9 +544,9 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 
 	display.Log(fmt.Sprintf("Prefetch: building overlay with mods: %s", modName))
 
-	success, _ := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
+	success, exitCode := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
 	if !success {
-		display.Log("Prefetch: mkoverlay failed")
+		display.Log(fmt.Sprintf("Prefetch: mkoverlay failed (code %d)", exitCode))
 		return
 	}
 
@@ -708,6 +731,7 @@ func handleConnection(conn *websocket.Conn) {
 				"roomParty":             s.RoomParty,
 				"chatAvailability":      s.ChatAvailability,
 				"chatStatusMessage":     s.ChatStatusMessage,
+				"randomSkin":            s.RandomSkin,
 			}
 			data, _ := json.Marshal(resp)
 			conn.WriteMessage(websocket.TextMessage, data)
@@ -826,6 +850,19 @@ func handleConnection(conn *websocket.Conn) {
 				sendStatus(conn, "error", "Failed to save room party setting")
 			} else {
 				resp := BoolSettingMessage{Type: "roomParty", Enabled: msg.Enabled}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "setRandomSkin":
+			var msg RandomSkinMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := config.SetRandomSkin(msg.Mode); err != nil {
+				sendStatus(conn, "error", "Failed to save random skin setting")
+			} else {
+				resp := RandomSkinMessage{Type: "randomSkin", Mode: msg.Mode}
 				data, _ := json.Marshal(resp)
 				conn.WriteMessage(websocket.TextMessage, data)
 			}

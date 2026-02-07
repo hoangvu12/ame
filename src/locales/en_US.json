@@ -80,6 +80,12 @@
     "mobile": "Mobile",
     "offline": "Offline"
   },
+  "random_skin": {
+    "title": "Random Skin",
+    "off": "Off",
+    "all": "All Skins",
+    "top3": "Top 3 Skins"
+  },
   "room_party": {
     "tooltip": "Ame: {label}"
   }

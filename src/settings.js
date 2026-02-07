@@ -1,4 +1,4 @@
-import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, requestLogs } from './websocket';
+import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, onRandomSkin, setRandomSkinMode, requestLogs } from './websocket';
 import { getPluginLogsJSON } from './logger';
 import { el } from './dom';
 import { createButton, createCheckbox, createInput } from './components';
@@ -264,6 +264,53 @@ function buildChatStatusSection() {
   );
 }
 
+const RANDOM_SKIN_OPTIONS = [
+  { value: '', labelKey: 'random_skin.off' },
+  { value: 'all', labelKey: 'random_skin.all' },
+  { value: 'top3', labelKey: 'random_skin.top3' },
+];
+
+function buildRandomSkinSection() {
+  let selectedMode = '';
+  const buttons = [];
+
+  function updateButtons() {
+    buttons.forEach(({ btn, value }) => {
+      if (value === selectedMode) {
+        btn.classList.add('ame-status-active');
+      } else {
+        btn.classList.remove('ame-status-active');
+      }
+    });
+  }
+
+  const buttonRow = el('div', { class: 'ame-status-buttons' },
+    ...RANDOM_SKIN_OPTIONS.map(opt => {
+      const btn = el('div', {
+        class: 'ame-status-btn',
+        onClick: () => {
+          selectedMode = opt.value;
+          updateButtons();
+          setRandomSkinMode(opt.value);
+          wsSend({ type: 'setRandomSkin', mode: opt.value });
+        },
+      }, t(opt.labelKey));
+      buttons.push({ btn, value: opt.value });
+      return btn;
+    })
+  );
+
+  onRandomSkin((mode) => {
+    selectedMode = mode || '';
+    updateButtons();
+  });
+
+  return el('div', null,
+    el('span', { class: 'ame-list-label', style: 'font-family: var(--font-body)' }, t('random_skin.title')),
+    buttonRow,
+  );
+}
+
 function formatTimestamp(ms) {
   return new Date(ms).toISOString().replace('T', ' ').slice(0, 23);
 }
@@ -379,6 +426,7 @@ function buildPanel() {
           buildToggle('ameStartWithWindows', t('settings.general.start_with_windows'), 'startWithWindows'),
           buildToggle('ameAutoUpdate', t('settings.general.auto_update'), 'autoUpdate'),
           buildChatStatusSection(),
+          buildRandomSkinSection(),
         ),
         buildSection(t('settings.sections.auto_select'),
           buildAutoSelectSection(),

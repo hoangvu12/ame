@@ -44,6 +44,7 @@ type Settings struct {
 	RoomParty         bool                  `json:"roomParty"`
 	ChatAvailability  string                `json:"chatAvailability"`
 	ChatStatusMessage string                `json:"chatStatusMessage"`
+	RandomSkin        string                `json:"randomSkin"`
 }
 
 // Init loads settings from disk.
@@ -252,6 +253,21 @@ func ChatStatusMessage() string {
 	mu.RLock()
 	defer mu.RUnlock()
 	return settings.ChatStatusMessage
+}
+
+// RandomSkin returns the current random-skin mode ("", "all", or "top3").
+func RandomSkin() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.RandomSkin
+}
+
+// SetRandomSkin updates and persists the random-skin mode.
+func SetRandomSkin(mode string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.RandomSkin = mode
+	return save()
 }
 
 // SetChatStatus updates and persists both chat availability and status message.

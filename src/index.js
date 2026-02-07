@@ -14,6 +14,7 @@ import { loadAutoSelectSetting, handleChampSelectSession, resetAutoSelect } from
 import { setLastChampionId, setAppliedSkinName, setOwnedSkinIds, resetOwnedSkins, getOwnedSkinChampionId, isOwnedSkin, getPendingForceDefault, setPendingForceDefault } from './state';
 import { readCurrentSkin, findSkinByName } from './skin';
 import { joinRoom, leaveRoom, loadRoomPartySetting, flushPendingRetrigger } from './roomParty';
+import { triggerRandomSkin, resetRandomSkin } from './randomSkin';
 import { initChatStatus } from './chatStatus';
 import { initI18n } from './i18n';
 import { createLogger } from './logger';
@@ -98,6 +99,7 @@ async function pollUI() {
       await loadChampionSkins(champId);
       await ensureOwnershipCache(champId);
       ensureChromaButton();
+      triggerRandomSkin(champId);
       ownership = resolveOwnership(champId);
     }
 
@@ -222,6 +224,7 @@ export async function init(context) {
       setAppliedSkinName(null);
       resetAutoApply();
       resetAutoSelect();
+      resetRandomSkin();
       setChampSelectActive(true);
       stopSwiftplayObserving();
       startObserving();
