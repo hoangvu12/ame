@@ -103,6 +103,7 @@ var TOOL_FILES = []string{
 // Config holds setup URLs
 type Config struct {
 	ToolsURL  string
+	DllURL    string // Separate URL for cslol-dll.dll
 	PenguURL  string
 	PluginURL string
 	DevSrcDir string // When non-empty, copy plugin from this local dir instead of downloading
@@ -234,7 +235,7 @@ func createDirectories() {
 }
 
 // setupModTools downloads mod-tools if not present
-func setupModTools(toolsURL string) bool {
+func setupModTools(toolsURL string, dllURL string) bool {
 	modToolsPath := filepath.Join(config.ToolsDir, "mod-tools.exe")
 	if _, err := os.Stat(modToolsPath); err == nil {
 		return true
@@ -243,7 +244,12 @@ func setupModTools(toolsURL string) bool {
 	info("Downloading mod-tools...")
 
 	for _, file := range TOOL_FILES {
-		url := toolsURL + "/" + file
+		var url string
+		if file == "cslol-dll.dll" && dllURL != "" {
+			url = dllURL
+		} else {
+			url = toolsURL + "/" + file
+		}
 		dest := filepath.Join(config.ToolsDir, file)
 		if err := downloadFile(url, dest); err != nil {
 			statusFail("mod-tools download")
@@ -375,7 +381,7 @@ func RunSetup(config Config) bool {
 	createDirectories()
 
 	// Setup mod-tools
-	if !setupModTools(config.ToolsURL) {
+	if !setupModTools(config.ToolsURL, config.DllURL) {
 		return false
 	}
 

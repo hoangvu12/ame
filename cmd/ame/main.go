@@ -36,6 +36,7 @@ var minimized bool
 // Setup URLs
 var setupConfig = setup.Config{
 	ToolsURL:  "https://raw.githubusercontent.com/Alban1911/Rose/main/injection/tools",
+	DllURL:    "http://filehosts.net/download/ab3NZG64TVxlvrOk",
 	PenguURL:  "https://github.com/PenguLoader/PenguLoader/releases/download/v1.1.6/pengu-loader-v1.1.6.zip",
 	PluginURL: "https://github.com/hoangvu12/ame/releases/latest/download/plugin.zip",
 }

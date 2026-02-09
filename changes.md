@@ -1,2 +1,1 @@
-- Added random skin selection (all skins or top 3 ranked skins)
-- Fixed overlay not being reused correctly
+- Changed cslol-dll.dll download source to separate host
