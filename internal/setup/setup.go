@@ -90,23 +90,12 @@ func GetPluginDir() string {
 	return PLUGIN_DIR
 }
 
-// Tool files to download
-var TOOL_FILES = []string{
-	"mod-tools.exe",
-	"cslol-diag.exe",
-	"cslol-dll.dll",
-	"wad-extract.exe",
-	"wad-make.exe",
-}
-
-
 // Config holds setup URLs
 type Config struct {
-	ToolsURL  string
-	DllURL    string // Separate URL for cslol-dll.dll
-	PenguURL  string
-	PluginURL string
-	DevSrcDir string // When non-empty, copy plugin from this local dir instead of downloading
+	ToolsZipURL string // URL to a .zip containing a tools/ folder
+	PenguURL    string
+	PluginURL   string
+	DevSrcDir   string // When non-empty, copy plugin from this local dir instead of downloading
 }
 
 // statusFail prints a failure message (success is silent)
@@ -234,8 +223,8 @@ func createDirectories() {
 	}
 }
 
-// setupModTools downloads mod-tools if not present
-func setupModTools(toolsURL string, dllURL string) bool {
+// setupModTools downloads and extracts the mod-tools zip if not present
+func setupModTools(toolsZipURL string) bool {
 	modToolsPath := filepath.Join(config.ToolsDir, "mod-tools.exe")
 	if _, err := os.Stat(modToolsPath); err == nil {
 		return true
@@ -243,16 +232,47 @@ func setupModTools(toolsURL string, dllURL string) bool {
 
 	info("Downloading mod-tools...")
 
-	for _, file := range TOOL_FILES {
-		var url string
-		if file == "cslol-dll.dll" && dllURL != "" {
-			url = dllURL
-		} else {
-			url = toolsURL + "/" + file
+	zipPath := filepath.Join(config.AmeDir, "tools.zip")
+
+	if err := downloadFile(toolsZipURL, zipPath); err != nil {
+		statusFail("mod-tools download")
+		return false
+	}
+	defer os.Remove(zipPath)
+
+	// Extract to a temp dir first, then move files from the tools/ subfolder
+	tmpDir := filepath.Join(config.AmeDir, "tools_tmp")
+	os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir)
+
+	if err := extractZip(zipPath, tmpDir); err != nil {
+		statusFail("mod-tools extract")
+		return false
+	}
+
+	// The zip contains a tools/ folder — copy its contents to ToolsDir
+	extractedToolsDir := filepath.Join(tmpDir, "tools")
+	entries, err := os.ReadDir(extractedToolsDir)
+	if err != nil {
+		statusFail("mod-tools setup")
+		return false
+	}
+
+	os.MkdirAll(config.ToolsDir, os.ModePerm)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
 		}
-		dest := filepath.Join(config.ToolsDir, file)
-		if err := downloadFile(url, dest); err != nil {
-			statusFail("mod-tools download")
+		src := filepath.Join(extractedToolsDir, entry.Name())
+		dst := filepath.Join(config.ToolsDir, entry.Name())
+		data, readErr := os.ReadFile(src)
+		if readErr != nil {
+			statusFail("mod-tools setup")
+			return false
+		}
+		if writeErr := os.WriteFile(dst, data, 0644); writeErr != nil {
+			statusFail("mod-tools setup")
 			return false
 		}
 	}
@@ -381,7 +401,7 @@ func RunSetup(config Config) bool {
 	createDirectories()
 
 	// Setup mod-tools
-	if !setupModTools(config.ToolsURL, config.DllURL) {
+	if !setupModTools(config.ToolsZipURL) {
 		return false
 	}
 
