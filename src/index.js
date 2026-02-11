@@ -192,6 +192,11 @@ export async function init(context) {
       setLastChampionId(champId);
       resetSkinsCache();
       resetOwnedSkins();
+      setAppliedSkinName(null);
+      resetAutoApply();
+      if (isOverlayActive()) {
+        wsSend({ type: 'cleanup' });
+      }
     }
     joinRoom(session);
   });
