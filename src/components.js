@@ -49,3 +49,116 @@ export function createInput(opts = {}) {
   const container = el('lol-uikit-flat-input', null, input);
   return { container, input };
 }
+
+/**
+ * Searchable champion selector.
+ * @param {Object} opts
+ * @param {Array}  opts.champions     - Array of { id, name }
+ * @param {string} opts.placeholder   - Input placeholder
+ * @param {Function} opts.onSelect    - (id, name) => void
+ * @param {Function} [opts.getExclude]- () => Set<id> – IDs to hide
+ * @param {string}  [opts.allOption]  - Label for "All" entry (id=0)
+ * @param {number}  [opts.selected]   - Initial champion ID (0 = all)
+ * @param {boolean} [opts.clearOnSelect] - Clear input after selection
+ */
+export function createChampionSearch(opts = {}) {
+  const { champions = [], placeholder = '', onSelect, getExclude, allOption, clearOnSelect = false } = opts;
+  let selectedId = opts.selected || 0;
+
+  const { container: flatInput, input } = createInput({ placeholder });
+
+  if (!clearOnSelect) {
+    if (selectedId > 0) {
+      const c = champions.find(ch => ch.id === selectedId);
+      if (c) input.value = c.name;
+    } else if (allOption) {
+      input.value = allOption;
+    }
+  }
+
+  const resultsList = el('lol-uikit-scrollable', {
+    class: 'ame-search-results',
+    'overflow-masks': 'enabled',
+  });
+  const dropdown = el('div', { class: 'ame-search-dropdown' }, resultsList);
+  dropdown.style.display = 'none';
+
+  function showResults(filter) {
+    const exclude = getExclude ? getExclude() : new Set();
+    const q = (filter || '').toLowerCase();
+    let items = champions.filter(c => c.id > 0 && !exclude.has(c.id));
+    if (q) items = items.filter(c => c.name.toLowerCase().includes(q));
+    items.sort((a, b) => a.name.localeCompare(b.name));
+
+    resultsList.innerHTML = '';
+
+    if (allOption && (!q || allOption.toLowerCase().includes(q))) {
+      resultsList.appendChild(el('div', {
+        class: 'ame-search-item',
+        onClick: () => pick(0, allOption),
+      }, el('span', null, allOption)));
+    }
+
+    for (const champ of items) {
+      resultsList.appendChild(el('div', {
+        class: 'ame-search-item',
+        onClick: () => pick(champ.id, champ.name),
+      },
+        el('img', { src: `/lol-game-data/assets/v1/champion-icons/${champ.id}.png` }),
+        el('span', null, champ.name),
+      ));
+    }
+
+    dropdown.style.display = resultsList.childElementCount > 0 ? '' : 'none';
+  }
+
+  function pick(id, name) {
+    selectedId = id;
+    if (clearOnSelect) {
+      input.value = '';
+    } else {
+      input.value = name;
+    }
+    dropdown.style.display = 'none';
+    if (onSelect) onSelect(id, name);
+  }
+
+  input.addEventListener('input', () => showResults(input.value));
+  input.addEventListener('focus', () => {
+    if (!clearOnSelect) input.select();
+    showResults('');
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      dropdown.style.display = 'none';
+      if (!clearOnSelect) {
+        if (selectedId > 0) {
+          const c = champions.find(ch => ch.id === selectedId);
+          input.value = c ? c.name : '';
+        } else if (allOption) {
+          input.value = allOption;
+        }
+      }
+    }, 200);
+  });
+
+  const container = el('div', { class: 'ame-champion-search' }, flatInput, dropdown);
+
+  return {
+    container,
+    getSelectedId() { return selectedId; },
+    setSelectedId(id) {
+      selectedId = id;
+      if (!clearOnSelect) {
+        if (id > 0) {
+          const c = champions.find(ch => ch.id === id);
+          input.value = c ? c.name : '';
+        } else if (allOption) {
+          input.value = allOption;
+        } else {
+          input.value = '';
+        }
+      }
+    },
+  };
+}

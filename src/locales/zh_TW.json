@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame：{label}"
+  },
+  "custom_skins": {
+    "button": "自訂造型",
+    "title": "自訂造型",
+    "add_mod": "新增模組",
+    "no_mods": "尚無自訂模組。點擊「新增模組」匯入 .fantome 或 .zip 檔案。",
+    "all_champions": "所有英雄",
+    "import_title": "匯入自訂造型",
+    "edit_title": "編輯自訂造型",
+    "name": "名稱",
+    "author": "作者",
+    "champion": "英雄",
+    "image_placeholder": "點擊新增圖片",
+    "import_btn": "匯入",
+    "save_btn": "儲存",
+    "cancel_btn": "取消",
+    "delete_title": "刪除模組",
+    "delete_body": "確定要刪除「{name}」嗎？此操作無法復原。",
+    "delete_confirm": "刪除",
+    "delete_cancel": "取消",
+    "filter_placeholder": "搜尋模組...",
+    "enabled": "已啟用",
+    "disabled": "已停用"
   }
 }

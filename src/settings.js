@@ -1,10 +1,11 @@
 import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, onRandomSkin, setRandomSkinMode, requestLogs } from './websocket';
 import { getPluginLogsJSON } from './logger';
 import { el } from './dom';
-import { createButton, createCheckbox, createInput } from './components';
+import { createButton, createCheckbox, createChampionSearch, createInput } from './components';
 import { loadChampionSummary } from './api';
 import { AUTO_SELECT_ROLES, CHAT_AVAILABILITY_OPTIONS } from './constants';
 import { applyChatStatus } from './chatStatus';
+import { openCustomSkinsModal } from './customSkins';
 import { t } from './i18n';
 
 const NAV_TITLE_CLASS = 'lol-settings-nav-title';
@@ -96,64 +97,28 @@ function buildChampionEntry(id, index, listType) {
 }
 
 function buildChampionPicker(listType) {
-  const { container: flatInput, input } = createInput({ placeholder: t('settings.auto_select.search_placeholder') });
-  const resultsList = el('lol-uikit-scrollable', {
-    class: 'ame-search-results',
-    'overflow-masks': 'enabled',
+  const search = createChampionSearch({
+    champions: championSummary || [],
+    placeholder: t('settings.auto_select.search_placeholder'),
+    clearOnSelect: true,
+    getExclude: () => {
+      const config = getAutoSelectRolesCache();
+      const roleConfig = config[activeRole] || { picks: [], bans: [] };
+      return new Set([...(roleConfig.picks || []), ...(roleConfig.bans || [])]);
+    },
+    onSelect: (id) => {
+      if (id <= 0) return;
+      const cfg = getAutoSelectRolesCache();
+      const rc = cfg[activeRole] || { picks: [], bans: [] };
+      const list = [...(rc[listType] || []), id];
+      cfg[activeRole] = { ...rc, [listType]: list };
+      sendRoleUpdate(activeRole);
+      renderRoleContent();
+    },
   });
-  const resultsContainer = el('div', { class: 'ame-search-dropdown' }, resultsList);
-  resultsContainer.style.display = 'none';
-
-  function getAvailable() {
-    const config = getAutoSelectRolesCache();
-    const roleConfig = config[activeRole] || { picks: [], bans: [] };
-    const existing = new Set([...(roleConfig.picks || []), ...(roleConfig.bans || [])]);
-    return (championSummary || [])
-      .filter(c => c.id > 0 && !existing.has(c.id))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  function showResults(filter) {
-    const available = getAvailable();
-    const query = (filter || '').toLowerCase();
-    const filtered = query ? available.filter(c => c.name.toLowerCase().includes(query)) : available;
-
-    resultsList.innerHTML = '';
-    if (filtered.length === 0) {
-      resultsContainer.style.display = 'none';
-      return;
-    }
-
-    for (const champ of filtered) {
-      const item = el('div', {
-        class: 'ame-search-item',
-        onClick: () => {
-          const cfg = getAutoSelectRolesCache();
-          const rc = cfg[activeRole] || { picks: [], bans: [] };
-          const list = [...(rc[listType] || []), champ.id];
-          cfg[activeRole] = { ...rc, [listType]: list };
-          sendRoleUpdate(activeRole);
-          input.value = '';
-          resultsContainer.style.display = 'none';
-          renderRoleContent();
-        },
-      },
-        el('img', { src: getChampionIcon(champ.id) }),
-        el('span', null, champ.name),
-      );
-      resultsList.appendChild(item);
-    }
-    resultsContainer.style.display = '';
-  }
-
-  input.addEventListener('input', () => showResults(input.value));
-  input.addEventListener('focus', () => showResults(input.value));
-  input.addEventListener('blur', () => {
-    // Delay to allow click on results
-    setTimeout(() => { resultsContainer.style.display = 'none'; }, 200);
-  });
-
-  return el('div', { class: 'ame-add-champion' }, flatInput, resultsContainer);
+  const wrapper = el('div', { class: 'ame-add-champion' });
+  wrapper.appendChild(search.container);
+  return wrapper;
 }
 
 function buildChampionList(listType, label) {
@@ -427,6 +392,11 @@ function buildPanel() {
           buildToggle('ameAutoUpdate', t('settings.general.auto_update'), 'autoUpdate'),
           buildChatStatusSection(),
           buildRandomSkinSection(),
+          el('div', { class: 'ame-settings-toggle-row' },
+            createButton(t('custom_skins.button'), {
+              onClick: () => openCustomSkinsModal(),
+            }),
+          ),
         ),
         buildSection(t('settings.sections.auto_select'),
           buildAutoSelectSection(),

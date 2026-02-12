@@ -9,12 +9,13 @@ import (
 
 // Paths - single source of truth (previously duplicated across packages)
 var (
-	AmeDir     = filepath.Join(os.Getenv("LOCALAPPDATA"), "ame")
-	ToolsDir   = filepath.Join(AmeDir, "tools")
-	SkinsDir   = filepath.Join(AmeDir, "skins")
-	ModsDir    = filepath.Join(AmeDir, "mods")
-	OverlayDir = filepath.Join(AmeDir, "overlay")
-	PenguDir   = filepath.Join(AmeDir, "pengu")
+	AmeDir        = filepath.Join(os.Getenv("LOCALAPPDATA"), "ame")
+	ToolsDir      = filepath.Join(AmeDir, "tools")
+	SkinsDir      = filepath.Join(AmeDir, "skins")
+	ModsDir       = filepath.Join(AmeDir, "mods")
+	OverlayDir    = filepath.Join(AmeDir, "overlay")
+	PenguDir      = filepath.Join(AmeDir, "pengu")
+	CustomModsDir = filepath.Join(AmeDir, "custom-mods")
 )
 
 var (
@@ -31,6 +32,16 @@ type RoleConfig struct {
 	Bans  []int `json:"bans"`
 }
 
+// CustomMod represents a user-imported custom mod (.fantome/.zip).
+type CustomMod struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Author     string `json:"author"`
+	ChampionID int    `json:"championId"`
+	Enabled    bool   `json:"enabled"`
+	HasImage   bool   `json:"hasImage"`
+}
+
 // Settings holds persisted application settings.
 type Settings struct {
 	GamePath         string                `json:"gamePath"`
@@ -45,6 +56,7 @@ type Settings struct {
 	ChatAvailability  string                `json:"chatAvailability"`
 	ChatStatusMessage string                `json:"chatStatusMessage"`
 	RandomSkin        string                `json:"randomSkin"`
+	CustomMods        []CustomMod           `json:"customMods"`
 }
 
 // Init loads settings from disk.
@@ -277,6 +289,92 @@ func SetChatStatus(availability, statusMessage string) error {
 	settings.ChatAvailability = availability
 	settings.ChatStatusMessage = statusMessage
 	return save()
+}
+
+// GetCustomMods returns a copy of the custom mods list.
+func GetCustomMods() []CustomMod {
+	mu.RLock()
+	defer mu.RUnlock()
+	cp := make([]CustomMod, len(settings.CustomMods))
+	copy(cp, settings.CustomMods)
+	return cp
+}
+
+// GetEnabledCustomMods returns only the enabled custom mods.
+func GetEnabledCustomMods() []CustomMod {
+	mu.RLock()
+	defer mu.RUnlock()
+	var enabled []CustomMod
+	for _, m := range settings.CustomMods {
+		if m.Enabled {
+			enabled = append(enabled, m)
+		}
+	}
+	return enabled
+}
+
+// AddCustomMod appends a new custom mod and persists.
+func AddCustomMod(mod CustomMod) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.CustomMods = append(settings.CustomMods, mod)
+	return save()
+}
+
+// UpdateCustomMod updates name, author, championId for an existing mod.
+func UpdateCustomMod(id, name, author string, championID int) (*CustomMod, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range settings.CustomMods {
+		if settings.CustomMods[i].ID == id {
+			settings.CustomMods[i].Name = name
+			settings.CustomMods[i].Author = author
+			settings.CustomMods[i].ChampionID = championID
+			cp := settings.CustomMods[i]
+			return &cp, save()
+		}
+	}
+	return nil, nil
+}
+
+// DeleteCustomMod removes a custom mod by ID and persists.
+func DeleteCustomMod(id string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range settings.CustomMods {
+		if settings.CustomMods[i].ID == id {
+			settings.CustomMods = append(settings.CustomMods[:i], settings.CustomMods[i+1:]...)
+			return save()
+		}
+	}
+	return nil
+}
+
+// ToggleCustomMod sets the enabled state for a custom mod.
+func ToggleCustomMod(id string, enabled bool) (*CustomMod, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range settings.CustomMods {
+		if settings.CustomMods[i].ID == id {
+			settings.CustomMods[i].Enabled = enabled
+			cp := settings.CustomMods[i]
+			return &cp, save()
+		}
+	}
+	return nil, nil
+}
+
+// SetCustomModHasImage updates the hasImage flag for a mod.
+func SetCustomModHasImage(id string, hasImage bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range settings.CustomMods {
+		if settings.CustomMods[i].ID == id {
+			settings.CustomMods[i].HasImage = hasImage
+			return save()
+		}
+	}
+	return nil
 }
 
 // save writes the current settings to disk. Caller must hold mu.

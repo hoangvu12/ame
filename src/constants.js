@@ -36,3 +36,6 @@ export const CHAT_AVAILABILITY_OPTIONS = [
 export const SWIFTPLAY_BUTTON_ID = 'ame-swiftplay-apply-btn';
 export const STYLE_ID = 'ame-styles';
 export const ROOM_PARTY_INDICATOR_CLASS = 'ame-room-party-indicator';
+export const CUSTOM_SKINS_BTN_ID = 'ame-custom-skins-btn';
+export const CUSTOM_SKINS_MODAL_ID = 'ame-custom-skins-modal';
+export const CUSTOM_SKINS_IMAGE_BASE = 'http://localhost:18765/custom-mod-image/';

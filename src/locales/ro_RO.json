@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Skinuri personalizate",
+    "title": "SKINURI PERSONALIZATE",
+    "add_mod": "Adaugă mod",
+    "no_mods": "Nu există moduri personalizate. Apasă \"Adaugă mod\" pentru a importa un fișier .fantome sau .zip.",
+    "all_champions": "Toți campionii",
+    "import_title": "IMPORTĂ SKIN PERSONALIZAT",
+    "edit_title": "EDITEAZĂ SKIN PERSONALIZAT",
+    "name": "Nume",
+    "author": "Autor",
+    "champion": "Campion",
+    "image_placeholder": "Apasă pentru a adăuga imagine",
+    "import_btn": "Importă",
+    "save_btn": "Salvează",
+    "cancel_btn": "Anulează",
+    "delete_title": "ȘTERGE MOD",
+    "delete_body": "Ești sigur că vrei să ștergi \"{name}\"? Această acțiune nu poate fi anulată.",
+    "delete_confirm": "ȘTERGE",
+    "delete_cancel": "ANULEAZĂ",
+    "filter_placeholder": "Caută moduri...",
+    "enabled": "Activat",
+    "disabled": "Dezactivat"
   }
 }

@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Özel Skinler",
+    "title": "ÖZEL SKİNLER",
+    "add_mod": "Mod Ekle",
+    "no_mods": "Henüz özel mod yok. Bir .fantome veya .zip dosyası içe aktarmak için \"Mod Ekle\"ye tıklayın.",
+    "all_champions": "Tüm Şampiyonlar",
+    "import_title": "ÖZEL SKİN İÇE AKTAR",
+    "edit_title": "ÖZEL SKİN DÜZENLE",
+    "name": "Ad",
+    "author": "Yapımcı",
+    "champion": "Şampiyon",
+    "image_placeholder": "Resim eklemek için tıklayın",
+    "import_btn": "İçe Aktar",
+    "save_btn": "Kaydet",
+    "cancel_btn": "İptal",
+    "delete_title": "MODU SİL",
+    "delete_body": "\"{name}\" silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
+    "delete_confirm": "SİL",
+    "delete_cancel": "İPTAL",
+    "filter_placeholder": "Mod ara...",
+    "enabled": "Etkin",
+    "disabled": "Devre dışı"
   }
 }

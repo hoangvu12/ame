@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame：{label}"
+  },
+  "custom_skins": {
+    "button": "カスタムスキン",
+    "title": "カスタムスキン",
+    "add_mod": "MODを追加",
+    "no_mods": "カスタムMODはまだありません。「MODを追加」をクリックして .fantome または .zip ファイルをインポートしてください。",
+    "all_champions": "すべてのチャンピオン",
+    "import_title": "カスタムスキンをインポート",
+    "edit_title": "カスタムスキンを編集",
+    "name": "名前",
+    "author": "作者",
+    "champion": "チャンピオン",
+    "image_placeholder": "クリックして画像を追加",
+    "import_btn": "インポート",
+    "save_btn": "保存",
+    "cancel_btn": "キャンセル",
+    "delete_title": "MODを削除",
+    "delete_body": "「{name}」を削除しますか？この操作は元に戻せません。",
+    "delete_confirm": "削除",
+    "delete_cancel": "キャンセル",
+    "filter_placeholder": "MODを検索...",
+    "enabled": "有効",
+    "disabled": "無効"
   }
 }

@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Własne skiny",
+    "title": "WŁASNE SKINY",
+    "add_mod": "Dodaj mod",
+    "no_mods": "Brak własnych modów. Kliknij \"Dodaj mod\", aby zaimportować plik .fantome lub .zip.",
+    "all_champions": "Wszyscy bohaterowie",
+    "import_title": "IMPORTUJ WŁASNY SKIN",
+    "edit_title": "EDYTUJ WŁASNY SKIN",
+    "name": "Nazwa",
+    "author": "Autor",
+    "champion": "Bohater",
+    "image_placeholder": "Kliknij, aby dodać obraz",
+    "import_btn": "Importuj",
+    "save_btn": "Zapisz",
+    "cancel_btn": "Anuluj",
+    "delete_title": "USUŃ MOD",
+    "delete_body": "Czy na pewno chcesz usunąć \"{name}\"? Tej operacji nie można cofnąć.",
+    "delete_confirm": "USUŃ",
+    "delete_cancel": "ANULUJ",
+    "filter_placeholder": "Szukaj modów...",
+    "enabled": "Włączony",
+    "disabled": "Wyłączony"
   }
 }

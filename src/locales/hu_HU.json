@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Egyéni skinek",
+    "title": "EGYÉNI SKINEK",
+    "add_mod": "Mod hozzáadása",
+    "no_mods": "Még nincsenek egyéni modok. Kattints a \"Mod hozzáadása\" gombra egy .fantome vagy .zip fájl importálásához.",
+    "all_champions": "Összes bajnok",
+    "import_title": "EGYÉNI SKIN IMPORTÁLÁSA",
+    "edit_title": "EGYÉNI SKIN SZERKESZTÉSE",
+    "name": "Név",
+    "author": "Szerző",
+    "champion": "Bajnok",
+    "image_placeholder": "Kattints a kép hozzáadásához",
+    "import_btn": "Importálás",
+    "save_btn": "Mentés",
+    "cancel_btn": "Mégse",
+    "delete_title": "MOD TÖRLÉSE",
+    "delete_body": "Biztosan törölni szeretnéd a(z) \"{name}\" modot? Ez a művelet nem vonható vissza.",
+    "delete_confirm": "TÖRLÉS",
+    "delete_cancel": "MÉGSE",
+    "filter_placeholder": "Modok keresése...",
+    "enabled": "Bekapcsolva",
+    "disabled": "Kikapcsolva"
   }
 }

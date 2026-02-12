@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Eigene Skins",
+    "title": "EIGENE SKINS",
+    "add_mod": "Mod hinzufügen",
+    "no_mods": "Noch keine eigenen Mods. Klicke auf \"Mod hinzufügen\", um eine .fantome- oder .zip-Datei zu importieren.",
+    "all_champions": "Alle Champions",
+    "import_title": "EIGENEN SKIN IMPORTIEREN",
+    "edit_title": "EIGENEN SKIN BEARBEITEN",
+    "name": "Name",
+    "author": "Autor",
+    "champion": "Champion",
+    "image_placeholder": "Klicken, um Bild hinzuzufügen",
+    "import_btn": "Importieren",
+    "save_btn": "Speichern",
+    "cancel_btn": "Abbrechen",
+    "delete_title": "MOD LÖSCHEN",
+    "delete_body": "Bist du sicher, dass du \"{name}\" löschen möchtest? Dies kann nicht rückgängig gemacht werden.",
+    "delete_confirm": "LÖSCHEN",
+    "delete_cancel": "ABBRECHEN",
+    "filter_placeholder": "Mods suchen...",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert"
   }
 }

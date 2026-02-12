@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Προσαρμοσμένα Skins",
+    "title": "ΠΡΟΣΑΡΜΟΣΜΈΝΑ SKINS",
+    "add_mod": "Προσθήκη Mod",
+    "no_mods": "Δεν υπάρχουν προσαρμοσμένα mods ακόμα. Κάνε κλικ στο \"Προσθήκη Mod\" για εισαγωγή αρχείου .fantome ή .zip.",
+    "all_champions": "Όλοι οι πρωταθλητές",
+    "import_title": "ΕΙΣΑΓΩΓΗ ΠΡΟΣΑΡΜΟΣΜΕΝΟΥ SKIN",
+    "edit_title": "ΕΠΕΞΕΡΓΑΣΙΑ ΠΡΟΣΑΡΜΟΣΜΕΝΟΥ SKIN",
+    "name": "Όνομα",
+    "author": "Δημιουργός",
+    "champion": "Πρωταθλητής",
+    "image_placeholder": "Κάνε κλικ για προσθήκη εικόνας",
+    "import_btn": "Εισαγωγή",
+    "save_btn": "Αποθήκευση",
+    "cancel_btn": "Ακύρωση",
+    "delete_title": "ΔΙΑΓΡΑΦΗ MOD",
+    "delete_body": "Είσαι σίγουρος ότι θέλεις να διαγράψεις το \"{name}\"; Αυτή η ενέργεια δεν μπορεί να αναιρεθεί.",
+    "delete_confirm": "ΔΙΑΓΡΑΦΗ",
+    "delete_cancel": "ΑΚΥΡΩΣΗ",
+    "filter_placeholder": "Αναζήτηση mods...",
+    "enabled": "Ενεργοποιημένο",
+    "disabled": "Απενεργοποιημένο"
   }
 }

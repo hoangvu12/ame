@@ -1,4 +1,4 @@
-import { BUTTON_ID, CONNECTION_BANNER_ID } from './constants';
+import { BUTTON_ID, CUSTOM_SKINS_BTN_ID, CONNECTION_BANNER_ID } from './constants';
 import { getMyChampionId, loadChampionSkins, getChampionName, forceDefaultSkin } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSend, wsSendApply, isOverlayActive, isConnected, onConnection } from './websocket';
@@ -7,6 +7,7 @@ import { getAppliedSkinName, setAppliedSkinName, getSelectedChroma, getSkinForce
 import { ensureElement, removeElement, el } from './dom';
 import { createButton } from './components';
 import { notifySkinChange } from './roomParty';
+import { openCustomSkinsModal } from './customSkins';
 import { t } from './i18n';
 import { createLogger } from './logger';
 
@@ -25,10 +26,17 @@ export function ensureApplyButton() {
       onClick: onApplyClick,
     });
   });
+  ensureElement(CUSTOM_SKINS_BTN_ID, '.toggle-ability-previews-button-container', () => {
+    return createButton(t('custom_skins.button'), {
+      class: 'toggle-ability-previews-button',
+      onClick: openCustomSkinsModal,
+    });
+  });
 }
 
 export function removeApplyButton() {
   removeElement(BUTTON_ID);
+  removeElement(CUSTOM_SKINS_BTN_ID);
 }
 
 let connectionHooked = false;

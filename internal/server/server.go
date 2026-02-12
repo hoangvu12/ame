@@ -14,10 +14,11 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/custommods"
 	"github.com/hoangvu12/ame/internal/display"
 	"github.com/hoangvu12/ame/internal/game"
-	"github.com/hoangvu12/ame/internal/modtools"
 	"github.com/hoangvu12/ame/internal/lcu"
+	"github.com/hoangvu12/ame/internal/modtools"
 	"github.com/hoangvu12/ame/internal/roomparty"
 	"github.com/hoangvu12/ame/internal/setup"
 	"github.com/hoangvu12/ame/internal/skin"
@@ -116,6 +117,38 @@ type ChatStatusSettingMessage struct {
 	Type          string `json:"type"`
 	Availability  string `json:"availability"`
 	StatusMessage string `json:"statusMessage"`
+}
+
+// CustomModImportMessage represents a custom mod import request
+type CustomModImportMessage struct {
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	Author      string `json:"author"`
+	ChampionID  int    `json:"championId"`
+	FilePath    string `json:"filePath"`
+	ImageBase64 string `json:"imageBase64,omitempty"`
+}
+
+// CustomModUpdateMessage represents a custom mod metadata update
+type CustomModUpdateMessage struct {
+	Type       string `json:"type"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Author     string `json:"author"`
+	ChampionID int    `json:"championId"`
+}
+
+// CustomModToggleMessage represents a custom mod enable/disable toggle
+type CustomModToggleMessage struct {
+	Type    string `json:"type"`
+	ID      string `json:"id"`
+	Enabled bool   `json:"enabled"`
+}
+
+// CustomModIDMessage represents a message with just a mod ID
+type CustomModIDMessage struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
 }
 
 // IncomingMessage is used for parsing the message type first
@@ -226,8 +259,9 @@ func handleUninstall(conn *websocket.Conn) {
 	// Remove ame subdirectories we can delete now
 	os.RemoveAll(config.ToolsDir)
 	os.RemoveAll(config.SkinsDir)
-	os.RemoveAll(config.ModsDir)
+	custommods.CleanModsDir()
 	os.RemoveAll(config.OverlayDir)
+	os.RemoveAll(config.CustomModsDir)
 
 	// Schedule deletion of ame directory after process exits.
 	// Retries for 30s to handle locked files (core.dll released after client restart).
@@ -249,12 +283,37 @@ func handleUninstall(conn *websocket.Conn) {
 	}
 }
 
+// customModKey returns a string suffix representing enabled custom mods, for cache keying.
+func customModKey() string {
+	mods := config.GetEnabledCustomMods()
+	if len(mods) == 0 {
+		return ""
+	}
+	var ids []string
+	for _, m := range mods {
+		ids = append(ids, m.ID)
+	}
+	return "cm:" + strings.Join(ids, ",")
+}
+
 // handleApply handles skin apply request
 func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
-	// Compute mod key early: includes own skin + teammate skins if room party is active
+	hasSkin := skinID != "" && skinID != "0"
+	enabledCustomMods := config.GetEnabledCustomMods()
+	hasCustomMods := len(enabledCustomMods) > 0
+
+	// Nothing to apply: default skin and no custom mods
+	if !hasSkin && !hasCustomMods {
+		return
+	}
+
+	// Compute mod key early: includes own skin + teammate skins + custom mods if active
 	currentModKey := skinID
 	if roomState.IsActive() {
 		currentModKey = roomState.ComputeModKey(skinID)
+	}
+	if cmk := customModKey(); cmk != "" {
+		currentModKey += ";" + cmk
 	}
 
 	// If runoverlay is already running for this exact mod set, skip — nothing to do
@@ -280,17 +339,18 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		return
 	}
 
-	// Check for cached skin file
-	zipPath := skin.GetCachedPath(championID, skinID)
-
-	// Download if not cached
-	if zipPath == "" {
-		downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
-		if err != nil {
-			sendStatus(conn, "error", "Skin not available for download")
-			return
+	// Download skin if not default
+	var zipPath string
+	if hasSkin {
+		zipPath = skin.GetCachedPath(championID, skinID)
+		if zipPath == "" {
+			downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
+			if err != nil {
+				sendStatus(conn, "error", "Skin not available for download")
+				return
+			}
+			zipPath = downloaded
 		}
-		zipPath = downloaded
 	}
 
 	// Kill any previous runoverlay
@@ -399,14 +459,19 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		teammateSkinCount = strings.Count(currentModKey, ",")
 	} else {
 		prebuiltModKey = ""
-		os.RemoveAll(config.ModsDir)
-		modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
-		os.MkdirAll(modSubDir, os.ModePerm)
+		custommods.CleanModsDir()
+		os.MkdirAll(config.ModsDir, os.ModePerm)
 
-		if err := skin.Extract(zipPath, modSubDir); err != nil {
-			overlayBuildMu.Unlock()
-			sendStatus(conn, "error", "Failed to extract skin archive")
-			return
+		// Extract skin if not default
+		if hasSkin {
+			modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
+			os.MkdirAll(modSubDir, os.ModePerm)
+
+			if err := skin.Extract(zipPath, modSubDir); err != nil {
+				overlayBuildMu.Unlock()
+				sendStatus(conn, "error", "Failed to extract skin archive")
+				return
+			}
 		}
 
 		// Download and extract teammate skins if room party is active
@@ -414,17 +479,37 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 			roomState.DownloadTeammateSkins()
 		}
 
+		// Create junctions for enabled custom mods
+		customModNames := custommods.SetupCustomModJunctions()
+
 		os.RemoveAll(config.OverlayDir)
 		os.MkdirAll(config.OverlayDir, os.ModePerm)
 
-		// Build mod list: own skin + teammate skins
-		modName := fmt.Sprintf("skin_%s", skinID)
-		if roomState.IsActive() {
-			modName = roomState.GetAllModNames(skinID)
+		// Build mod list: own skin + teammate skins + custom mods
+		var modName string
+		if hasSkin {
+			modName = fmt.Sprintf("skin_%s", skinID)
+			if roomState.IsActive() {
+				modName = roomState.GetAllModNames(skinID)
+			}
+		}
+		// Append custom mod names (highest priority — last in list)
+		if len(customModNames) > 0 {
+			if modName != "" {
+				modName += "/" + strings.Join(customModNames, "/")
+			} else {
+				modName = strings.Join(customModNames, "/")
+			}
 		}
 
 		display.Log(fmt.Sprintf("Apply: building overlay with mods: %s", modName))
 		teammateSkinCount = strings.Count(modName, "/")
+		if hasCustomMods {
+			teammateSkinCount -= len(customModNames)
+			if !hasSkin {
+				teammateSkinCount = 0
+			}
+		}
 
 		success, exitCode := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
 
@@ -455,6 +540,9 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 			actualModKey = currentModKey
 		}
 	}
+	if cmk := customModKey(); cmk != "" {
+		actualModKey += ";" + cmk
+	}
 	stateMu.Lock()
 	lastChampionID = championID
 	lastSkinID = skinID
@@ -471,6 +559,8 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	if teammateSkinCount > 0 {
 		sendStatus(conn, "ready", fmt.Sprintf("Skin applied! (+%d teammate skins)", teammateSkinCount))
+	} else if !hasSkin && hasCustomMods {
+		sendStatus(conn, "ready", "Custom mods applied!")
 	} else {
 		sendStatus(conn, "ready", "Skin applied!")
 	}
@@ -478,14 +568,25 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 // handlePrefetch pre-downloads a skin and pre-builds the overlay during champion select
 func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
-	// Download if not cached
-	zipPath := skin.GetCachedPath(championID, skinID)
-	if zipPath == "" {
-		downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
-		if err != nil {
-			return
+	hasSkin := skinID != "" && skinID != "0"
+	hasCustomMods := len(config.GetEnabledCustomMods()) > 0
+
+	// Nothing to prefetch
+	if !hasSkin && !hasCustomMods {
+		return
+	}
+
+	// Download skin if not default
+	var zipPath string
+	if hasSkin {
+		zipPath = skin.GetCachedPath(championID, skinID)
+		if zipPath == "" {
+			downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
+			if err != nil {
+				return
+			}
+			zipPath = downloaded
 		}
-		zipPath = downloaded
 	}
 
 	// Don't build if overlay is already active (mid-game)
@@ -512,6 +613,9 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	if roomState.IsActive() {
 		currentModKey = roomState.ComputeModKey(skinID)
 	}
+	if cmk := customModKey(); cmk != "" {
+		currentModKey += ";" + cmk
+	}
 
 	// Skip if already pre-built for this exact set of skins
 	if prebuiltModKey == currentModKey {
@@ -520,12 +624,17 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	}
 	display.Log(fmt.Sprintf("Prefetch: modKey=%s (was %s), roomActive=%v", currentModKey, prebuiltModKey, roomState.IsActive()))
 
-	os.RemoveAll(config.ModsDir)
-	modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
-	os.MkdirAll(modSubDir, os.ModePerm)
+	custommods.CleanModsDir()
+	os.MkdirAll(config.ModsDir, os.ModePerm)
 
-	if err := skin.Extract(zipPath, modSubDir); err != nil {
-		return
+	// Extract skin if not default
+	if hasSkin {
+		modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
+		os.MkdirAll(modSubDir, os.ModePerm)
+
+		if err := skin.Extract(zipPath, modSubDir); err != nil {
+			return
+		}
 	}
 
 	// Download and extract teammate skins if room party is active
@@ -533,13 +642,26 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 		roomState.DownloadTeammateSkins()
 	}
 
+	// Create junctions for enabled custom mods
+	customModNames := custommods.SetupCustomModJunctions()
+
 	os.RemoveAll(config.OverlayDir)
 	os.MkdirAll(config.OverlayDir, os.ModePerm)
 
-	// Build mod list: own skin + teammate skins
-	modName := fmt.Sprintf("skin_%s", skinID)
-	if roomState.IsActive() {
-		modName = roomState.GetAllModNames(skinID)
+	// Build mod list: own skin + teammate skins + custom mods
+	var modName string
+	if hasSkin {
+		modName = fmt.Sprintf("skin_%s", skinID)
+		if roomState.IsActive() {
+			modName = roomState.GetAllModNames(skinID)
+		}
+	}
+	if len(customModNames) > 0 {
+		if modName != "" {
+			modName += "/" + strings.Join(customModNames, "/")
+		} else {
+			modName = strings.Join(customModNames, "/")
+		}
 	}
 
 	display.Log(fmt.Sprintf("Prefetch: building overlay with mods: %s", modName))
@@ -550,13 +672,14 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 		return
 	}
 
-	// Record what was actually built (only skins whose mod dirs exist),
-	// not the theoretical set. This avoids false cache hits when a
-	// teammate skin download failed.
+	// Record what was actually built
 	if roomState.IsActive() {
 		prebuiltModKey = roomState.ComputeBuiltModKey(skinID)
 	} else {
 		prebuiltModKey = skinID
+	}
+	if cmk := customModKey(); cmk != "" {
+		prebuiltModKey += ";" + cmk
 	}
 	display.Log(fmt.Sprintf("Skin ready (prebuilt key: %s)", prebuiltModKey))
 }
@@ -946,6 +1069,157 @@ func handleConnection(conn *websocket.Conn) {
 			}
 			data, _ := json.Marshal(resp)
 			conn.WriteMessage(websocket.TextMessage, data)
+
+		case "pickCustomModFile":
+			go func() {
+				result, err := custommods.PickModFile()
+				if err != nil {
+					sendStatus(conn, "error", "Failed to open file picker")
+					return
+				}
+				if result == nil {
+					return // User cancelled
+				}
+				resp := map[string]interface{}{
+					"type":                "customModFilePicked",
+					"filePath":            result.FilePath,
+					"suggestedName":       result.SuggestedName,
+					"suggestedAuthor":     result.SuggestedAuthor,
+					"suggestedChampionId": result.SuggestedChampionID,
+				}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}()
+
+		case "importCustomMod":
+			var msg CustomModImportMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			go func() {
+				mod, err := custommods.ImportMod(msg.FilePath, msg.Name, msg.Author, msg.ChampionID, msg.ImageBase64)
+				if err != nil {
+					sendStatus(conn, "error", fmt.Sprintf("Failed to import mod: %v", err))
+					return
+				}
+				resp := map[string]interface{}{
+					"type": "customModAdded",
+					"mod":  mod,
+				}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}()
+
+		case "getCustomMods":
+			mods := config.GetCustomMods()
+			if mods == nil {
+				mods = []config.CustomMod{}
+			}
+			resp := map[string]interface{}{
+				"type": "customMods",
+				"mods": mods,
+			}
+			data, _ := json.Marshal(resp)
+			conn.WriteMessage(websocket.TextMessage, data)
+
+		case "deleteCustomMod":
+			var msg CustomModIDMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := custommods.DeleteMod(msg.ID); err != nil {
+				sendStatus(conn, "error", "Failed to delete mod")
+			} else {
+				resp := map[string]interface{}{
+					"type": "customModDeleted",
+					"id":   msg.ID,
+				}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "updateCustomMod":
+			var msg CustomModUpdateMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			mod, err := config.UpdateCustomMod(msg.ID, msg.Name, msg.Author, msg.ChampionID)
+			if err != nil {
+				sendStatus(conn, "error", "Failed to update mod")
+			} else if mod != nil {
+				resp := map[string]interface{}{
+					"type": "customModUpdated",
+					"mod":  mod,
+				}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "toggleCustomMod":
+			var msg CustomModToggleMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			mod, err := config.ToggleCustomMod(msg.ID, msg.Enabled)
+			if err != nil {
+				sendStatus(conn, "error", "Failed to toggle mod")
+			} else if mod != nil {
+				resp := map[string]interface{}{
+					"type": "customModUpdated",
+					"mod":  mod,
+				}
+				data, _ := json.Marshal(resp)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "pickCustomModImage":
+			var msg CustomModIDMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			go func() {
+				saved, err := custommods.SaveImageFromPicker(msg.ID)
+				if err != nil {
+					sendStatus(conn, "error", "Failed to save image")
+					return
+				}
+				if !saved {
+					return // User cancelled
+				}
+				// Re-read the mod to get updated state
+				for _, m := range config.GetCustomMods() {
+					if m.ID == msg.ID {
+						resp := map[string]interface{}{
+							"type": "customModUpdated",
+							"mod":  m,
+						}
+						data, _ := json.Marshal(resp)
+						conn.WriteMessage(websocket.TextMessage, data)
+						break
+					}
+				}
+			}()
+
+		case "deleteCustomModImage":
+			var msg CustomModIDMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := custommods.DeleteImage(msg.ID); err != nil {
+				sendStatus(conn, "error", "Failed to delete image")
+			} else {
+				for _, m := range config.GetCustomMods() {
+					if m.ID == msg.ID {
+						resp := map[string]interface{}{
+							"type": "customModUpdated",
+							"mod":  m,
+						}
+						data, _ := json.Marshal(resp)
+						conn.WriteMessage(websocket.TextMessage, data)
+						break
+					}
+				}
+			}
 		}
 	}
 }
@@ -967,6 +1241,16 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 // StartServer starts the WebSocket server
 func StartServer(port int) {
+	http.HandleFunc("/custom-mod-image/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/custom-mod-image/")
+		if id == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		custommods.ServeImage(w, r, id)
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {
 			wsHandler(w, r)

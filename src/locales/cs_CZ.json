@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Vlastní skiny",
+    "title": "VLASTNÍ SKINY",
+    "add_mod": "Přidat mod",
+    "no_mods": "Zatím žádné vlastní mody. Klikni na \"Přidat mod\" pro import souboru .fantome nebo .zip.",
+    "all_champions": "Všichni šampioni",
+    "import_title": "IMPORTOVAT VLASTNÍ SKIN",
+    "edit_title": "UPRAVIT VLASTNÍ SKIN",
+    "name": "Název",
+    "author": "Autor",
+    "champion": "Šampion",
+    "image_placeholder": "Klikni pro přidání obrázku",
+    "import_btn": "Importovat",
+    "save_btn": "Uložit",
+    "cancel_btn": "Zrušit",
+    "delete_title": "SMAZAT MOD",
+    "delete_body": "Opravdu chceš smazat \"{name}\"? Tuto akci nelze vrátit zpět.",
+    "delete_confirm": "SMAZAT",
+    "delete_cancel": "ZRUŠIT",
+    "filter_placeholder": "Hledat mody...",
+    "enabled": "Zapnuto",
+    "disabled": "Vypnuto"
   }
 }

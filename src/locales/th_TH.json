@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "สกินกำหนดเอง",
+    "title": "สกินกำหนดเอง",
+    "add_mod": "เพิ่มม็อด",
+    "no_mods": "ยังไม่มีม็อดกำหนดเอง คลิก \"เพิ่มม็อด\" เพื่อนำเข้าไฟล์ .fantome หรือ .zip",
+    "all_champions": "แชมเปี้ยนทั้งหมด",
+    "import_title": "นำเข้าสกินกำหนดเอง",
+    "edit_title": "แก้ไขสกินกำหนดเอง",
+    "name": "ชื่อ",
+    "author": "ผู้สร้าง",
+    "champion": "แชมเปี้ยน",
+    "image_placeholder": "คลิกเพื่อเพิ่มรูปภาพ",
+    "import_btn": "นำเข้า",
+    "save_btn": "บันทึก",
+    "cancel_btn": "ยกเลิก",
+    "delete_title": "ลบม็อด",
+    "delete_body": "คุณแน่ใจหรือไม่ที่จะลบ \"{name}\"? การดำเนินการนี้ไม่สามารถย้อนกลับได้",
+    "delete_confirm": "ลบ",
+    "delete_cancel": "ยกเลิก",
+    "filter_placeholder": "ค้นหาม็อด...",
+    "enabled": "เปิดใช้งาน",
+    "disabled": "ปิดใช้งาน"
   }
 }

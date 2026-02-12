@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "커스텀 스킨",
+    "title": "커스텀 스킨",
+    "add_mod": "모드 추가",
+    "no_mods": "커스텀 모드가 없습니다. \"모드 추가\"를 클릭하여 .fantome 또는 .zip 파일을 가져오세요.",
+    "all_champions": "모든 챔피언",
+    "import_title": "커스텀 스킨 가져오기",
+    "edit_title": "커스텀 스킨 편집",
+    "name": "이름",
+    "author": "제작자",
+    "champion": "챔피언",
+    "image_placeholder": "클릭하여 이미지 추가",
+    "import_btn": "가져오기",
+    "save_btn": "저장",
+    "cancel_btn": "취소",
+    "delete_title": "모드 삭제",
+    "delete_body": "\"{name}\"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    "delete_confirm": "삭제",
+    "delete_cancel": "취소",
+    "filter_placeholder": "모드 검색...",
+    "enabled": "활성화",
+    "disabled": "비활성화"
   }
 }

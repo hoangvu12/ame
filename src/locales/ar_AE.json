@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "سكينات مخصصة",
+    "title": "سكينات مخصصة",
+    "add_mod": "إضافة مود",
+    "no_mods": "لا يوجد مودات مخصصة بعد. انقر \"إضافة مود\" لاستيراد ملف .fantome أو .zip.",
+    "all_champions": "جميع الأبطال",
+    "import_title": "استيراد سكين مخصص",
+    "edit_title": "تعديل سكين مخصص",
+    "name": "الاسم",
+    "author": "المؤلف",
+    "champion": "البطل",
+    "image_placeholder": "انقر لإضافة صورة",
+    "import_btn": "استيراد",
+    "save_btn": "حفظ",
+    "cancel_btn": "إلغاء",
+    "delete_title": "حذف المود",
+    "delete_body": "هل أنت متأكد أنك تريد حذف \"{name}\"؟ لا يمكن التراجع عن هذا.",
+    "delete_confirm": "حذف",
+    "delete_cancel": "إلغاء",
+    "filter_placeholder": "البحث في المودات...",
+    "enabled": "مفعل",
+    "disabled": "معطل"
   }
 }

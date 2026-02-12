@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Trang phục tùy chỉnh",
+    "title": "TRANG PHỤC TÙY CHỈNH",
+    "add_mod": "Thêm mod",
+    "no_mods": "Chưa có mod tùy chỉnh. Nhấn \"Thêm mod\" để nhập file .fantome hoặc .zip.",
+    "all_champions": "Tất cả tướng",
+    "import_title": "NHẬP TRANG PHỤC TÙY CHỈNH",
+    "edit_title": "CHỈNH SỬA TRANG PHỤC TÙY CHỈNH",
+    "name": "Tên",
+    "author": "Tác giả",
+    "champion": "Tướng",
+    "image_placeholder": "Nhấn để thêm hình ảnh",
+    "import_btn": "Nhập",
+    "save_btn": "Lưu",
+    "cancel_btn": "Hủy",
+    "delete_title": "XÓA MOD",
+    "delete_body": "Bạn có chắc muốn xóa \"{name}\"? Thao tác này không thể hoàn tác.",
+    "delete_confirm": "XÓA",
+    "delete_cancel": "HỦY",
+    "filter_placeholder": "Tìm mod...",
+    "enabled": "Đã bật",
+    "disabled": "Đã tắt"
   }
 }

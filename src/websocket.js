@@ -24,6 +24,9 @@ let gamePathCallback = null;
 // One-shot callback for logs response
 let logsCallback = null;
 
+// One-shot callback for custom mod file picked
+let customModFilePickedCallback = null;
+
 // Settings: local cache + pub/sub listeners keyed by setting name
 const settingsCache = {};
 const settingsListeners = {};
@@ -42,6 +45,10 @@ const chatStatusListeners = [];
 
 // Room party: teammate update listeners
 const roomPartyListeners = [];
+
+// Custom mods: cache + listeners
+let customModsCache = [];
+const customModsListeners = [];
 
 // Connection state listeners
 let wsConnected = false;
@@ -185,6 +192,7 @@ export function wsConnect() {
       // Hydrate all state from server on connect/reconnect
       ws.send(JSON.stringify({ type: 'query' }));
       ws.send(JSON.stringify({ type: 'getSettings' }));
+      ws.send(JSON.stringify({ type: 'getCustomMods' }));
     };
     ws.onmessage = (e) => {
       try {
@@ -235,6 +243,23 @@ export function wsConnect() {
           applyRandomSkinMode(msg.mode);
         } else if (msg.type === 'chatStatus') {
           applyChatStatusConfig(msg.availability, msg.statusMessage);
+        } else if (msg.type === 'customMods') {
+          customModsCache = msg.mods || [];
+          customModsListeners.forEach(cb => cb(customModsCache));
+        } else if (msg.type === 'customModAdded') {
+          customModsCache = [...customModsCache, msg.mod];
+          customModsListeners.forEach(cb => cb(customModsCache));
+        } else if (msg.type === 'customModUpdated') {
+          customModsCache = customModsCache.map(m => m.id === msg.mod.id ? msg.mod : m);
+          customModsListeners.forEach(cb => cb(customModsCache));
+        } else if (msg.type === 'customModDeleted') {
+          customModsCache = customModsCache.filter(m => m.id !== msg.id);
+          customModsListeners.forEach(cb => cb(customModsCache));
+        } else if (msg.type === 'customModFilePicked') {
+          if (customModFilePickedCallback) {
+            customModFilePickedCallback(msg);
+            customModFilePickedCallback = null;
+          }
         } else if (settingsListeners[msg.type] && 'enabled' in msg) {
           // Individual setting response (from set* calls)
           applySetting(msg.type, msg.enabled);
@@ -373,4 +398,52 @@ export function wsSendApply(obj) {
   });
 
   wsSend(obj);
+}
+
+// --- Custom mods ---
+
+export function onCustomMods(cb) {
+  customModsListeners.push(cb);
+  if (customModsCache.length > 0) cb(customModsCache);
+  return () => {
+    const idx = customModsListeners.indexOf(cb);
+    if (idx !== -1) customModsListeners.splice(idx, 1);
+  };
+}
+
+export function getCustomModsCache() { return customModsCache; }
+
+export function refreshCustomMods() { wsSend({ type: 'getCustomMods' }); }
+
+export function hasEnabledCustomMods() {
+  return customModsCache.some(m => m.enabled);
+}
+
+export function pickCustomModFile(cb) {
+  customModFilePickedCallback = cb;
+  wsSend({ type: 'pickCustomModFile' });
+}
+
+export function importCustomMod(data) {
+  wsSend({ type: 'importCustomMod', ...data });
+}
+
+export function deleteCustomMod(id) {
+  wsSend({ type: 'deleteCustomMod', id });
+}
+
+export function updateCustomMod(data) {
+  wsSend({ type: 'updateCustomMod', ...data });
+}
+
+export function toggleCustomMod(id, enabled) {
+  wsSend({ type: 'toggleCustomMod', id, enabled });
+}
+
+export function pickCustomModImage(id) {
+  wsSend({ type: 'pickCustomModImage', id });
+}
+
+export function deleteCustomModImage(id) {
+  wsSend({ type: 'deleteCustomModImage', id });
 }

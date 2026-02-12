@@ -1,4 +1,4 @@
-import { STYLE_ID, BUTTON_ID, SWIFTPLAY_BUTTON_ID, CHROMA_BTN_CLASS, CHROMA_PANEL_ID, IN_GAME_CONTAINER_ID, ROOM_PARTY_INDICATOR_CLASS } from './constants';
+import { STYLE_ID, BUTTON_ID, SWIFTPLAY_BUTTON_ID, CHROMA_BTN_CLASS, CHROMA_PANEL_ID, IN_GAME_CONTAINER_ID, ROOM_PARTY_INDICATOR_CLASS, CUSTOM_SKINS_MODAL_ID } from './constants';
 
 export function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -324,12 +324,14 @@ export function injectStyles() {
       color: #e25151;
       background: rgba(226, 81, 81, 0.15);
     }
-    .ame-add-champion {
-      margin-top: 6px;
+    .ame-champion-search {
       position: relative;
     }
-    .ame-add-champion lol-uikit-flat-input {
+    .ame-champion-search lol-uikit-flat-input {
       width: 100%;
+    }
+    .ame-add-champion {
+      margin-top: 6px;
     }
     .ame-search-dropdown {
       position: absolute;
@@ -432,6 +434,263 @@ export function injectStyles() {
       border-color: #c8aa6e;
       color: #c8aa6e;
       background: rgba(60, 50, 30, 0.6);
+    }
+
+    /* Custom Skins Modal */
+    #${CUSTOM_SKINS_MODAL_ID} {
+      position: absolute;
+      inset: 0;
+      z-index: 9999;
+      font-family: var(--font-body);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-dialog {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-frame {
+      width: 720px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      background: #010a13;
+      border: 2px solid #463714;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid #463714;
+      flex-shrink: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-title {
+      font-family: var(--font-display);
+      font-size: 14px;
+      color: #c8aa6e;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-close {
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: #5b5a56;
+      font-size: 18px;
+      line-height: 24px;
+      text-align: center;
+      padding: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-close:hover {
+      color: #c8aa6e;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid rgba(70, 55, 20, 0.5);
+      flex-shrink: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-toolbar lol-uikit-flat-input {
+      flex: 1;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-toolbar .ame-champion-search {
+      width: 200px;
+      flex-shrink: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+      min-height: 200px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: #5b5a56;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card {
+      background: rgba(30, 35, 40, 0.6);
+      border: 1px solid #463714;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.15s;
+      cursor: pointer;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card:hover {
+      border-color: #c8aa6e;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card.csm-disabled {
+      opacity: 0.5;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-img {
+      width: 100%;
+      aspect-ratio: 2/3;
+      object-fit: contain;
+      display: block;
+      background: #0a1428;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-placeholder {
+      width: 100%;
+      aspect-ratio: 2/3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a1428;
+      color: #3c3c41;
+      font-size: 28px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-info {
+      padding: 8px 10px;
+      flex: 1;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-name {
+      font-size: 12px;
+      color: #f0e6d2;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-author {
+      font-size: 11px;
+      color: #5b5a56;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-top: 1px solid rgba(70, 55, 20, 0.3);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-btns {
+      display: flex;
+      gap: 6px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-icon-btn {
+      width: 22px;
+      height: 22px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: #5b5a56;
+      font-size: 13px;
+      line-height: 22px;
+      text-align: center;
+      padding: 0;
+      border-radius: 3px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-icon-btn:hover {
+      color: #c8aa6e;
+      background: rgba(200, 170, 110, 0.1);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-icon-btn.csm-delete:hover {
+      color: #e25151;
+      background: rgba(226, 81, 81, 0.1);
+    }
+
+    /* Import/Edit sub-dialog */
+    .csm-subdialog-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.5);
+    }
+    .csm-subdialog {
+      width: 480px;
+      background: #010a13;
+      border: 2px solid #463714;
+    }
+    .csm-subdialog .csm-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid #463714;
+    }
+    .csm-subdialog-body {
+      padding: 16px;
+      display: flex;
+      gap: 16px;
+    }
+    .csm-subdialog-img {
+      width: 100px;
+      aspect-ratio: 2/3;
+      border: 1px solid #463714;
+      border-radius: 4px;
+      cursor: pointer;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a1428;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .csm-subdialog-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .csm-subdialog-img .csm-img-hint {
+      font-size: 11px;
+      color: #5b5a56;
+      text-align: center;
+      padding: 8px;
+    }
+    .csm-subdialog-img:hover {
+      border-color: #c8aa6e;
+    }
+    .csm-subdialog-fields {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .csm-field-label {
+      font-size: 11px;
+      color: #a09b8c;
+      margin-bottom: 3px;
+      display: block;
+    }
+    .csm-subdialog-fields lol-uikit-flat-input {
+      width: 100%;
+    }
+    .csm-subdialog-fields .ame-champion-search {
+      width: 100%;
+    }
+    .csm-subdialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid #463714;
     }
   `;
   document.head.appendChild(style);

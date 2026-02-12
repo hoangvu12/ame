@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Skins personalizadas",
+    "title": "SKINS PERSONALIZADAS",
+    "add_mod": "Adicionar mod",
+    "no_mods": "Nenhum mod personalizado ainda. Clique em \"Adicionar mod\" para importar um arquivo .fantome ou .zip.",
+    "all_champions": "Todos os campeões",
+    "import_title": "IMPORTAR SKIN PERSONALIZADA",
+    "edit_title": "EDITAR SKIN PERSONALIZADA",
+    "name": "Nome",
+    "author": "Autor",
+    "champion": "Campeão",
+    "image_placeholder": "Clique para adicionar imagem",
+    "import_btn": "Importar",
+    "save_btn": "Salvar",
+    "cancel_btn": "Cancelar",
+    "delete_title": "EXCLUIR MOD",
+    "delete_body": "Tem certeza de que deseja excluir \"{name}\"? Esta ação não pode ser desfeita.",
+    "delete_confirm": "EXCLUIR",
+    "delete_cancel": "CANCELAR",
+    "filter_placeholder": "Buscar mods...",
+    "enabled": "Ativado",
+    "disabled": "Desativado"
   }
 }

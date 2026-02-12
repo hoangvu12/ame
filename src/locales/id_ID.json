@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Skin Kustom",
+    "title": "SKIN KUSTOM",
+    "add_mod": "Tambah Mod",
+    "no_mods": "Belum ada mod kustom. Klik \"Tambah Mod\" untuk mengimpor file .fantome atau .zip.",
+    "all_champions": "Semua Champion",
+    "import_title": "IMPOR SKIN KUSTOM",
+    "edit_title": "EDIT SKIN KUSTOM",
+    "name": "Nama",
+    "author": "Pembuat",
+    "champion": "Champion",
+    "image_placeholder": "Klik untuk menambah gambar",
+    "import_btn": "Impor",
+    "save_btn": "Simpan",
+    "cancel_btn": "Batal",
+    "delete_title": "HAPUS MOD",
+    "delete_body": "Apakah Anda yakin ingin menghapus \"{name}\"? Tindakan ini tidak dapat dibatalkan.",
+    "delete_confirm": "HAPUS",
+    "delete_cancel": "BATAL",
+    "filter_placeholder": "Cari mod...",
+    "enabled": "Aktif",
+    "disabled": "Nonaktif"
   }
 }

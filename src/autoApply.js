@@ -1,6 +1,6 @@
 import { loadChampionSkins, getMyChampionId, getChampionName, fetchJson, forceDefaultSkin } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin, getSkinKeyFromItem } from './skin';
-import { wsSend, wsSendApply, isApplyInFlight, isOverlayActive } from './websocket';
+import { wsSend, wsSendApply, isApplyInFlight, isOverlayActive, hasEnabledCustomMods } from './websocket';
 import {
   getAppliedSkinName, setAppliedSkinName,
   getSelectedChroma, setSelectedChroma, clearSelectedChroma,
@@ -162,13 +162,24 @@ export async function forceApplyIfNeeded() {
   // Fallback: resolve from DOM / tracking state (no prefetch happened)
   const skinName = lastTrackedSkin || readCurrentSkin();
   const championId = lastTrackedChampion || await getMyChampionId();
-  if (!skinName || !championId) return;
+  if (!skinName || !championId) {
+    // No skin data — still apply custom mods if enabled
+    await applyCustomModsOnly();
+    return;
+  }
 
   const skins = await loadChampionSkins(championId);
-  if (!skins) return;
+  if (!skins) {
+    await applyCustomModsOnly();
+    return;
+  }
 
   const skin = findSkinByName(skins, skinName);
-  if (!skin || isDefaultSkin(skin)) return;
+  if (!skin || isDefaultSkin(skin)) {
+    // Default skin selected — still apply custom mods if enabled
+    await applyCustomModsOnly();
+    return;
+  }
 
   const forced = await forceDefaultSkin(championId);
   logger.log(` forceApply: forceDefaultSkin (fallback) result: ${forced}`);
@@ -192,6 +203,21 @@ export async function forceApplyIfNeeded() {
   setAppliedSkinName(skinName);
   setAppliedChromaId(chroma?.id || null);
   setButtonState(t('ui.applied'), true);
+}
+
+/**
+ * Apply only custom mods (no skin). Used when default skin is selected but custom mods are enabled.
+ */
+async function applyCustomModsOnly() {
+  if (!hasEnabledCustomMods()) return;
+  if (isApplyInFlight()) return;
+  if (isOverlayActive()) return;
+
+  const championId = lastTrackedChampion || await getMyChampionId();
+  if (!championId) return;
+  const champName = await getChampionName(championId);
+  logger.log(` applyCustomModsOnly: applying custom mods for ${champName}`);
+  wsSendApply({ type: 'apply', championId, skinId: 0, championName: champName, skinName: '' });
 }
 
 // --- Reset ---

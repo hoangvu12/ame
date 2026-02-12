@@ -88,5 +88,28 @@
   },
   "room_party": {
     "tooltip": "Ame: {label}"
+  },
+  "custom_skins": {
+    "button": "Свои скины",
+    "title": "СВОИ СКИНЫ",
+    "add_mod": "Добавить мод",
+    "no_mods": "Пока нет модов. Нажмите \"Добавить мод\", чтобы импортировать файл .fantome или .zip.",
+    "all_champions": "Все чемпионы",
+    "import_title": "ИМПОРТ СКИНА",
+    "edit_title": "РЕДАКТИРОВАНИЕ СКИНА",
+    "name": "Название",
+    "author": "Автор",
+    "champion": "Чемпион",
+    "image_placeholder": "Нажмите, чтобы добавить изображение",
+    "import_btn": "Импорт",
+    "save_btn": "Сохранить",
+    "cancel_btn": "Отмена",
+    "delete_title": "УДАЛИТЬ МОД",
+    "delete_body": "Вы уверены, что хотите удалить \"{name}\"? Это действие нельзя отменить.",
+    "delete_confirm": "УДАЛИТЬ",
+    "delete_cancel": "ОТМЕНА",
+    "filter_placeholder": "Поиск модов...",
+    "enabled": "Включено",
+    "disabled": "Отключено"
   }
 }
