@@ -1,1 +1,3 @@
-- Changed mod-tools to download as a single zip file
+- Added mod browser with extension support for browsing and downloading skins directly in the client
+- Added custom mods management with import, enable/disable, and per-champion assignment
+- Fixed auto-apply state not resetting when changing champion during champ select
