@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"github.com/hoangvu12/ame/internal/config"
 )
@@ -42,24 +43,93 @@ func generateID() string {
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
+// --- Win32 file dialog via GetOpenFileNameW (no PowerShell) ---
+
+var (
+	comdlg32             = syscall.NewLazyDLL("comdlg32.dll")
+	procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
+	user32               = syscall.NewLazyDLL("user32.dll")
+	procGetForegroundWnd = user32.NewProc("GetForegroundWindow")
+)
+
+const (
+	ofnFileMustExist = 0x00001000
+	ofnPathMustExist = 0x00000800
+	ofnNoChangeDir   = 0x00000008
+)
+
+type openFileNameW struct {
+	lStructSize       uint32
+	hwndOwner         uintptr
+	hInstance         uintptr
+	lpstrFilter       *uint16
+	lpstrCustomFilter *uint16
+	nMaxCustFilter    uint32
+	nFilterIndex      uint32
+	lpstrFile         *uint16
+	nMaxFile          uint32
+	lpstrFileTitle    *uint16
+	nMaxFileTitle     uint32
+	lpstrInitialDir   *uint16
+	lpstrTitle        *uint16
+	flags             uint32
+	nFileOffset       uint16
+	nFileExtension    uint16
+	lpstrDefExt       *uint16
+	lCustData         uintptr
+	lpfnHook          uintptr
+	lpTemplateName    *uint16
+	pvReserved        uintptr
+	dwReserved        uint32
+	flagsEx           uint32
+}
+
+// openFileDialog opens a native Win32 file dialog without spawning PowerShell.
+// filter uses | as separator (e.g. "Mod Files|*.fantome;*.zip|All Files|*.*|").
+// Must end with trailing | for proper double-null termination.
+func openFileDialog(filter, title string) (string, error) {
+	filterUTF16, _ := syscall.UTF16FromString(filter)
+	for i := range filterUTF16 {
+		if filterUTF16[i] == '|' {
+			filterUTF16[i] = 0
+		}
+	}
+
+	titleUTF16, _ := syscall.UTF16FromString(title)
+
+	var fileBuf [260]uint16
+
+	hwnd, _, _ := procGetForegroundWnd.Call()
+
+	ofn := openFileNameW{
+		hwndOwner:    hwnd,
+		lpstrFilter:  &filterUTF16[0],
+		nFilterIndex: 1,
+		lpstrFile:    &fileBuf[0],
+		nMaxFile:     uint32(len(fileBuf)),
+		lpstrTitle:   &titleUTF16[0],
+		flags:        ofnFileMustExist | ofnPathMustExist | ofnNoChangeDir,
+	}
+	ofn.lStructSize = uint32(unsafe.Sizeof(ofn))
+
+	ret, _, _ := procGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
+	if ret == 0 {
+		return "", nil // User cancelled
+	}
+
+	return syscall.UTF16ToString(fileBuf[:]), nil
+}
+
 // PickModFile opens a native Windows file dialog for .fantome/.zip files
 // and returns metadata extracted from the selected file.
 func PickModFile() (*PickFileResult, error) {
-	cmd := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command",
-		`Add-Type -AssemblyName System.Windows.Forms; `+
-			`$form = New-Object System.Windows.Forms.Form -Property @{TopMost=$true;Width=0;Height=0}; `+
-			`$f = New-Object System.Windows.Forms.OpenFileDialog; `+
-			`$f.Filter = 'Mod Files (*.fantome;*.zip)|*.fantome;*.zip|All Files (*.*)|*.*'; `+
-			`$f.Title = 'Select Custom Mod'; `+
-			`if ($f.ShowDialog($form) -eq 'OK') { $f.FileName }`)
-	cmd.SysProcAttr = hiddenAttr
-
-	out, err := cmd.Output()
+	filePath, err := openFileDialog(
+		"Mod Files (*.fantome;*.zip)|*.fantome;*.zip|All Files (*.*)|*.*|",
+		"Select Custom Mod",
+	)
 	if err != nil {
 		return nil, fmt.Errorf("file picker failed: %w", err)
 	}
-
-	filePath := strings.TrimSpace(string(out))
 	if filePath == "" {
 		return nil, nil // User cancelled
 	}
@@ -95,21 +165,10 @@ func PickModFile() (*PickFileResult, error) {
 
 // PickImageFile opens a native Windows file dialog for image files.
 func PickImageFile() (string, error) {
-	cmd := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command",
-		`Add-Type -AssemblyName System.Windows.Forms; `+
-			`$form = New-Object System.Windows.Forms.Form -Property @{TopMost=$true;Width=0;Height=0}; `+
-			`$f = New-Object System.Windows.Forms.OpenFileDialog; `+
-			`$f.Filter = 'Image Files (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp|All Files (*.*)|*.*'; `+
-			`$f.Title = 'Select Preview Image'; `+
-			`if ($f.ShowDialog($form) -eq 'OK') { $f.FileName }`)
-	cmd.SysProcAttr = hiddenAttr
-
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("image picker failed: %w", err)
-	}
-
-	return strings.TrimSpace(string(out)), nil
+	return openFileDialog(
+		"Image Files (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp|All Files (*.*)|*.*|",
+		"Select Preview Image",
+	)
 }
 
 // readModMeta reads META/info.json from a mod archive.

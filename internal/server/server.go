@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/hoangvu12/ame/internal/browsedownload"
 	"github.com/hoangvu12/ame/internal/config"
 	"github.com/hoangvu12/ame/internal/custommods"
 	"github.com/hoangvu12/ame/internal/display"
+	"github.com/hoangvu12/ame/internal/extensions"
 	"github.com/hoangvu12/ame/internal/game"
+	"github.com/hoangvu12/ame/internal/httpproxy"
 	"github.com/hoangvu12/ame/internal/lcu"
 	"github.com/hoangvu12/ame/internal/modtools"
 	"github.com/hoangvu12/ame/internal/roomparty"
@@ -1220,6 +1223,24 @@ func handleConnection(conn *websocket.Conn) {
 					}
 				}
 			}
+
+		case "httpProxy":
+			httpproxy.HandleProxy(conn, message)
+
+		case "browseDownload":
+			browsedownload.HandleDownload(conn, message)
+
+		case "getExtensions":
+			extensions.HandleGetExtensions(conn)
+
+		case "addExtension":
+			extensions.HandleAddExtension(conn, message)
+
+		case "addExtensionFromFile":
+			extensions.HandleAddExtensionFromFile(conn)
+
+		case "removeExtension":
+			extensions.HandleRemoveExtension(conn, message)
 		}
 	}
 }
@@ -1250,6 +1271,8 @@ func StartServer(port int) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		custommods.ServeImage(w, r, id)
 	})
+
+	http.HandleFunc("/proxy-image", httpproxy.ServeImageProxy)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {

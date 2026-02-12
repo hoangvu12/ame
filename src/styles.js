@@ -443,6 +443,14 @@ export function injectStyles() {
       z-index: 9999;
       font-family: var(--font-body);
     }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-frame,
+    #${CUSTOM_SKINS_MODAL_ID} .csm-frame * {
+      font-family: var(--font-body);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-title,
+    #${CUSTOM_SKINS_MODAL_ID} .brw-detail-title {
+      font-family: var(--font-display);
+    }
     #${CUSTOM_SKINS_MODAL_ID} .csm-backdrop {
       position: absolute;
       inset: 0;
@@ -457,7 +465,7 @@ export function injectStyles() {
     }
     #${CUSTOM_SKINS_MODAL_ID} .csm-frame {
       width: 720px;
-      max-height: 80vh;
+      height: 80vh;
       display: flex;
       flex-direction: column;
       background: #010a13;
@@ -542,16 +550,47 @@ export function injectStyles() {
     #${CUSTOM_SKINS_MODAL_ID} .csm-card.csm-disabled {
       opacity: 0.5;
     }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-img-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #0a1428;
+      overflow: hidden;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-spinner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-spinner::after {
+      content: '';
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(200, 170, 110, 0.2);
+      border-top-color: #c8aa6e;
+      border-radius: 50%;
+      animation: brw-spin 0.7s linear infinite;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-img-wrap.loaded .csm-card-spinner {
+      display: none;
+    }
     #${CUSTOM_SKINS_MODAL_ID} .csm-card-img {
       width: 100%;
-      aspect-ratio: 2/3;
+      height: 100%;
+      aspect-ratio: 16/9;
       object-fit: contain;
       display: block;
-      background: #0a1428;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-card-img-wrap.loaded .csm-card-img {
+      opacity: 1;
     }
     #${CUSTOM_SKINS_MODAL_ID} .csm-card-placeholder {
       width: 100%;
-      aspect-ratio: 2/3;
+      aspect-ratio: 16/9;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -640,8 +679,8 @@ export function injectStyles() {
       gap: 16px;
     }
     .csm-subdialog-img {
-      width: 100px;
-      aspect-ratio: 2/3;
+      width: 140px;
+      aspect-ratio: 16/9;
       border: 1px solid #463714;
       border-radius: 4px;
       cursor: pointer;
@@ -691,6 +730,371 @@ export function injectStyles() {
       gap: 8px;
       padding: 12px 16px;
       border-top: 1px solid #463714;
+    }
+
+    /* Tabs in header */
+    #${CUSTOM_SKINS_MODAL_ID} .csm-tabs {
+      display: flex;
+      gap: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-tab {
+      padding: 8px 20px;
+      font-family: var(--font-display);
+      font-size: 12px;
+      color: #5b5a56;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-tab:hover {
+      color: #a09b8c;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-tab.active {
+      color: #c8aa6e;
+      border-bottom-color: #c8aa6e;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-tab-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-tab-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Browse tab */
+    #${CUSTOM_SKINS_MODAL_ID} .brw-container {
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      overflow: hidden;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-source-select {
+      background: #1e2328;
+      border: 1px solid #5b5a56;
+      border-radius: 4px;
+      color: #f0e6d2;
+      font-size: 12px;
+      padding: 4px 8px;
+      height: 28px;
+      min-width: 120px;
+      cursor: pointer;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-source-select:focus {
+      border-color: #c8aa6e;
+      outline: none;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-source-select option {
+      background: #1e2328;
+      color: #f0e6d2;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-gear-btn {
+      min-width: 0 !important;
+      padding: 0 10px !important;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-filter-btn.active {
+      color: #c8aa6e;
+      background: rgba(200, 170, 110, 0.1);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-filter-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 16px;
+      border-bottom: 1px solid rgba(70, 55, 20, 0.5);
+      align-items: flex-end;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-filter-control {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-filter-select {
+      background: #1e2328;
+      border: 1px solid #5b5a56;
+      border-radius: 4px;
+      color: #f0e6d2;
+      font-size: 12px;
+      padding: 4px 8px;
+      height: 28px;
+      min-width: 100px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-filter-select option {
+      background: #1e2328;
+      color: #f0e6d2;
+    }
+    /* Multiselect filter */
+    #${CUSTOM_SKINS_MODAL_ID} .brw-multiselect {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ms-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: #a09b8c;
+      cursor: pointer;
+      user-select: none;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ms-label:hover {
+      color: #f0e6d2;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ms-cb {
+      accent-color: #c8aa6e;
+      cursor: pointer;
+    }
+
+    /* Filter chips */
+    #${CUSTOM_SKINS_MODAL_ID} .brw-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 6px 16px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: #f0e6d2;
+      background: rgba(200, 170, 110, 0.15);
+      border: 1px solid rgba(200, 170, 110, 0.3);
+      border-radius: 12px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-chip-remove {
+      cursor: pointer;
+      font-size: 13px;
+      color: #a09b8c;
+      line-height: 1;
+      margin-left: 2px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-chip-remove:hover {
+      color: #e25151;
+    }
+
+    #${CUSTOM_SKINS_MODAL_ID} .brw-results {
+      flex: 1;
+      min-height: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-results-inner {
+      padding: 12px 16px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-card {
+      cursor: pointer;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-load-more-row {
+      display: flex;
+      justify-content: center;
+      padding: 12px 0;
+    }
+
+    /* Browse detail view */
+    #${CUSTOM_SKINS_MODAL_ID} .brw-detail {
+      flex: 1;
+      min-height: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-detail-inner {
+      padding: 12px 16px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-back-btn {
+      background: none;
+      border: none;
+      color: #c8aa6e;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 4px 0;
+      margin-bottom: 12px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-back-btn:hover {
+      color: #f0e6d2;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-hero-wrap {
+      position: relative;
+      width: 100%;
+      height: 260px;
+      border-radius: 4px;
+      border: 1px solid #463714;
+      background: #0a1428;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-hero-wrap .brw-img-spinner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-hero-wrap .brw-img-spinner::after {
+      content: '';
+      width: 28px;
+      height: 28px;
+      border: 2px solid rgba(200, 170, 110, 0.2);
+      border-top-color: #c8aa6e;
+      border-radius: 50%;
+      animation: brw-spin 0.7s linear infinite;
+    }
+    @keyframes brw-spin {
+      to { transform: rotate(360deg); }
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-hero-wrap.loaded .brw-img-spinner {
+      display: none;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-hero-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-hero-wrap.loaded .brw-hero-img {
+      opacity: 1;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-thumb-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-thumb {
+      width: 64px;
+      height: 38px;
+      object-fit: cover;
+      border-radius: 3px;
+      border: 1px solid #463714;
+      cursor: pointer;
+      opacity: 0.5;
+      transition: opacity 0.15s, border-color 0.15s;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-thumb:hover {
+      opacity: 0.8;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-thumb.active {
+      opacity: 1;
+      border-color: #c8aa6e;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-detail-title {
+      font-family: var(--font-display);
+      font-size: 18px;
+      color: #f0e6d2;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-detail-author {
+      font-size: 12px;
+      color: #a09b8c;
+      margin-bottom: 12px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-detail-desc {
+      font-size: 12px;
+      color: #a09b8c;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      padding: 10px 12px;
+      background: rgba(30, 35, 40, 0.4);
+      border-radius: 4px;
+      border: 1px solid rgba(70, 55, 20, 0.3);
+      margin-bottom: 16px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-download-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-dl-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-dl-error {
+      font-size: 12px;
+      color: #e25151;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-progress {
+      position: relative;
+      width: 200px;
+      height: 28px;
+      background: rgba(30, 35, 40, 0.6);
+      border: 1px solid #463714;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-progress-bar {
+      height: 100%;
+      background: rgba(200, 170, 110, 0.3);
+      transition: width 0.3s;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-progress-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: #f0e6d2;
+    }
+
+    /* Browse: no sources */
+    #${CUSTOM_SKINS_MODAL_ID} .brw-no-sources {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Extensions manager overlay */
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-dialog {
+      width: 420px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-body {
+      padding: 16px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(70, 55, 20, 0.3);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-name {
+      font-size: 13px;
+      color: #f0e6d2;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-empty {
+      text-align: center;
+      padding: 16px;
+      color: #5b5a56;
+      font-size: 13px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-add-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      align-items: center;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-add-row lol-uikit-flat-input {
+      flex: 1;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .brw-ext-inline {
+      padding: 0 16px;
     }
   `;
   document.head.appendChild(style);

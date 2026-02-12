@@ -20,6 +20,22 @@ export function createCheckbox(id, labelText, onChange) {
   return { checkbox, input };
 }
 
+/**
+ * Creates a card image element with loading spinner.
+ * Returns the wrapper element (or a placeholder if no src).
+ */
+export function createCardImage(src, placeholder = '\u{1F3AE}') {
+  if (!src) {
+    return el('div', { class: 'csm-card-placeholder' }, placeholder);
+  }
+  const wrap = el('div', { class: 'csm-card-img-wrap' }, el('div', { class: 'csm-card-spinner' }));
+  const img = el('img', { class: 'csm-card-img', src, loading: 'lazy' });
+  img.addEventListener('load', () => wrap.classList.add('loaded'));
+  img.addEventListener('error', () => wrap.classList.add('loaded'));
+  wrap.appendChild(img);
+  return wrap;
+}
+
 export function createDropdown(options, opts = {}) {
   const attrs = {};
   if (opts.class) attrs.class = opts.class;

@@ -50,6 +50,17 @@ const roomPartyListeners = [];
 let customModsCache = [];
 const customModsListeners = [];
 
+// HTTP proxy: pending request callbacks keyed by requestId
+const httpProxyCallbacks = new Map();
+
+// Browse download: progress listeners keyed by requestId
+const browseDownloadListeners = new Map();
+
+// Extensions: one-shot callbacks
+let extensionsCallback = null;
+let extensionAddedCallback = null;
+let extensionRemovedCallback = null;
+
 // Connection state listeners
 let wsConnected = false;
 const connectionListeners = [];
@@ -245,20 +256,44 @@ export function wsConnect() {
           applyChatStatusConfig(msg.availability, msg.statusMessage);
         } else if (msg.type === 'customMods') {
           customModsCache = msg.mods || [];
-          customModsListeners.forEach(cb => cb(customModsCache));
+          customModsListeners.forEach(cb => cb(customModsCache, 'list'));
         } else if (msg.type === 'customModAdded') {
           customModsCache = [...customModsCache, msg.mod];
-          customModsListeners.forEach(cb => cb(customModsCache));
+          customModsListeners.forEach(cb => cb(customModsCache, 'added'));
         } else if (msg.type === 'customModUpdated') {
           customModsCache = customModsCache.map(m => m.id === msg.mod.id ? msg.mod : m);
-          customModsListeners.forEach(cb => cb(customModsCache));
+          customModsListeners.forEach(cb => cb(customModsCache, 'updated'));
         } else if (msg.type === 'customModDeleted') {
           customModsCache = customModsCache.filter(m => m.id !== msg.id);
-          customModsListeners.forEach(cb => cb(customModsCache));
+          customModsListeners.forEach(cb => cb(customModsCache, 'deleted'));
         } else if (msg.type === 'customModFilePicked') {
           if (customModFilePickedCallback) {
             customModFilePickedCallback(msg);
             customModFilePickedCallback = null;
+          }
+        } else if (msg.type === 'httpProxyResult') {
+          const cb = httpProxyCallbacks.get(msg.requestId);
+          if (cb) {
+            httpProxyCallbacks.delete(msg.requestId);
+            cb(msg);
+          }
+        } else if (msg.type === 'browseDownloadProgress') {
+          const cb = browseDownloadListeners.get(msg.requestId);
+          if (cb) cb(msg);
+        } else if (msg.type === 'extensions') {
+          if (extensionsCallback) {
+            extensionsCallback(msg.extensions || []);
+            extensionsCallback = null;
+          }
+        } else if (msg.type === 'extensionAdded') {
+          if (extensionAddedCallback) {
+            extensionAddedCallback(msg.extension);
+            extensionAddedCallback = null;
+          }
+        } else if (msg.type === 'extensionRemoved') {
+          if (extensionRemovedCallback) {
+            extensionRemovedCallback(msg.filename);
+            extensionRemovedCallback = null;
           }
         } else if (settingsListeners[msg.type] && 'enabled' in msg) {
           // Individual setting response (from set* calls)
@@ -446,4 +481,56 @@ export function pickCustomModImage(id) {
 
 export function deleteCustomModImage(id) {
   wsSend({ type: 'deleteCustomModImage', id });
+}
+
+// --- HTTP Proxy ---
+
+let proxyIdCounter = 0;
+
+export function registerHttpProxyCallback(requestId, cb) {
+  httpProxyCallbacks.set(requestId, cb);
+}
+
+export function sendHttpProxy(url, method, headers, body) {
+  const requestId = 'proxy-' + (++proxyIdCounter);
+  return new Promise((resolve) => {
+    httpProxyCallbacks.set(requestId, resolve);
+    wsSend({ type: 'httpProxy', requestId, url, method: method || 'GET', headers, body });
+  });
+}
+
+// --- Browse Download ---
+
+export function startBrowseDownload(url, name, author, championId, thumbnailUrl, onProgress) {
+  const requestId = 'dl-' + (++proxyIdCounter);
+  browseDownloadListeners.set(requestId, (msg) => {
+    if (onProgress) onProgress(msg);
+    if (msg.phase === 'done' || msg.phase === 'error') {
+      browseDownloadListeners.delete(requestId);
+    }
+  });
+  wsSend({ type: 'browseDownload', requestId, url, name, author, championId, thumbnailUrl });
+  return requestId;
+}
+
+// --- Extensions ---
+
+export function requestExtensions(cb) {
+  extensionsCallback = cb;
+  wsSend({ type: 'getExtensions' });
+}
+
+export function addExtension(url, cb) {
+  extensionAddedCallback = cb;
+  wsSend({ type: 'addExtension', url });
+}
+
+export function addExtensionFromFile(cb) {
+  extensionAddedCallback = cb;
+  wsSend({ type: 'addExtensionFromFile' });
+}
+
+export function removeExtension(filename, cb) {
+  extensionRemovedCallback = cb;
+  wsSend({ type: 'removeExtension', filename });
 }

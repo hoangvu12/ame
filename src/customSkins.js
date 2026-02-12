@@ -1,5 +1,5 @@
 import { el } from './dom';
-import { createButton, createCheckbox, createChampionSearch, createInput } from './components';
+import { createButton, createCheckbox, createChampionSearch, createInput, createCardImage } from './components';
 import { t } from './i18n';
 import { loadChampionSummary } from './api';
 import { CUSTOM_SKINS_MODAL_ID, CUSTOM_SKINS_IMAGE_BASE } from './constants';
@@ -9,12 +9,16 @@ import {
   updateCustomMod, toggleCustomMod, pickCustomModImage,
   deleteCustomModImage,
 } from './websocket';
+import { createBrowseContent, destroyBrowseContent } from './browse';
 
 let modalEl = null;
 let championList = null; // cached champion summary
 let filterChampion = 0;
 let filterText = '';
 let unsubMods = null;
+let activeTab = 'mods'; // 'mods' | 'browse'
+let modsContainer = null;
+let browseContainer = null;
 
 // --- Public API ---
 
@@ -25,13 +29,17 @@ export function openCustomSkinsModal() {
 
 export function closeCustomSkinsModal() {
   if (modalEl) {
+    destroyBrowseContent();
     modalEl.remove();
     modalEl = null;
   }
+  modsContainer = null;
+  browseContainer = null;
   if (unsubMods) {
     unsubMods();
     unsubMods = null;
   }
+  activeTab = 'mods';
 }
 
 // --- Modal ---
@@ -40,7 +48,80 @@ async function buildModal() {
   // Ensure champion data is loaded
   championList = await loadChampionSummary();
 
+  modalEl = el('div', { id: CUSTOM_SKINS_MODAL_ID },
+    el('lol-uikit-full-page-backdrop', { class: 'csm-backdrop', onClick: closeCustomSkinsModal }),
+    el('div', { class: 'csm-dialog' },
+      el('div', { class: 'csm-frame' },
+        el('div', { class: 'csm-header' },
+          el('div', { class: 'csm-tabs' },
+            el('button', {
+              class: 'csm-tab active',
+              dataset: { tab: 'mods' },
+              onClick: () => switchTab('mods'),
+            }, t('browse.tab_my_mods')),
+            el('button', {
+              class: 'csm-tab',
+              dataset: { tab: 'browse' },
+              onClick: () => switchTab('browse'),
+            }, t('browse.tab_browse')),
+          ),
+          el('button', { class: 'csm-close', onClick: closeCustomSkinsModal }, '\u00D7'),
+        ),
+        el('div', { class: 'csm-tab-content' }),
+      ),
+    ),
+  );
+
+  // Stop click propagation on the frame so backdrop click doesn't close
+  modalEl.querySelector('.csm-frame').addEventListener('click', e => e.stopPropagation());
+
+  document.body.appendChild(modalEl);
+
+  // Subscribe to mod list updates — only full re-render on add/delete
+  unsubMods = onCustomMods((mods, event) => {
+    if (activeTab !== 'mods') return;
+    if (event === 'updated') {
+      updateCardsInPlace(mods);
+    } else {
+      renderGrid();
+    }
+  });
+  refreshCustomMods();
+
+  // Render initial tab
+  switchTab('mods');
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  if (!modalEl) return;
+
+  const tabs = modalEl.querySelectorAll('.csm-tab');
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+
+  const content = modalEl.querySelector('.csm-tab-content');
+  if (!content) return;
+
+  // Lazily create containers on first visit
+  if (!modsContainer) {
+    modsContainer = el('div', { class: 'csm-tab-panel' });
+    content.appendChild(modsContainer);
+    renderModsTab(modsContainer);
+  }
+  if (!browseContainer && tab === 'browse') {
+    browseContainer = el('div', { class: 'csm-tab-panel' });
+    content.appendChild(browseContainer);
+    renderBrowseTab(browseContainer);
+  }
+
+  // Toggle visibility
+  modsContainer.style.display = tab === 'mods' ? '' : 'none';
+  if (browseContainer) browseContainer.style.display = tab === 'browse' ? '' : 'none';
+}
+
+function renderModsTab(content) {
   const searchInput = createInput({ placeholder: t('custom_skins.filter_placeholder') });
+  searchInput.input.value = filterText;
   searchInput.input.addEventListener('input', () => {
     filterText = searchInput.input.value.toLowerCase();
     renderGrid();
@@ -49,7 +130,7 @@ async function buildModal() {
   const champSearch = createChampionSearch({
     champions: championList || [],
     allOption: t('custom_skins.all_champions'),
-    selected: 0,
+    selected: filterChampion,
     placeholder: t('custom_skins.all_champions'),
     onSelect: (id) => {
       filterChampion = id;
@@ -61,39 +142,29 @@ async function buildModal() {
     onClick: () => handleAddMod(),
   });
 
-  const gridContainer = el('div', { class: 'csm-body' });
-
-  modalEl = el('div', { id: CUSTOM_SKINS_MODAL_ID },
-    el('lol-uikit-full-page-backdrop', { class: 'csm-backdrop', onClick: closeCustomSkinsModal }),
-    el('div', { class: 'csm-dialog' },
-      el('div', { class: 'csm-frame' },
-        el('div', { class: 'csm-header' },
-          el('span', { class: 'csm-title' }, t('custom_skins.title')),
-          el('button', { class: 'csm-close', onClick: closeCustomSkinsModal }, '\u00D7'),
-        ),
-        el('div', { class: 'csm-toolbar' },
-          searchInput.container,
-          champSearch.container,
-          addBtn,
-        ),
-        gridContainer,
-      ),
-    ),
+  const toolbar = el('div', { class: 'csm-toolbar' },
+    searchInput.container,
+    champSearch.container,
+    addBtn,
   );
 
-  // Stop click propagation on the frame so backdrop click doesn't close
-  modalEl.querySelector('.csm-frame').addEventListener('click', e => e.stopPropagation());
+  const gridContainer = el('div', { class: 'csm-body' });
 
-  document.body.appendChild(modalEl);
+  content.appendChild(toolbar);
+  content.appendChild(gridContainer);
 
-  // Subscribe to mod list updates
-  unsubMods = onCustomMods(() => renderGrid());
-  refreshCustomMods();
+  renderGrid();
+}
+
+function renderBrowseTab(content) {
+  const browseContainer = el('div', { class: 'csm-body brw-container' });
+  content.appendChild(browseContainer);
+  createBrowseContent(browseContainer);
 }
 
 function renderGrid() {
-  if (!modalEl) return;
-  const body = modalEl.querySelector('.csm-body');
+  if (!modalEl || !modsContainer) return;
+  const body = modsContainer.querySelector('.csm-body');
   if (!body) return;
 
   const mods = getCustomModsCache();
@@ -122,10 +193,23 @@ function renderGrid() {
   body.appendChild(grid);
 }
 
+function updateCardsInPlace(mods) {
+  if (!modalEl) return;
+  const cards = modalEl.querySelectorAll('.csm-card[data-mod-id]');
+  for (const card of cards) {
+    const mod = mods.find(m => m.id === card.dataset.modId);
+    if (!mod) continue;
+    card.classList.toggle('csm-disabled', !mod.enabled);
+    const cb = card.querySelector('input[type="checkbox"]');
+    if (cb) cb.checked = mod.enabled;
+  }
+}
+
 function buildCard(mod) {
-  const imgEl = mod.hasImage
-    ? el('img', { class: 'csm-card-img', src: CUSTOM_SKINS_IMAGE_BASE + mod.id + '?t=' + Date.now() })
-    : el('div', { class: 'csm-card-placeholder' }, '\u{1F3AE}');
+  const imgSrc = mod.hasImage
+    ? CUSTOM_SKINS_IMAGE_BASE + mod.id + '?t=' + Date.now()
+    : '';
+  const imgEl = createCardImage(imgSrc);
 
   const champName = getChampionNameById(mod.championId) || t('custom_skins.all_champions');
 
@@ -138,6 +222,7 @@ function buildCard(mod) {
 
   const card = el('div', {
     class: 'csm-card' + (mod.enabled ? '' : ' csm-disabled'),
+    dataset: { modId: mod.id },
     onClick: (e) => {
       if (e.target.closest('.csm-card-btns') || e.target.closest('lol-uikit-flat-checkbox')) return;
       toggleCustomMod(mod.id, !mod.enabled);
