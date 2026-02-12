@@ -1,3 +1,3 @@
-- Added mod browser with extension support for browsing and downloading skins directly in the client
-- Added custom mods management with import, enable/disable, and per-champion assignment
-- Fixed auto-apply state not resetting when changing champion during champ select
+- Fixed installed mods not showing in My Mods tab until dialog is reopened
+- Fixed clicking a mod card only working to disable, not to re-enable
+- Improved mod card visuals with grayscale effect on disabled mods

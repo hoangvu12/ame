@@ -77,9 +77,8 @@ async function buildModal() {
 
   document.body.appendChild(modalEl);
 
-  // Subscribe to mod list updates — only full re-render on add/delete
+  // Subscribe to mod list updates
   unsubMods = onCustomMods((mods, event) => {
-    if (activeTab !== 'mods') return;
     if (event === 'updated') {
       updateCardsInPlace(mods);
     } else {
@@ -177,20 +176,40 @@ function renderGrid() {
     return true;
   });
 
-  body.innerHTML = '';
+  let grid = body.querySelector('.csm-grid');
+  const empty = body.querySelector('.csm-empty');
 
   if (filtered.length === 0) {
-    body.appendChild(el('div', { class: 'csm-empty' }, t('custom_skins.no_mods')));
+    if (grid) grid.remove();
+    if (!empty) body.appendChild(el('div', { class: 'csm-empty' }, t('custom_skins.no_mods')));
     return;
   }
 
-  const grid = el('div', { class: 'csm-grid' });
-
-  for (const mod of filtered) {
-    grid.appendChild(buildCard(mod));
+  if (empty) empty.remove();
+  if (!grid) {
+    grid = el('div', { class: 'csm-grid' });
+    body.appendChild(grid);
   }
 
-  body.appendChild(grid);
+  // Map existing cards by mod ID
+  const existing = new Map();
+  for (const card of grid.querySelectorAll('.csm-card[data-mod-id]')) {
+    existing.set(card.dataset.modId, card);
+  }
+
+  // Remove cards no longer in filtered set
+  const desiredIds = new Set(filtered.map(m => m.id));
+  for (const [id, card] of existing) {
+    if (!desiredIds.has(id)) {
+      card.remove();
+      existing.delete(id);
+    }
+  }
+
+  // Append in order — appendChild moves existing nodes to correct position
+  for (const mod of filtered) {
+    grid.appendChild(existing.get(mod.id) || buildCard(mod));
+  }
 }
 
 function updateCardsInPlace(mods) {
@@ -225,7 +244,7 @@ function buildCard(mod) {
     dataset: { modId: mod.id },
     onClick: (e) => {
       if (e.target.closest('.csm-card-btns') || e.target.closest('lol-uikit-flat-checkbox')) return;
-      toggleCustomMod(mod.id, !mod.enabled);
+      toggleCustomMod(mod.id, card.classList.contains('csm-disabled'));
     },
   },
     imgEl,

@@ -549,6 +549,7 @@ export function injectStyles() {
     }
     #${CUSTOM_SKINS_MODAL_ID} .csm-card.csm-disabled {
       opacity: 0.5;
+      filter: grayscale(0.5);
     }
     #${CUSTOM_SKINS_MODAL_ID} .csm-card-img-wrap {
       position: relative;
