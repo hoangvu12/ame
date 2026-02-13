@@ -137,6 +137,8 @@
     "enabled": "Bekapcsolva",
     "disabled": "Kikapcsolva",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "Rácsnézet",
+    "view_list": "Listanézet"
   }
 }

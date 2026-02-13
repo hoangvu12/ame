@@ -18,6 +18,7 @@ let selectedDetail = null;
 let loading = false;
 let browseMode = 'popular'; // 'popular' | 'latest' | 'search'
 let filtersVisible = false;
+let browseViewMode = 'grid'; // 'grid' | 'list'
 let downloadProgress = {};
 let gridEl = null;
 let scrollableEl = null;
@@ -52,6 +53,7 @@ export function destroyBrowseContent() {
   loading = false;
   browseMode = 'popular';
   filtersVisible = false;
+  browseViewMode = 'grid';
   gridEl = null;
   scrollableEl = null;
   loadMoreRow = null;
@@ -148,10 +150,30 @@ function buildBrowseToolbar() {
     },
   }, '\u2630');
 
+  const gridBtn = el('button', {
+    class: 'csm-icon-btn csm-view-btn' + (browseViewMode === 'grid' ? ' active' : ''),
+    title: t('custom_skins.view_grid'),
+    onClick: () => {
+      if (browseViewMode === 'grid') return;
+      browseViewMode = 'grid';
+      renderBrowse();
+    },
+  }, '\u25A6');
+  const listBtn = el('button', {
+    class: 'csm-icon-btn csm-view-btn' + (browseViewMode === 'list' ? ' active' : ''),
+    title: t('custom_skins.view_list'),
+    onClick: () => {
+      if (browseViewMode === 'list') return;
+      browseViewMode = 'list';
+      renderBrowse();
+    },
+  }, '\u2261');
+
   const toolbar = el('div', { class: 'csm-toolbar brw-toolbar' },
     sourceSelect,
     gearBtn,
     searchInput.container,
+    el('div', { class: 'csm-view-toggle' }, gridBtn, listBtn),
     filterBtn,
   );
 
@@ -379,9 +401,11 @@ function buildResultsArea() {
     return scrollableEl;
   }
 
-  gridEl = el('div', { class: 'csm-grid' });
+  const isGrid = browseViewMode === 'grid';
+  gridEl = el('div', { class: isGrid ? 'csm-grid' : 'csm-list' });
+  const buildItem = isGrid ? buildBrowseCard : buildBrowseListItem;
   for (const item of results) {
-    gridEl.appendChild(buildBrowseCard(item));
+    gridEl.appendChild(buildItem(item));
   }
 
   const inner = el('div', { class: 'brw-results-inner' }, gridEl);
@@ -409,8 +433,9 @@ function buildLoadMoreRow() {
 function appendResults(newItems) {
   if (!gridEl) return;
 
+  const buildItem = browseViewMode === 'grid' ? buildBrowseCard : buildBrowseListItem;
   for (const item of newItems) {
-    gridEl.appendChild(buildBrowseCard(item));
+    gridEl.appendChild(buildItem(item));
   }
 
   if (loadMoreRow) {
@@ -436,6 +461,25 @@ function buildBrowseCard(item) {
   },
     imgEl,
     el('div', { class: 'csm-card-info' },
+      el('div', { class: 'csm-card-name', title: item.title }, item.title),
+      el('div', { class: 'csm-card-author' }, item.author ? t('browse.detail_by', { author: item.author }) : ''),
+    ),
+  );
+}
+
+function buildBrowseListItem(item) {
+  const imgSrc = item.thumbnailUrl
+    ? PROXY_IMAGE_BASE + encodeURIComponent(item.thumbnailUrl)
+    : '';
+
+  const imgEl = createCardImage(imgSrc);
+
+  return el('div', {
+    class: 'csm-list-item brw-list-item',
+    onClick: () => openDetail(item),
+  },
+    imgEl,
+    el('div', { class: 'csm-list-info' },
       el('div', { class: 'csm-card-name', title: item.title }, item.title),
       el('div', { class: 'csm-card-author' }, item.author ? t('browse.detail_by', { author: item.author }) : ''),
     ),

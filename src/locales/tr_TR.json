@@ -137,6 +137,8 @@
     "enabled": "Etkin",
     "disabled": "Devre dışı",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "Izgara görünümü",
+    "view_list": "Liste görünümü"
   }
 }

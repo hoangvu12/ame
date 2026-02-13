@@ -137,6 +137,8 @@
     "enabled": "Aktiviert",
     "disabled": "Deaktiviert",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "Rasteransicht",
+    "view_list": "Listenansicht"
   }
 }

@@ -137,6 +137,8 @@
     "enabled": "활성화",
     "disabled": "비활성화",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "격자 보기",
+    "view_list": "목록 보기"
   }
 }

@@ -137,6 +137,8 @@
     "enabled": "Aktif",
     "disabled": "Nonaktif",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "Tampilan kotak",
+    "view_list": "Tampilan daftar"
   }
 }

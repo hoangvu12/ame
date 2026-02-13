@@ -137,6 +137,8 @@
     "enabled": "Włączony",
     "disabled": "Wyłączony",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "Widok siatki",
+    "view_list": "Widok listy"
   }
 }

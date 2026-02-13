@@ -137,6 +137,8 @@
     "enabled": "已启用",
     "disabled": "已禁用",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "网格视图",
+    "view_list": "列表视图"
   }
 }

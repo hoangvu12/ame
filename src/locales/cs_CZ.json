@@ -137,6 +137,8 @@
     "enabled": "Zapnuto",
     "disabled": "Vypnuto",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "Mřížka",
+    "view_list": "Seznam"
   }
 }

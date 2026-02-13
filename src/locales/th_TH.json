@@ -137,6 +137,8 @@
     "enabled": "เปิดใช้งาน",
     "disabled": "ปิดใช้งาน",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "มุมมองตาราง",
+    "view_list": "มุมมองรายการ"
   }
 }

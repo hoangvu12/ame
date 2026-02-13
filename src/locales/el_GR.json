@@ -137,6 +137,8 @@
     "enabled": "Ενεργοποιημένο",
     "disabled": "Απενεργοποιημένο",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "Πλέγμα",
+    "view_list": "Λίστα"
   }
 }

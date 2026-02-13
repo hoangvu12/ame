@@ -137,6 +137,8 @@
     "enabled": "有効",
     "disabled": "無効",
     "edit_tooltip": "Edit",
-    "delete_tooltip": "Delete"
+    "delete_tooltip": "Delete",
+    "view_grid": "グリッド表示",
+    "view_list": "リスト表示"
   }
 }

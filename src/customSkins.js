@@ -17,6 +17,7 @@ let filterChampion = 0;
 let filterText = '';
 let unsubMods = null;
 let activeTab = 'mods'; // 'mods' | 'browse'
+let viewMode = 'grid'; // 'grid' | 'list'
 let modsContainer = null;
 let browseContainer = null;
 
@@ -82,7 +83,7 @@ async function buildModal() {
     if (event === 'updated') {
       updateCardsInPlace(mods);
     } else {
-      renderGrid();
+      renderMods();
     }
   });
   refreshCustomMods();
@@ -123,7 +124,7 @@ function renderModsTab(content) {
   searchInput.input.value = filterText;
   searchInput.input.addEventListener('input', () => {
     filterText = searchInput.input.value.toLowerCase();
-    renderGrid();
+    renderMods();
   });
 
   const champSearch = createChampionSearch({
@@ -133,7 +134,7 @@ function renderModsTab(content) {
     placeholder: t('custom_skins.all_champions'),
     onSelect: (id) => {
       filterChampion = id;
-      renderGrid();
+      renderMods();
     },
   });
 
@@ -141,9 +142,21 @@ function renderModsTab(content) {
     onClick: () => handleAddMod(),
   });
 
+  const gridBtn = el('button', {
+    class: 'csm-icon-btn csm-view-btn' + (viewMode === 'grid' ? ' active' : ''),
+    title: t('custom_skins.view_grid'),
+    onClick: () => setViewMode('grid'),
+  }, '\u25A6');
+  const listBtn = el('button', {
+    class: 'csm-icon-btn csm-view-btn' + (viewMode === 'list' ? ' active' : ''),
+    title: t('custom_skins.view_list'),
+    onClick: () => setViewMode('list'),
+  }, '\u2630');
+
   const toolbar = el('div', { class: 'csm-toolbar' },
     searchInput.container,
     champSearch.container,
+    el('div', { class: 'csm-view-toggle' }, gridBtn, listBtn),
     addBtn,
   );
 
@@ -152,7 +165,7 @@ function renderModsTab(content) {
   content.appendChild(toolbar);
   content.appendChild(gridContainer);
 
-  renderGrid();
+  renderMods();
 }
 
 function renderBrowseTab(content) {
@@ -161,7 +174,22 @@ function renderBrowseTab(content) {
   createBrowseContent(browseContainer);
 }
 
-function renderGrid() {
+function setViewMode(mode) {
+  if (viewMode === mode) return;
+  viewMode = mode;
+  // Update toggle button active states
+  if (modsContainer) {
+    for (const btn of modsContainer.querySelectorAll('.csm-view-btn')) {
+      btn.classList.remove('active');
+    }
+    const idx = mode === 'grid' ? 0 : 1;
+    const btns = modsContainer.querySelectorAll('.csm-view-btn');
+    if (btns[idx]) btns[idx].classList.add('active');
+  }
+  renderMods();
+}
+
+function renderMods() {
   if (!modalEl || !modsContainer) return;
   const body = modsContainer.querySelector('.csm-body');
   if (!body) return;
@@ -176,50 +204,62 @@ function renderGrid() {
     return true;
   });
 
-  let grid = body.querySelector('.csm-grid');
+  const isGrid = viewMode === 'grid';
+  const containerClass = isGrid ? 'csm-grid' : 'csm-list';
+  const itemSelector = isGrid ? '.csm-card[data-mod-id]' : '.csm-list-item[data-mod-id]';
+  const buildItem = isGrid ? buildCard : buildListItem;
+
+  let container = body.querySelector('.csm-grid, .csm-list');
   const empty = body.querySelector('.csm-empty');
 
   if (filtered.length === 0) {
-    if (grid) grid.remove();
+    if (container) container.remove();
     if (!empty) body.appendChild(el('div', { class: 'csm-empty' }, t('custom_skins.no_mods')));
     return;
   }
 
   if (empty) empty.remove();
-  if (!grid) {
-    grid = el('div', { class: 'csm-grid' });
-    body.appendChild(grid);
+
+  // If container class changed (view mode switch), rebuild
+  if (container && !container.classList.contains(containerClass)) {
+    container.remove();
+    container = null;
   }
 
-  // Map existing cards by mod ID
+  if (!container) {
+    container = el('div', { class: containerClass });
+    body.appendChild(container);
+  }
+
+  // Map existing items by mod ID
   const existing = new Map();
-  for (const card of grid.querySelectorAll('.csm-card[data-mod-id]')) {
-    existing.set(card.dataset.modId, card);
+  for (const item of container.querySelectorAll(itemSelector)) {
+    existing.set(item.dataset.modId, item);
   }
 
-  // Remove cards no longer in filtered set
+  // Remove items no longer in filtered set
   const desiredIds = new Set(filtered.map(m => m.id));
-  for (const [id, card] of existing) {
+  for (const [id, item] of existing) {
     if (!desiredIds.has(id)) {
-      card.remove();
+      item.remove();
       existing.delete(id);
     }
   }
 
   // Append in order — appendChild moves existing nodes to correct position
   for (const mod of filtered) {
-    grid.appendChild(existing.get(mod.id) || buildCard(mod));
+    container.appendChild(existing.get(mod.id) || buildItem(mod));
   }
 }
 
 function updateCardsInPlace(mods) {
   if (!modalEl) return;
-  const cards = modalEl.querySelectorAll('.csm-card[data-mod-id]');
-  for (const card of cards) {
-    const mod = mods.find(m => m.id === card.dataset.modId);
+  const items = modalEl.querySelectorAll('.csm-card[data-mod-id], .csm-list-item[data-mod-id]');
+  for (const item of items) {
+    const mod = mods.find(m => m.id === item.dataset.modId);
     if (!mod) continue;
-    card.classList.toggle('csm-disabled', !mod.enabled);
-    const cb = card.querySelector('input[type="checkbox"]');
+    item.classList.toggle('csm-disabled', !mod.enabled);
+    const cb = item.querySelector('input[type="checkbox"]');
     if (cb) cb.checked = mod.enabled;
   }
 }
@@ -262,6 +302,46 @@ function buildCard(mod) {
   );
 
   return card;
+}
+
+function buildListItem(mod) {
+  const imgSrc = mod.hasImage
+    ? CUSTOM_SKINS_IMAGE_BASE + mod.id + '?t=' + Date.now()
+    : '';
+  const imgEl = createCardImage(imgSrc);
+
+  const champName = getChampionNameById(mod.championId) || t('custom_skins.all_champions');
+
+  const { checkbox, input } = createCheckbox(
+    'csm-toggle-list-' + mod.id,
+    '',
+    (checked) => toggleCustomMod(mod.id, checked),
+  );
+  input.checked = mod.enabled;
+
+  const item = el('div', {
+    class: 'csm-list-item' + (mod.enabled ? '' : ' csm-disabled'),
+    dataset: { modId: mod.id },
+    onClick: (e) => {
+      if (e.target.closest('.csm-card-btns') || e.target.closest('lol-uikit-flat-checkbox')) return;
+      toggleCustomMod(mod.id, item.classList.contains('csm-disabled'));
+    },
+  },
+    imgEl,
+    el('div', { class: 'csm-list-info' },
+      el('div', { class: 'csm-card-name', title: mod.name }, mod.name),
+      el('div', { class: 'csm-card-author' }, mod.author ? t('browse.detail_by', { author: mod.author }) : champName),
+    ),
+    el('div', { class: 'csm-list-actions' },
+      checkbox,
+      el('div', { class: 'csm-card-btns' },
+        el('button', { class: 'csm-icon-btn', title: t('custom_skins.edit_tooltip'), onClick: () => openEditDialog(mod) }, '\u270E'),
+        el('button', { class: 'csm-icon-btn csm-delete', title: t('custom_skins.delete_tooltip'), onClick: () => openDeleteDialog(mod) }, '\u2716'),
+      ),
+    ),
+  );
+
+  return item;
 }
 
 // --- Add/Import Flow ---

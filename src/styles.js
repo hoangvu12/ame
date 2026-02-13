@@ -658,6 +658,67 @@ export function injectStyles() {
       background: rgba(226, 81, 81, 0.1);
     }
 
+    /* View toggle */
+    #${CUSTOM_SKINS_MODAL_ID} .csm-view-toggle {
+      display: flex;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-view-btn.active {
+      color: #c8aa6e;
+      background: rgba(200, 170, 110, 0.1);
+    }
+
+    /* List view */
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      background: rgba(30, 35, 40, 0.6);
+      border: 1px solid #463714;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-item:hover {
+      border-color: #c8aa6e;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-item.csm-disabled {
+      opacity: 0.5;
+      filter: grayscale(0.5);
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-item .csm-card-img-wrap {
+      width: 64px;
+      height: 36px;
+      aspect-ratio: 16/9;
+      flex-shrink: 0;
+      border-radius: 3px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-item .csm-card-placeholder {
+      aspect-ratio: 16/9;
+      font-size: 16px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-item .csm-card-spinner::after {
+      width: 12px;
+      height: 12px;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-info {
+      flex: 1;
+      min-width: 0;
+    }
+    #${CUSTOM_SKINS_MODAL_ID} .csm-list-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
     /* Import/Edit sub-dialog */
     .csm-subdialog-overlay {
       position: absolute;

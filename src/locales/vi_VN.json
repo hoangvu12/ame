@@ -137,6 +137,8 @@
     "enabled": "Đã bật",
     "disabled": "Đã tắt",
     "edit_tooltip": "Sửa",
-    "delete_tooltip": "Xóa"
+    "delete_tooltip": "Xóa",
+    "view_grid": "Dạng lưới",
+    "view_list": "Dạng danh sách"
   }
 }
