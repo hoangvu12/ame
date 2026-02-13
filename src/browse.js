@@ -42,7 +42,16 @@ export function createBrowseContent(container) {
 
 export function destroyBrowseContent() {
   browseRoot = null;
+  activeSource = null;
+  results = [];
+  currentPage = 1;
+  hasNextPage = false;
+  currentQuery = '';
+  currentFilters = {};
   selectedDetail = null;
+  loading = false;
+  browseMode = 'popular';
+  filtersVisible = false;
   gridEl = null;
   scrollableEl = null;
   loadMoreRow = null;
