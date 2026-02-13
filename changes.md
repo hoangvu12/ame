@@ -1,3 +1,6 @@
-- Fixed installed mods not showing in My Mods tab until dialog is reopened
-- Fixed clicking a mod card only working to disable, not to re-enable
-- Improved mod card visuals with grayscale effect on disabled mods
+- Added grid and list view toggle for custom mods and browse tabs
+- Added champion filter to the browse tab
+- Replaced apply button with custom skins icon
+- Improved reconnection screen
+- Fixed browse champion filter not updating when changing champion
+- Fixed hardcoded strings not being translated
