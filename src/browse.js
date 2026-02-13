@@ -132,7 +132,7 @@ function buildBrowseToolbar() {
 
   const filterBtn = el('button', {
     class: 'csm-icon-btn brw-filter-btn' + (filtersVisible ? ' active' : ''),
-    title: 'Filters',
+    title: t('browse.filters'),
     onClick: () => {
       filtersVisible = !filtersVisible;
       renderBrowse();
@@ -428,7 +428,7 @@ function buildBrowseCard(item) {
     imgEl,
     el('div', { class: 'csm-card-info' },
       el('div', { class: 'csm-card-name', title: item.title }, item.title),
-      el('div', { class: 'csm-card-author' }, item.author ? `by ${item.author}` : ''),
+      el('div', { class: 'csm-card-author' }, item.author ? t('browse.detail_by', { author: item.author }) : ''),
     ),
   );
 }
@@ -445,7 +445,7 @@ async function openDetail(item) {
     selectedDetail = { ...detail, loading: false };
   } catch (err) {
     console.error('[browse] getDetails error:', err);
-    selectedDetail = { ...item, loading: false, description: 'Failed to load details.' };
+    selectedDetail = { ...item, loading: false, description: t('browse.load_error') };
   }
   renderBrowse();
 }
@@ -564,7 +564,7 @@ function startDownload(dl, detail, dlId) {
 
   startBrowseDownload(
     dl.url,
-    detail.title || 'Unknown',
+    detail.title || t('browse.unknown_title'),
     detail.author || '',
     detail.championId || 0,
     detail.images?.[0] || '',

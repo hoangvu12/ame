@@ -109,7 +109,10 @@
     "remove": "Remove",
     "retry": "Retry",
     "already_installed": "Already installed",
-    "add_from_file": "From File"
+    "add_from_file": "From File",
+    "filters": "Filters",
+    "load_error": "Failed to load details.",
+    "unknown_title": "Unknown"
   },
   "custom_skins": {
     "button": "Custom Skins",
@@ -132,6 +135,8 @@
     "delete_cancel": "CANCEL",
     "filter_placeholder": "Search mods...",
     "enabled": "Enabled",
-    "disabled": "Disabled"
+    "disabled": "Disabled",
+    "edit_tooltip": "Edit",
+    "delete_tooltip": "Delete"
   }
 }

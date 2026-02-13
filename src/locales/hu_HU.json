@@ -109,7 +109,10 @@
     "remove": "Remove",
     "retry": "Retry",
     "already_installed": "Already installed",
-    "add_from_file": "From File"
+    "add_from_file": "From File",
+    "filters": "Filters",
+    "load_error": "Failed to load details.",
+    "unknown_title": "Unknown"
   },
   "custom_skins": {
     "button": "Egyéni skinek",
@@ -132,6 +135,8 @@
     "delete_cancel": "MÉGSE",
     "filter_placeholder": "Modok keresése...",
     "enabled": "Bekapcsolva",
-    "disabled": "Kikapcsolva"
+    "disabled": "Kikapcsolva",
+    "edit_tooltip": "Edit",
+    "delete_tooltip": "Delete"
   }
 }

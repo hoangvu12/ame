@@ -1,4 +1,4 @@
-import { STYLE_ID, BUTTON_ID, SWIFTPLAY_BUTTON_ID, CHROMA_BTN_CLASS, CHROMA_PANEL_ID, IN_GAME_CONTAINER_ID, ROOM_PARTY_INDICATOR_CLASS, CUSTOM_SKINS_MODAL_ID } from './constants';
+import { STYLE_ID, SWIFTPLAY_BUTTON_ID, CHROMA_BTN_CLASS, CHROMA_PANEL_ID, IN_GAME_CONTAINER_ID, ROOM_PARTY_INDICATOR_CLASS, CUSTOM_SKINS_MODAL_ID } from './constants';
 
 export function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -37,11 +37,25 @@ export function injectStyles() {
       border: 2px solid #c8aa6e;
       box-shadow: 0 0 6px #c8aa6e80;
     }
-    #${BUTTON_ID}[disabled] {
-      opacity: 0.4 !important;
-      pointer-events: none !important;
-      cursor: default !important;
-      filter: grayscale(0.5) !important;
+    .ame-custom-skins-icon-btn {
+      position: absolute !important;
+      left: 50%;
+      top: 400px;
+      transform: translateX(-50%);
+      z-index: 50;
+      min-width: 0 !important;
+      height: 32px !important;
+      padding: 0 12px !important;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .ame-csb-content {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ame-csb-content svg {
+      flex-shrink: 0;
     }
     .ame-connection-banner {
       display: flex;
@@ -67,14 +81,6 @@ export function injectStyles() {
     }
     .ame-connection-text {
       line-height: 1.2;
-    }
-    .toggle-ability-previews-button-container {
-      justify-content: center !important;
-      align-items: center !important;
-      gap: 20px !important;
-    }
-    .toggle-ability-previews-button-container .framing-line {
-      display: none !important;
     }
     .skin-selection-carousel .skin-selection-item {
       position: relative;

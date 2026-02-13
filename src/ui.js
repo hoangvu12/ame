@@ -1,41 +1,48 @@
 import { BUTTON_ID, CUSTOM_SKINS_BTN_ID, CONNECTION_BANNER_ID } from './constants';
-import { getMyChampionId, loadChampionSkins, getChampionName, forceDefaultSkin } from './api';
-import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
-import { wsSend, wsSendApply, isOverlayActive, isConnected, onConnection } from './websocket';
-import { toastError } from './toast';
-import { getAppliedSkinName, setAppliedSkinName, getSelectedChroma, getSkinForced, setSkinForced } from './state';
-import { ensureElement, removeElement, el } from './dom';
-import { createButton } from './components';
-import { notifySkinChange } from './roomParty';
+import { readCurrentSkin } from './skin';
+import { wsSend, isOverlayActive, isConnected, onConnection } from './websocket';
+import { getAppliedSkinName, setAppliedSkinName, getSkinForced } from './state';
+import { removeElement, el } from './dom';
 import { openCustomSkinsModal } from './customSkins';
 import { t } from './i18n';
 import { createLogger } from './logger';
 
 const logger = createLogger('ui');
 
+const CUSTOM_SKINS_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c5.523 0 10 4.477 10 10q-.002.975-.18 1.9c-.373 1.935-2.26 2.791-3.907 2.595l-.175-.025l-1.74-.29a1.29 1.29 0 0 0-1.124.36c-.37.37-.547.879-.298 1.376c.423.846.429 1.812.055 2.603C14.131 21.58 13.11 22 12 22C6.477 22 2 17.523 2 12S6.477 2 12 2m-4.5 9a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3m7-4a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3m-5 0a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3"/></svg>';
+
 export function ensureApplyButton() {
-  ensureElement(BUTTON_ID, '.toggle-ability-previews-button-container', (container) => {
-    container.style.justifyContent = 'center';
-    container.style.alignItems = 'center';
-    container.style.gap = '20px';
-    container.querySelectorAll('.framing-line').forEach(line => {
-      line.style.display = 'none';
-    });
-    return createButton(t('ui.apply_skin'), {
-      class: 'toggle-ability-previews-button',
-      onClick: onApplyClick,
-    });
+  const skinName = readCurrentSkin();
+  const existing = document.getElementById(CUSTOM_SKINS_BTN_ID);
+
+  if (existing) {
+    existing.style.display = skinName ? '' : 'none';
+    return;
+  }
+
+  if (!skinName) return;
+
+  let parent;
+  const teamBoost = document.querySelector('.team-boost');
+  if (teamBoost && teamBoost.parentElement) {
+    parent = teamBoost.parentElement;
+  } else {
+    const carousel = document.querySelector('.skin-selection-carousel-container');
+    parent = carousel?.parentElement;
+  }
+  if (!parent) return;
+
+  const btn = el('lol-uikit-flat-button', {
+    class: 'ame-custom-skins-icon-btn',
+    onClick: openCustomSkinsModal,
   });
-  ensureElement(CUSTOM_SKINS_BTN_ID, '.toggle-ability-previews-button-container', () => {
-    return createButton(t('custom_skins.button'), {
-      class: 'toggle-ability-previews-button',
-      onClick: openCustomSkinsModal,
-    });
-  });
+  btn.id = CUSTOM_SKINS_BTN_ID;
+  btn.innerHTML = '<div class="ame-csb-content">' + CUSTOM_SKINS_ICON + '<span>' + t('custom_skins.button') + '</span></div>';
+  if (teamBoost) btn.style.top = '362px';
+  parent.appendChild(btn);
 }
 
 export function removeApplyButton() {
-  removeElement(BUTTON_ID);
   removeElement(CUSTOM_SKINS_BTN_ID);
 }
 
@@ -93,56 +100,6 @@ export function setButtonState(text, disabled) {
   } else {
     btn.removeAttribute('disabled');
   }
-}
-
-async function onApplyClick() {
-  const skinName = readCurrentSkin();
-  if (!skinName) return;
-
-  const championId = await getMyChampionId();
-  if (!championId) {
-    toastError(t('errors.pick_champion_first'));
-    return;
-  }
-
-  const skins = await loadChampionSkins(championId);
-  if (!skins) {
-    toastError(t('errors.could_not_load_skin_data'));
-    return;
-  }
-
-  const skin = findSkinByName(skins, skinName);
-  if (!skin) {
-    toastError(t('errors.skin_not_found'));
-    return;
-  }
-
-  if (isDefaultSkin(skin)) return;
-
-  logger.log(` forceDefaultSkin(${championId}) calling...`);
-  const forced = await forceDefaultSkin(championId);
-  logger.log(` forceDefaultSkin result: ${forced}`);
-  if (!forced) {
-    toastError(t('errors.could_not_set_default'));
-    return;
-  }
-  setSkinForced(true);
-  logger.log(' skinForced set to true');
-
-  const champName = await getChampionName(championId);
-  const chroma = getSelectedChroma();
-  if (chroma) {
-    wsSendApply({
-      type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId,
-      championName: champName, skinName: chroma.baseSkinName || skin.name, chromaName: chroma.chromaName,
-    });
-    notifySkinChange(championId, chroma.id, chroma.baseSkinId, champName, chroma.baseSkinName || skin.name, chroma.chromaName);
-  } else {
-    wsSendApply({ type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name });
-    notifySkinChange(championId, skin.id, '', champName, skin.name, '');
-  }
-  setAppliedSkinName(skinName);
-  setButtonState(t('ui.applied'), true);
 }
 
 export function updateButtonState(ownership) {

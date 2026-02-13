@@ -109,7 +109,10 @@
     "remove": "Remove",
     "retry": "Retry",
     "already_installed": "Already installed",
-    "add_from_file": "From File"
+    "add_from_file": "From File",
+    "filters": "Filters",
+    "load_error": "Failed to load details.",
+    "unknown_title": "Unknown"
   },
   "custom_skins": {
     "button": "自定义皮肤",
@@ -132,6 +135,8 @@
     "delete_cancel": "取消",
     "filter_placeholder": "搜索模组...",
     "enabled": "已启用",
-    "disabled": "已禁用"
+    "disabled": "已禁用",
+    "edit_tooltip": "Edit",
+    "delete_tooltip": "Delete"
   }
 }
