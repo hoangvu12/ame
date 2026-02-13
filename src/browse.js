@@ -1,9 +1,11 @@
 import { el } from './dom';
-import { createButton, createInput, createCardImage } from './components';
+import { createButton, createInput, createCardImage, createChampionSearch } from './components';
 import { t } from './i18n';
 import { PROXY_IMAGE_BASE } from './constants';
-import { startBrowseDownload } from './websocket';
+import { startBrowseDownload, getLastApplyPayload } from './websocket';
 import { loadExtensions, getLoadedSources, isLoaded, addExtension, addExtensionFromFile, removeExtension } from './extensionManager';
+import { loadChampionSummary } from './api';
+import { getLastChampionId } from './state';
 
 let browseRoot = null;
 let activeSource = null;
@@ -20,11 +22,15 @@ let downloadProgress = {};
 let gridEl = null;
 let scrollableEl = null;
 let loadMoreRow = null;
+let championList = null;
 
 // --- Public API ---
 
 export function createBrowseContent(container) {
   browseRoot = container;
+  if (!championList) {
+    loadChampionSummary().then(list => { championList = list; });
+  }
   if (!isLoaded()) {
     browseRoot.innerHTML = '';
     browseRoot.appendChild(el('div', { class: 'csm-empty' }, t('ui.loading')));
@@ -61,6 +67,7 @@ function renderBrowse() {
   if (!activeSource) {
     activeSource = sources[0];
     currentFilters = getDefaultFilters(activeSource);
+    seedChampionFilter();
     doFetch();
     return;
   }
@@ -98,6 +105,7 @@ function buildBrowseToolbar() {
       currentPage = 1;
       currentQuery = '';
       currentFilters = getDefaultFilters(activeSource);
+      seedChampionFilter();
       selectedDetail = null;
       doFetch();
     }
@@ -120,6 +128,8 @@ function buildBrowseToolbar() {
     }
   });
 
+  const champFilter = getChampionFilter();
+
   const filterBtn = el('button', {
     class: 'csm-icon-btn brw-filter-btn' + (filtersVisible ? ' active' : ''),
     title: 'Filters',
@@ -129,15 +139,57 @@ function buildBrowseToolbar() {
     },
   }, '\u2630');
 
-  return el('div', { class: 'csm-toolbar brw-toolbar' },
+  const toolbar = el('div', { class: 'csm-toolbar brw-toolbar' },
     sourceSelect,
     gearBtn,
     searchInput.container,
     filterBtn,
   );
+
+  if (champFilter) {
+    const champSearch = createChampionSearch({
+      champions: championList || [],
+      allOption: t('custom_skins.all_champions'),
+      selected: currentFilters[champFilter.key] || 0,
+      placeholder: t('custom_skins.all_champions'),
+      onSelect: (id, name) => {
+        currentFilters[champFilter.key] = id || undefined;
+        currentFilters[champFilter.key + 'Name'] = id ? name : undefined;
+        results = [];
+        currentPage = 1;
+        doFetch();
+      },
+    });
+    toolbar.insertBefore(champSearch.container, searchInput.container);
+  }
+
+  return toolbar;
 }
 
 // --- Filters ---
+
+function getChampionFilter() {
+  if (!activeSource || !activeSource.getFilters) return null;
+  try {
+    const defs = activeSource.getFilters();
+    return defs.find(f => f.type === 'champion') || null;
+  } catch { return null; }
+}
+
+function seedChampionFilter() {
+  const champFilter = getChampionFilter();
+  if (!champFilter) return;
+  if (currentFilters[champFilter.key]) return;
+
+  const champId = getLastChampionId() || getLastApplyPayload()?.championId;
+  if (!champId) return;
+
+  const champ = championList?.find(c => c.id === champId);
+  if (!champ) return;
+
+  currentFilters[champFilter.key] = champId;
+  currentFilters[champFilter.key + 'Name'] = champ.name;
+}
 
 function getDefaultFilters(source) {
   if (!source || !source.getFilters) return {};
@@ -169,6 +221,7 @@ function buildFilterPanel() {
 
   const panel = el('div', { class: 'brw-filter-panel' });
   for (const f of filterDefs) {
+    if (f.type === 'champion') continue; // rendered in toolbar
     panel.appendChild(buildFilterControl(f));
   }
   const applyBtn = createButton(t('browse.search_placeholder').replace('...', ''), {
@@ -260,6 +313,9 @@ function buildFilterChips() {
       chips.push({ key: f.key, value: '', label: f.name + ': ' + currentFilters[f.key], multi: false });
     } else if (f.type === 'checkbox' && currentFilters[f.key]) {
       chips.push({ key: f.key, value: '', label: f.name, multi: false });
+    } else if (f.type === 'champion' && currentFilters[f.key]) {
+      const name = currentFilters[f.key + 'Name'] || currentFilters[f.key];
+      chips.push({ key: f.key, value: '', label: f.name + ': ' + name, multi: false, companion: f.key + 'Name' });
     }
   }
 
@@ -278,6 +334,7 @@ function buildFilterChips() {
           currentFilters[chip.key] = cur.join(',');
         } else {
           currentFilters[chip.key] = defaults[chip.key];
+          if (chip.companion) delete currentFilters[chip.companion];
         }
         results = [];
         currentPage = 1;

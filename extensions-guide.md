@@ -38,7 +38,11 @@ function createSource({ fetch, parseHtml }) {
 
     async search(query, page, filters) {
       const sort = filters.sort || 'popular';
-      const res = await fetch(`${BASE}/search?q=${encodeURIComponent(query)}&sort=${sort}&page=${page}`);
+      const champName = filters.championName || '';  // from champion filter
+      let url = `${BASE}/search?sort=${sort}&page=${page}`;
+      if (query) url += `&q=${encodeURIComponent(query)}`;
+      if (champName) url += `&champion=${encodeURIComponent(champName)}`;
+      const res = await fetch(url);
       const doc = parseHtml(await res.text());
       // ... same parsing pattern as getPopular
       return { items: [], hasNextPage: false };
@@ -67,6 +71,7 @@ function createSource({ fetch, parseHtml }) {
 
     getFilters() {
       return [
+        { type: 'champion', name: 'Champion', key: 'champion', default: 0 },
         {
           type: 'sort', name: 'Sort by', key: 'sort', default: 'popular',
           options: [
@@ -133,11 +138,15 @@ The runtime passes two helpers to `createSource`:
 **Filter** — declared by `getFilters()`, rendered by the UI:
 
 ```
-{ type: 'select',   name, key, default, options: [{label, value}] }
-{ type: 'sort',     name, key, default, options: [{label, value}] }
-{ type: 'text',     name, key, default }
-{ type: 'checkbox', name, key, default }
+{ type: 'champion',     name, key, default: 0 }
+{ type: 'select',       name, key, default, options: [{label, value}] }
+{ type: 'sort',         name, key, default, options: [{label, value}] }
+{ type: 'text',         name, key, default }
+{ type: 'multiselect',  name, key, default, options: [{label, value}] }
+{ type: 'checkbox',     name, key, default }
 ```
+
+The `champion` filter renders a searchable champion selector in the toolbar. When a champion is selected, `filters[key]` contains the champion ID (number) and `filters[key + 'Name']` contains the champion name (string). If the user is in champion select, it auto-selects the locked champion. The `multiselect` filter stores selected values as a comma-separated string.
 
 ## Tips
 

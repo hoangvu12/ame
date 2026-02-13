@@ -1,6 +1,7 @@
 import { IN_GAME_CONTAINER_ID } from './constants';
 import { wsSend, wsSendApply, wsSendUnstuck, getLastApplyPayload, isOverlayActive, setOverlayActive } from './websocket';
-import { getChampionSkins } from './api';
+import { openCustomSkinsModal } from './customSkins';
+import { getChampionSkins, loadChampionSkins } from './api';
 import { isDefaultSkin } from './skin';
 import { removeElement } from './dom';
 import { createButton, createDropdown } from './components';
@@ -22,15 +23,32 @@ function findReconnectContainer() {
 
 function buildDropdown() {
   const skins = getChampionSkins();
-  if (!skins) return null;
-
-  const nonDefault = skins.filter(s => !isDefaultSkin(s));
-  if (nonDefault.length === 0) return null;
+  if (!skins || skins.length === 0) return null;
 
   const payload = getLastApplyPayload();
+  const defaultSkin = skins.find(s => isDefaultSkin(s));
+  const nonDefault = skins.filter(s => !isDefaultSkin(s));
 
-  const dropdown = createDropdown(
-    nonDefault.map(skin => ({
+  if (nonDefault.length === 0) return null;
+
+  const options = [];
+
+  // Add default skin option first
+  if (defaultSkin) {
+    options.push({
+      text: defaultSkin.name,
+      attrs: {
+        'data-skin-id': '0',
+        'data-skin-name': defaultSkin.name,
+        'data-is-default': 'true',
+      },
+      selected: !payload || !payload.skinId || payload.skinId === 0,
+    });
+  }
+
+  // Add non-default skins
+  for (const skin of nonDefault) {
+    options.push({
       text: skin.name,
       attrs: {
         'data-skin-id': String(skin.id),
@@ -40,24 +58,31 @@ function buildDropdown() {
         String(skin.id) === String(payload.skinId) ||
         String(skin.id) === String(payload.baseSkinId)
       ),
-    })),
-    {
-      class: 'ame-ingame-dropdown',
-      onChange: (selected) => {
+    });
+  }
+
+  if (options.length === 0) return null;
+
+  const dropdown = createDropdown(options, {
+    class: 'ame-ingame-dropdown',
+    onChange: (selected) => {
+      const isDefault = selected.getAttribute('data-is-default') === 'true';
+      const lastPayload = getLastApplyPayload();
+      const championId = lastPayload?.championId;
+      const championName = lastPayload?.championName || '';
+      if (!championId) return;
+
+      if (isDefault) {
+        wsSendApply({ type: 'apply', championId, skinId: 0, championName, skinName: '' });
+      } else {
         const skinId = parseInt(selected.getAttribute('data-skin-id'), 10);
         if (isNaN(skinId)) return;
         const skinName = selected.getAttribute('data-skin-name') || '';
-
-        const lastPayload = getLastApplyPayload();
-        const championId = lastPayload?.championId;
-        const championName = lastPayload?.championName || '';
-        if (!championId) return;
-
         wsSendApply({ type: 'apply', championId, skinId, championName, skinName });
-        updateInGameStatus();
-      },
-    }
-  );
+      }
+      updateInGameStatus();
+    },
+  });
 
   return dropdown;
 }
@@ -66,6 +91,13 @@ export function ensureInGameUI() {
   if (document.getElementById(IN_GAME_CONTAINER_ID)) return;
   const parent = findReconnectContainer();
   if (!parent) return;
+
+  // Ensure skins are loaded for the current champion
+  const payload = getLastApplyPayload();
+  if (payload?.championId && !getChampionSkins()) {
+    loadChampionSkins(payload.championId);
+    return; // Wait for next poll cycle when skins are cached
+  }
 
   const container = document.createElement('div');
   container.id = IN_GAME_CONTAINER_ID;
@@ -83,14 +115,21 @@ export function ensureInGameUI() {
       } else {
         const dd = container.querySelector('.ame-ingame-dropdown');
         const selected = dd?.querySelector('lol-uikit-dropdown-option[selected]');
-        const skinId = selected ? parseInt(selected.getAttribute('data-skin-id'), 10) : null;
-        const skinName = selected?.getAttribute('data-skin-name') || '';
+        const isDefault = selected?.getAttribute('data-is-default') === 'true';
         const lastPayload = getLastApplyPayload();
         const championId = lastPayload?.championId;
         const championName = lastPayload?.championName || '';
 
-        if (championId && skinId && !isNaN(skinId)) {
-          wsSendApply({ type: 'apply', championId, skinId, championName, skinName });
+        if (championId) {
+          if (isDefault || !selected) {
+            wsSendApply({ type: 'apply', championId, skinId: 0, championName, skinName: '' });
+          } else {
+            const skinId = parseInt(selected.getAttribute('data-skin-id'), 10);
+            const skinName = selected?.getAttribute('data-skin-name') || '';
+            if (skinId && !isNaN(skinId)) {
+              wsSendApply({ type: 'apply', championId, skinId, championName, skinName });
+            }
+          }
           updateInGameStatus();
         }
       }
@@ -98,6 +137,12 @@ export function ensureInGameUI() {
   });
 
   container.appendChild(btn);
+
+  const customModsBtn = createButton(t('custom_skins.button'), {
+    class: 'ame-ingame-custom-mods',
+    onClick: () => openCustomSkinsModal(),
+  });
+  container.appendChild(customModsBtn);
 
   const unstuckBtn = createButton(t('ui.im_stuck'), {
     class: 'ame-ingame-unstuck',
