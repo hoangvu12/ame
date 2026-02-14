@@ -1,6 +1,4 @@
-- Added grid and list view toggle for custom mods and browse tabs
-- Added champion filter to the browse tab
-- Replaced apply button with custom skins icon
-- Improved reconnection screen
-- Fixed browse champion filter not updating when changing champion
-- Fixed hardcoded strings not being translated
+- Fixed champion selector not working for non-English clients (e.g. Vietnamese)
+- Fixed champion filter sometimes not prefilling correctly in the browse tab
+- Fixed unstuck button not actually resuming frozen game process
+- View mode (grid/list) is now remembered between sessions
