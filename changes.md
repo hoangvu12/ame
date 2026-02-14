@@ -1,4 +1,2 @@
-- Fixed champion selector not working for non-English clients (e.g. Vietnamese)
-- Fixed champion filter sometimes not prefilling correctly in the browse tab
-- Fixed unstuck button not actually resuming frozen game process
-- View mode (grid/list) is now remembered between sessions
+- Splash backgrounds on the left side of champ select now update when you change skins
+- Room party teammates' splash backgrounds also update to reflect their selected skins
