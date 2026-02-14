@@ -103,7 +103,11 @@ export function createChampionSearch(opts = {}) {
     const exclude = getExclude ? getExclude() : new Set();
     const q = (filter || '').toLowerCase();
     let items = champions.filter(c => c.id > 0 && !exclude.has(c.id));
-    if (q) items = items.filter(c => c.name.toLowerCase().includes(q));
+    if (q) items = items.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.alias && c.alias.toLowerCase().includes(q)) ||
+      (c.englishName && c.englishName.toLowerCase().includes(q))
+    );
     items.sort((a, b) => a.name.localeCompare(b.name));
 
     resultsList.innerHTML = '';

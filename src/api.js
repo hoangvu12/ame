@@ -62,6 +62,37 @@ export async function getChampionName(championId) {
   return entry ? entry.name : null;
 }
 
+let englishNamesMap = null;
+
+/** Load English champion names from Data Dragon (cached). */
+export async function loadEnglishChampionNames() {
+  if (englishNamesMap) return englishNamesMap;
+  try {
+    const res = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
+    const versions = await res.json();
+    const dataRes = await fetch(`https://ddragon.leagueoflegends.com/cdn/${versions[0]}/data/en_US/champion.json`);
+    const data = await dataRes.json();
+    englishNamesMap = new Map();
+    for (const champ of Object.values(data.data)) {
+      englishNamesMap.set(parseInt(champ.key), champ.name);
+    }
+    // Augment cached summary with English names
+    if (championSummaryCache) {
+      for (const c of championSummaryCache) {
+        c.englishName = englishNamesMap.get(c.id) || null;
+      }
+    }
+    return englishNamesMap;
+  } catch {
+    return null;
+  }
+}
+
+/** Get English name for a champion by ID (sync, returns null if not loaded yet). */
+export function getEnglishChampionName(championId) {
+  return englishNamesMap?.get(championId) || null;
+}
+
 export async function getChampionIdFromLobbyDOM() {
   const selected = document.querySelector(
     '.quick-play-loadout-selection-hitbox.selected .champion-slot-tile'

@@ -4,7 +4,7 @@ import { t } from './i18n';
 import { PROXY_IMAGE_BASE } from './constants';
 import { startBrowseDownload, getLastApplyPayload } from './websocket';
 import { loadExtensions, getLoadedSources, isLoaded, addExtension, addExtensionFromFile, removeExtension } from './extensionManager';
-import { loadChampionSummary } from './api';
+import { loadChampionSummary, loadEnglishChampionNames, getEnglishChampionName } from './api';
 import { getLastChampionId } from './state';
 
 let browseRoot = null;
@@ -18,7 +18,7 @@ let selectedDetail = null;
 let loading = false;
 let browseMode = 'popular'; // 'popular' | 'latest' | 'search'
 let filtersVisible = false;
-let browseViewMode = 'grid'; // 'grid' | 'list'
+let browseViewMode = localStorage.getItem('ame:browseViewMode') || 'grid'; // 'grid' | 'list'
 let downloadProgress = {};
 let gridEl = null;
 let scrollableEl = null;
@@ -27,10 +27,10 @@ let championList = null;
 
 // --- Public API ---
 
-export function createBrowseContent(container) {
+export async function createBrowseContent(container) {
   browseRoot = container;
   if (!championList) {
-    loadChampionSummary().then(list => { championList = list; });
+    championList = await loadChampionSummary();
   }
   if (!isLoaded()) {
     browseRoot.innerHTML = '';
@@ -53,7 +53,6 @@ export function destroyBrowseContent() {
   loading = false;
   browseMode = 'popular';
   filtersVisible = false;
-  browseViewMode = 'grid';
   gridEl = null;
   scrollableEl = null;
   loadMoreRow = null;
@@ -156,6 +155,7 @@ function buildBrowseToolbar() {
     onClick: () => {
       if (browseViewMode === 'grid') return;
       browseViewMode = 'grid';
+      localStorage.setItem('ame:browseViewMode', 'grid');
       renderBrowse();
     },
   }, '\u25A6');
@@ -165,6 +165,7 @@ function buildBrowseToolbar() {
     onClick: () => {
       if (browseViewMode === 'list') return;
       browseViewMode = 'list';
+      localStorage.setItem('ame:browseViewMode', 'list');
       renderBrowse();
     },
   }, '\u2261');
@@ -185,7 +186,7 @@ function buildBrowseToolbar() {
       placeholder: t('custom_skins.all_champions'),
       onSelect: (id, name) => {
         currentFilters[champFilter.key] = id || undefined;
-        currentFilters[champFilter.key + 'Name'] = id ? name : undefined;
+        currentFilters[champFilter.key + 'Name'] = id ? (getEnglishChampionName(id) || name) : undefined;
         results = [];
         currentPage = 1;
         doFetch();
@@ -219,7 +220,7 @@ function seedChampionFilter() {
   if (!champ) return;
 
   currentFilters[champFilter.key] = champId;
-  currentFilters[champFilter.key + 'Name'] = champ.name;
+  currentFilters[champFilter.key + 'Name'] = getEnglishChampionName(champId) || champ.name;
 }
 
 function getDefaultFilters(source) {

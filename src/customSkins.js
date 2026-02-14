@@ -1,7 +1,7 @@
 import { el } from './dom';
 import { createButton, createCheckbox, createChampionSearch, createInput, createCardImage } from './components';
 import { t } from './i18n';
-import { loadChampionSummary } from './api';
+import { loadChampionSummary, loadEnglishChampionNames } from './api';
 import { CUSTOM_SKINS_MODAL_ID, CUSTOM_SKINS_IMAGE_BASE } from './constants';
 import {
   onCustomMods, getCustomModsCache, refreshCustomMods,
@@ -17,7 +17,7 @@ let filterChampion = 0;
 let filterText = '';
 let unsubMods = null;
 let activeTab = 'mods'; // 'mods' | 'browse'
-let viewMode = 'grid'; // 'grid' | 'list'
+let viewMode = localStorage.getItem('ame:viewMode') || 'grid'; // 'grid' | 'list'
 let modsContainer = null;
 let browseContainer = null;
 
@@ -48,6 +48,7 @@ export function closeCustomSkinsModal() {
 async function buildModal() {
   // Ensure champion data is loaded
   championList = await loadChampionSummary();
+  loadEnglishChampionNames(); // start loading English names in background
 
   modalEl = el('div', { id: CUSTOM_SKINS_MODAL_ID },
     el('lol-uikit-full-page-backdrop', { class: 'csm-backdrop', onClick: closeCustomSkinsModal }),
@@ -177,6 +178,7 @@ function renderBrowseTab(content) {
 function setViewMode(mode) {
   if (viewMode === mode) return;
   viewMode = mode;
+  localStorage.setItem('ame:viewMode', mode);
   // Update toggle button active states
   if (modsContainer) {
     for (const btn of modsContainer.querySelectorAll('.csm-view-btn')) {
