@@ -3,6 +3,7 @@ import { fetchJson } from './api';
 import { el } from './dom';
 import { ROOM_PARTY_INDICATOR_CLASS } from './constants';
 import { retriggerPrefetch } from './autoApply';
+import { updateTeammateSplashes } from './splash';
 import { t } from './i18n';
 import { createLogger } from './logger';
 
@@ -144,6 +145,8 @@ async function renderTeammateIndicators() {
 
   const session = await fetchJson('/lol-champ-select/v1/session');
   if (!session?.myTeam) return;
+
+  await updateTeammateSplashes(currentTeammates, session);
 
   const teamOrdered = session.myTeam.slice().sort((a, b) => a.cellId - b.cellId);
   const slots = document.querySelectorAll('.ally-slot');
