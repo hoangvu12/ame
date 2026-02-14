@@ -199,6 +199,15 @@ var stateMu sync.Mutex
 var overlayBuildMu sync.Mutex
 var prebuiltModKey string
 
+// Active suspender state — allows handleUnstuck to resume the real suspender
+var activeSuspenderMu sync.Mutex
+var activeSuspendState *suspendState
+
+type suspendState struct {
+	suspender *suspend.Suspender
+	cancel    chan struct{}
+}
+
 // Room party state
 var roomState = roomparty.NewRoomState()
 
@@ -365,15 +374,50 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	applyDone := make(chan struct{})
 	defer close(applyDone)
 
+	// Create cancel channel and suspend state for this apply (used by handleUnstuck)
+	suspendCancel := make(chan struct{})
+	state := &suspendState{cancel: suspendCancel}
+
+	// Cancel any previous apply's suspend goroutine
+	activeSuspenderMu.Lock()
+	if prev := activeSuspendState; prev != nil {
+		select {
+		case <-prev.cancel:
+		default:
+			close(prev.cancel)
+		}
+	}
+	activeSuspendState = state
+	activeSuspenderMu.Unlock()
+
+	// Merged done channel: closes when either applyDone or suspendCancel closes.
+	// This lets WaitReady exit promptly on unstuck cancel (fix for review issue #2).
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-applyDone:
+		case <-suspendCancel:
+		}
+		close(done)
+	}()
+
 	// Background: if game appears while we're still building/starting, freeze it.
 	go func() {
-		// Poll for game process, but stop early if apply finishes first
+		defer func() {
+			activeSuspenderMu.Lock()
+			if activeSuspendState == state {
+				activeSuspendState = nil
+			}
+			activeSuspenderMu.Unlock()
+		}()
+
+		// Poll for game process, but stop early if apply finishes or cancelled
 		var pid uint32
 		deadline := time.Now().Add(120 * time.Second)
 		for time.Now().Before(deadline) {
 			select {
-			case <-applyDone:
-				return // Apply finished, no freeze needed
+			case <-done:
+				return
 			default:
 			}
 			if p := suspend.FindProcess("League of Legends.exe"); p != 0 {
@@ -388,7 +432,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 		// Double-check apply hasn't finished during the FindProcess call
 		select {
-		case <-applyDone:
+		case <-done:
 			return
 		default:
 		}
@@ -401,10 +445,20 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		}
 
 		// Wait for the process to accept remote threads (loader lock released)
-		if err := s.WaitReady(applyDone, 30*time.Second); err != nil {
+		// Uses merged done channel so both applyDone and suspendCancel can abort it
+		if err := s.WaitReady(done, 30*time.Second); err != nil {
 			display.Log(fmt.Sprintf("Suspend skipped: %v", err))
 			s.Close()
 			return
+		}
+
+		// Re-check cancel between WaitReady and Suspend to avoid suspending after cancel
+		select {
+		case <-done:
+			display.Log("Suspend skipped: cancelled after WaitReady")
+			s.Close()
+			return
+		default:
 		}
 
 		count, suspendErr := s.Suspend()
@@ -415,15 +469,35 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		}
 		display.Log(fmt.Sprintf("Game suspended successfully (count=%d)", count))
 
-		// Wait for apply to finish, with a safety timeout
+		// Register the suspender so handleUnstuck can access it
+		activeSuspenderMu.Lock()
+		state.suspender = s
+		activeSuspenderMu.Unlock()
+
+		// Wait for apply to finish, cancel signal, or safety timeout
 		select {
 		case <-applyDone:
 			display.Log("Apply finished, releasing game...")
+		case <-suspendCancel:
+			display.Log("Suspend cancelled, releasing game...")
 		case <-time.After(30 * time.Second):
 			display.Log("Safety timeout reached (30s), releasing game...")
 		}
-		s.Resume()
-		display.Log("Game released")
+
+		// Only resume if handleUnstuck hasn't already taken ownership
+		activeSuspenderMu.Lock()
+		owned := state.suspender == s
+		if owned {
+			state.suspender = nil
+		}
+		activeSuspenderMu.Unlock()
+
+		if owned {
+			s.Resume()
+			display.Log("Game released")
+		} else {
+			display.Log("Suspender already handled by unstuck, skipping resume")
+		}
 	}()
 
 	// Build overlay (or reuse pre-built one from prefetch).
@@ -714,36 +788,51 @@ func HandleCleanup() {
 func handleUnstuck(conn *websocket.Conn) {
 	display.Log("Unstuck: releasing game...")
 
-	// Try to find and resume the game process first (in case it's suspended)
-	pid := suspend.FindProcess("League of Legends.exe")
-	if pid != 0 {
-		display.Log(fmt.Sprintf("Unstuck: found game process PID %d, attempting resume...", pid))
-		s, err := suspend.NewSuspender(pid)
-		if err == nil {
+	// Take ownership of the active suspend state atomically
+	activeSuspenderMu.Lock()
+	state := activeSuspendState
+	activeSuspendState = nil
+	activeSuspenderMu.Unlock()
+
+	if state != nil {
+		// Signal the suspend goroutine to stop
+		select {
+		case <-state.cancel:
+		default:
+			close(state.cancel)
+		}
+
+		// Resume via the actual suspender that holds the frozen thread handles
+		activeSuspenderMu.Lock()
+		s := state.suspender
+		state.suspender = nil
+		activeSuspenderMu.Unlock()
+
+		if s != nil {
+			display.Log("Unstuck: resuming via active suspender")
 			s.Resume()
-			display.Log("Unstuck: resume attempted")
+			display.Log("Unstuck: resume completed")
 		}
 	}
 
 	// Small delay to let the resume take effect
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 
 	// Kill the game process
 	hiddenAttr := &syscall.SysProcAttr{HideWindow: true}
 	kill := exec.Command("taskkill", "/F", "/IM", "League of Legends.exe")
 	kill.SysProcAttr = hiddenAttr
-	err := kill.Run()
+	killErr := kill.Run()
 
-	if err != nil {
-		display.Log(fmt.Sprintf("Unstuck: failed to kill game: %v", err))
-		sendStatus(conn, "error", "Failed to kill game process")
-		return
-	}
-
-	// Also cleanup overlay state
+	// Cleanup overlay state regardless
 	HandleCleanup()
 
-	display.Log("Unstuck: game process killed")
+	if killErr != nil {
+		display.Log(fmt.Sprintf("Unstuck: taskkill failed: %v (process may already be dead)", killErr))
+	} else {
+		display.Log("Unstuck: game process killed")
+	}
+
 	sendStatus(conn, "ready", "Game released")
 }
 
