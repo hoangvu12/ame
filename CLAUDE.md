@@ -11,6 +11,10 @@ When creating a new release (pushing a version tag):
 2. Use simple bullet points, one change per line
 3. Write changes in plain language (no technical jargon)
 4. Commit `changes.md` before creating the tag
+5. Follow **semver** for the version number:
+   - **patch** (x.y.Z): bug fixes only
+   - **minor** (x.Y.0): new features (may include fixes)
+   - **major** (X.0.0): breaking changes
 
 Example `changes.md`:
 
