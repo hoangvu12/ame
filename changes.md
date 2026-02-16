@@ -1,2 +1,2 @@
-- Splash backgrounds on the left side of champ select now update when you change skins
-- Room party teammates' splash backgrounds also update to reflect their selected skins
+- Fixed splash backgrounds not showing on some clients
+- Fixed splash backgrounds updating the enemy side instead of your team
