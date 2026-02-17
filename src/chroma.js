@@ -3,6 +3,7 @@ import {
   getSkinOffset,
   getSkinKeyFromItem,
   findSkinByCarouselKey,
+  findSkinByName,
   getSkinNameFromItem,
   readCurrentSkin,
   getChromaData,
@@ -12,6 +13,7 @@ import { getMyChampionId, getChampionSkins, getChampionName } from './api';
 import { getLastChampionId } from './state';
 import { onChromaSelected, prefetchChroma } from './autoApply';
 import { el } from './dom';
+import { getFormChromas } from './formSkins';
 
 let activeChromaPanel = null;
 let activeChromaButton = null;
@@ -107,7 +109,7 @@ function createChromaPanel(skinData, chromas, buttonEl, championId) {
 
   const chromaImage = el('div', { class: 'chroma-information-image' });
   if (chromas.length > 0) {
-    const imgUrl = getChromaImageUrl(champId, chromas[0]) || getChromaPreviewPath(chromas[0]);
+    const imgUrl = getChromaPreviewPath(chromas[0]) || getChromaImageUrl(champId, chromas[0]);
     if (imgUrl) chromaImage.style.backgroundImage = `url('${imgUrl}')`;
   }
 
@@ -130,9 +132,12 @@ function createChromaPanel(skinData, chromas, buttonEl, championId) {
     const chroma = chromas[i];
     const colors = chroma.colors || [];
 
+    const bg = chroma.iconUrl
+      ? `url('${chroma.iconUrl}') center/cover no-repeat`
+      : chromaBackground(colors);
     const contents = el('div', {
       class: 'contents',
-      style: { background: chromaBackground(colors) },
+      style: { background: bg },
     });
 
     const btn = el('div', { class: i === 0 ? 'chroma-skin-button selected' : 'chroma-skin-button' }, contents);
@@ -144,7 +149,7 @@ function createChromaPanel(skinData, chromas, buttonEl, championId) {
       btn.classList.add('selected');
     });
     btn.addEventListener('mouseenter', () => {
-      const preview = getChromaImageUrl(champId, chroma) || getChromaPreviewPath(chroma);
+      const preview = getChromaPreviewPath(chroma) || getChromaImageUrl(champId, chroma);
       if (preview) chromaImage.style.backgroundImage = `url('${preview}')`;
       if (skinName.firstChild) {
         skinName.firstChild.nodeValue = chroma.name || skinData.name;
@@ -193,14 +198,18 @@ async function selectChroma(skinData, chroma) {
   closeChromaPanel();
   document.removeEventListener('click', onClickOutsideChroma, true);
 
-  // Update button swatch color to reflect selected chroma
+  // Update button swatch to reflect selected chroma
   const contentEl = triggerButton?.querySelector('.content');
   if (contentEl) {
-    const colors = chroma.colors || [];
-    if (colors.length >= 2) {
-      contentEl.style.background = `linear-gradient(135deg, ${colors[0]} 50%, ${colors[1]} 50%)`;
-    } else if (colors.length === 1) {
-      contentEl.style.background = colors[0];
+    if (chroma.iconUrl) {
+      contentEl.style.background = `url('${chroma.iconUrl}') center/cover no-repeat`;
+    } else {
+      const colors = chroma.colors || [];
+      if (colors.length >= 2) {
+        contentEl.style.background = `linear-gradient(135deg, ${colors[0]} 50%, ${colors[1]} 50%)`;
+      } else if (colors.length === 1) {
+        contentEl.style.background = colors[0];
+      }
     }
   }
 }
@@ -241,6 +250,10 @@ function resolveChromaData(centerItem, championSkins) {
     if (skinByKey?.chromas?.length > 0) {
       return { skin: skinByKey, chromas: skinByKey.chromas };
     }
+    if (skinByKey) {
+      const formChromas = getFormChromas(skinByKey.id);
+      if (formChromas) return { skin: skinByKey, chromas: formChromas };
+    }
   }
 
   // Fall back to name-based matching
@@ -250,6 +263,16 @@ function resolveChromaData(centerItem, championSkins) {
     const altName = readCurrentSkin();
     if (altName && altName !== skinName) {
       chromaData = getChromaData(championSkins, altName);
+      if (!chromaData) skinName = altName;
+    }
+  }
+
+  // Check form chromas by name (when carousel key is unavailable)
+  if (!chromaData && skinName && championSkins) {
+    const skin = findSkinByName(championSkins, skinName);
+    if (skin) {
+      const formChromas = getFormChromas(skin.id);
+      if (formChromas) return { skin, chromas: formChromas };
     }
   }
 
@@ -267,6 +290,9 @@ function syncChromaButtons(skinItems, championSkins) {
       const skinByKey = findSkinByCarouselKey(championSkins, key);
       if (skinByKey?.chromas?.length > 0) {
         data = { skin: skinByKey, chromas: skinByKey.chromas, championId: champId };
+      } else if (skinByKey) {
+        const formChromas = getFormChromas(skinByKey.id);
+        if (formChromas) data = { skin: skinByKey, chromas: formChromas, championId: champId };
       }
     }
 

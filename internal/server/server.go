@@ -18,6 +18,7 @@ import (
 	"github.com/hoangvu12/ame/internal/custommods"
 	"github.com/hoangvu12/ame/internal/display"
 	"github.com/hoangvu12/ame/internal/extensions"
+	"github.com/hoangvu12/ame/internal/formicons"
 	"github.com/hoangvu12/ame/internal/game"
 	"github.com/hoangvu12/ame/internal/httpproxy"
 	"github.com/hoangvu12/ame/internal/lcu"
@@ -1360,6 +1361,8 @@ func StartServer(port int) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		custommods.ServeImage(w, r, id)
 	})
+
+	http.HandleFunc("/form-icon/", formicons.ServeFormIcon)
 
 	http.HandleFunc("/proxy-image", httpproxy.ServeImageProxy)
 

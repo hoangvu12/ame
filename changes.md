@@ -1,2 +1,3 @@
-- Fixed splash backgrounds not showing on some clients
-- Fixed splash backgrounds updating the enemy side instead of your team
+- Added form skin selection for Elementalist Lux, DJ Sona, Spirit Blossom Morgana, Sahn-Uzal Mordekaiser, Arcane Fractured Jinx, Revenant Reign Viego, Radiant Serpent Sett, K/DA ALL OUT Seraphine, Risen Legend Ahri, and Risen Legend Kai'Sa
+- Forms appear as chroma buttons on the skin carousel
+- Each form shows its own icon in the selection panel
