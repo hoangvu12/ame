@@ -55,6 +55,12 @@ src/            League client plugin (JavaScript)
 - System tray with show/hide controls
 - Automatic updates from GitHub releases
 
+## Credits
+
+- [Pengu Loader](https://github.com/PenguLoader/PenguLoader) — JavaScript plugin loader for the League of Legends Client
+- [Rose](https://github.com/Alban1911/Rose) — Inspiration for this project
+- [LeagueSkins](https://github.com/Alban1911/LeagueSkins) — Skin data source
+
 ## Disclaimer
 
 This is an unofficial fan-made tool. It is not endorsed by Riot Games. Use at your own risk.
