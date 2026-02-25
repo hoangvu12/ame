@@ -1,4 +1,4 @@
-import { loadChampionSkins, getMyChampionId, getChampionName, fetchJson, forceDefaultSkin } from './api';
+import { loadChampionSkins, getChampionSkins, getMyChampionId, getChampionName, fetchJson, forceDefaultSkin } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin, getSkinKeyFromItem } from './skin';
 import { wsSend, wsSendApply, isApplyInFlight, isOverlayActive, hasEnabledCustomMods } from './websocket';
 import {
@@ -29,6 +29,7 @@ let retriggerTimer = null;
 let retriggerRetries = 0;
 let champSelectActive = false;
 let pendingClickBack = null;
+let lastSharedSelectionKey = null;
 const MAX_RETRIGGER_RETRIES = 3;
 
 /**
@@ -101,7 +102,6 @@ function debouncePrefetch(championId, skinName) {
       lastPrefetchPayload = payload;
       logger.log(` prefetch: sending for ${skin.name} (${skin.id})`);
       wsSend(payload);
-      notifySkinChange(championId, skin.id, '', champName, skin.name, '');
 
       // Force base skin now so the session is on base before champ select ends.
       // skinForced prevents the poll from cleaning up the overlay.
@@ -120,6 +120,25 @@ function debouncePrefetch(championId, skinName) {
       }
     }
   }, PREFETCH_DEBOUNCE_MS);
+}
+
+function maybeNotifyImmediateSelection(championId, skinName, chroma) {
+  if (!championId || !skinName) return;
+  const skins = getChampionSkins();
+  if (!skins) return;
+
+  const skin = findSkinByName(skins, skinName);
+  if (!skin || isDefaultSkin(skin)) return;
+
+  const sharedSkinId = chroma?.id || skin.id;
+  const sharedBaseSkinId = chroma?.baseSkinId || '';
+  const sharedSkinName = chroma?.baseSkinName || skin.name;
+  const sharedChromaName = chroma?.chromaName || '';
+  const shareKey = `${championId}|${sharedSkinId}|${sharedBaseSkinId}|${sharedChromaName}`;
+  if (shareKey === lastSharedSelectionKey) return;
+
+  lastSharedSelectionKey = shareKey;
+  notifySkinChange(championId, sharedSkinId, sharedBaseSkinId, '', sharedSkinName, sharedChromaName);
 }
 
 // --- Force apply (last resort before game starts) ---
@@ -233,6 +252,7 @@ export function resetAutoApply(keepPayload = false) {
   logger.log(` resetAutoApply: clearing skinForced`);
   setSkinForced(false);
   pendingClickBack = null;
+  lastSharedSelectionKey = null;
   cancelPrefetch();
   if (!keepPayload) {
     lastPrefetchPayload = null;
@@ -324,6 +344,7 @@ export function checkAutoApply(championId, isCurrentSkinOwned) {
 
   // null = ownership data not loaded yet; true = owned skin
   if (isCurrentSkinOwned !== false) {
+    lastSharedSelectionKey = null;
     autoApplyTriggered = false;
     // Don't clear the saved payload when we deliberately forced to base skin
     if (!getSkinForced()) lastPrefetchPayload = null;
@@ -335,14 +356,18 @@ export function checkAutoApply(championId, isCurrentSkinOwned) {
 
   if (skinChanged || champChanged) {
     if (skinChanged) clearSelectedChroma();
+    const nextChroma = skinChanged ? null : chroma;
 
     lastTrackedSkin = skinName;
     lastTrackedChampion = championId;
     stableSince = Date.now();
     autoApplyTriggered = false;
+    maybeNotifyImmediateSelection(championId, skinName, nextChroma);
     debouncePrefetch(championId, skinName);
     return;
   }
+
+  maybeNotifyImmediateSelection(championId, skinName, chroma);
 
   if (autoApplyTriggered) return;
 
