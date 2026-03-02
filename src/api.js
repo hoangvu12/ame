@@ -1,3 +1,4 @@
+import { suppressNextSkinEvent } from './suppress';
 import { createLogger } from './logger';
 
 const logger = createLogger('api');
@@ -140,6 +141,7 @@ export async function fetchOwnedSkins(summonerId, championId) {
 
 export async function forceDefaultSkin(championId) {
   const defaultSkinId = championId * 1000;
+  suppressNextSkinEvent();
   try {
     const res = await fetch('/lol-champ-select/v1/session/my-selection', {
       method: 'PATCH',

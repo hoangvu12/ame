@@ -1,5 +1,5 @@
 import { loadChampionSkins, getChampionSkins, getMyChampionId, getChampionName, fetchJson, forceDefaultSkin } from './api';
-import { readCurrentSkin, findSkinByName, isDefaultSkin, getSkinKeyFromItem } from './skin';
+import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
 import { wsSend, wsSendApply, isApplyInFlight, isOverlayActive, hasEnabledCustomMods } from './websocket';
 import {
   getAppliedSkinName, setAppliedSkinName,
@@ -28,7 +28,6 @@ let lastPrefetchPayload = null;
 let retriggerTimer = null;
 let retriggerRetries = 0;
 let champSelectActive = false;
-let pendingClickBack = null;
 let lastSharedSelectionKey = null;
 const MAX_RETRIGGER_RETRIES = 3;
 
@@ -49,29 +48,6 @@ export function prefetchChroma(championId, chromaId, baseSkinId, championName = 
   const payload = { type: 'prefetch', championId, skinId: chromaId, baseSkinId, championName, skinName, chromaName };
   lastPrefetchPayload = payload;
   wsSend(payload);
-}
-
-/**
- * Try to click the carousel item back to the unowned skin after forceDefaultSkin.
- * Called from the poll cycle so it runs reliably in the DOM context.
- */
-export function processClickBack() {
-  if (pendingClickBack === null) return;
-  const skinNum = pendingClickBack;
-  const items = document.querySelectorAll('.skin-selection-item');
-  for (const item of items) {
-    const key = getSkinKeyFromItem(item);
-    if (key === skinNum) {
-      logger.log(` clickBack: found skinNum=${skinNum}, dispatching events`);
-      const thumb = item.querySelector('.skin-selection-thumbnail') || item;
-      thumb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
-      thumb.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
-      thumb.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      pendingClickBack = null;
-      return;
-    }
-  }
-  // Item not in DOM yet — will retry on next poll cycle
 }
 
 // --- Prefetch debounce ---
@@ -107,15 +83,10 @@ function debouncePrefetch(championId, skinName) {
       // skinForced prevents the poll from cleaning up the overlay.
       logger.log(` prefetch: skinForced=${getSkinForced()}, will force=${!getSkinForced()}`);
       if (!getSkinForced()) {
-        const skinNum = skin.id % 1000;
         const forced = await forceDefaultSkin(championId);
         logger.log(` prefetch: forceDefaultSkin result: ${forced}`);
         if (forced) {
           setSkinForced(true);
-          // Click the unowned skin's carousel item to scroll back,
-          // so the UI doesn't jump to the base skin confusingly.
-          pendingClickBack = skinNum;
-          logger.log(` prefetch: set pendingClickBack=${skinNum}`);
         }
       }
     }
@@ -251,7 +222,6 @@ export function resetAutoApply(keepPayload = false) {
   setAppliedChromaId(null);
   logger.log(` resetAutoApply: clearing skinForced`);
   setSkinForced(false);
-  pendingClickBack = null;
   lastSharedSelectionKey = null;
   cancelPrefetch();
   if (!keepPayload) {

@@ -5,7 +5,7 @@ import { injectStyles, unlockSkinCarousel } from './styles';
 import { wsConnect, wsSend, isOverlayActive } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState, ensureConnectionBanner, updateConnectionBanner, initConnectionStatus } from './ui';
 import { ensureChromaButton, closeChromaPanel } from './chroma';
-import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply, lockRetrigger, setChampSelectActive, processClickBack } from './autoApply';
+import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply, lockRetrigger, setChampSelectActive } from './autoApply';
 import { ensureInGameUI, removeInGameUI, updateInGameStatus } from './inGame';
 import { initSettings } from './settings';
 import { handleReadyCheck, cancelPendingAccept, loadAutoAcceptSetting } from './autoAcceptMatch';
@@ -16,6 +16,7 @@ import { readCurrentSkin, findSkinByName } from './skin';
 import { joinRoom, leaveRoom, loadRoomPartySetting, flushPendingRetrigger } from './roomParty';
 import { triggerRandomSkin, resetRandomSkin } from './randomSkin';
 import { updateSelfSplash, resetSplashState } from './splash';
+import { initSkinSuppression, disarmSkinSuppression } from './suppress';
 import { initChatStatus } from './chatStatus';
 import { initI18n } from './i18n';
 import { createLogger } from './logger';
@@ -107,7 +108,6 @@ async function pollUI() {
 
     updateButtonState(ownership);
     checkAutoApply(champId, ownership);
-    processClickBack();
   } finally {
     pollRunning = false;
   }
@@ -175,6 +175,7 @@ export async function init(context) {
   await initI18n();
   injectStyles();
   wsConnect();
+  initSkinSuppression();
   initConnectionStatus();
   initSettings();
   loadAutoAcceptSetting();
@@ -192,6 +193,7 @@ export async function init(context) {
     if (champId && champId !== lastChampionId) {
       lastChampionId = champId;
       setLastChampionId(champId);
+      disarmSkinSuppression();
       resetSkinsCache();
       resetOwnedSkins();
       setAppliedSkinName(null);
@@ -224,6 +226,7 @@ export async function init(context) {
       if (wasInSwiftplay && isOverlayActive()) {
         setPendingForceDefault(true);
       }
+      disarmSkinSuppression();
       lastChampionId = null;
       setLastChampionId(null);
       resetSkinsCache();
