@@ -1,2 +1,1 @@
-- Fixed carousel jumping to base skin and splash flashing when applying unowned skins
-- Room party now shares splash selection immediately
+- Fixed tools download link
