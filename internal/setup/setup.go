@@ -110,7 +110,16 @@ func info(message string) {
 
 // downloadFile downloads a file from URL to destination
 func downloadFile(url, dest string) error {
-	resp, err := http.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	if strings.Contains(url, "filebin.net") {
+		req.AddCookie(&http.Cookie{Name: "verified", Value: "2024-05-24"})
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
