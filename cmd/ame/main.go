@@ -35,7 +35,7 @@ var minimized bool
 
 // Setup URLs
 var setupConfig = setup.Config{
-	ToolsZipURL: "https://filebin.net/8nsg7zrvpevwb4cp/tools.zip",
+	ToolsZipURL: "https://file.garden/acA69gGzKEt8EwHf/tools.zip",
 	PenguURL:    "https://github.com/PenguLoader/PenguLoader/releases/download/v1.1.6/pengu-loader-v1.1.6.zip",
 	PluginURL:   "https://github.com/hoangvu12/ame/releases/latest/download/plugin.zip",
 }
