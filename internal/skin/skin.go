@@ -82,6 +82,14 @@ func resolveEnglishNames(championID, skinID, baseSkinID string) (champName, skin
 
 // Download downloads a skin file (.fantome or .zip)
 func Download(championID, skinID, baseSkinID, championName, skinName, chromaName string) (string, error) {
+	// Try RSE source first (encrypted skins)
+	if rseAvailable() {
+		if path, err := downloadRSE(championID, skinID, baseSkinID); err == nil {
+			return path, nil
+		}
+	}
+
+	// Fallback to LeagueSkins repo
 	// Resolve English names from skin IDs mapping (overrides localized names from client)
 	enChamp, enSkin, enChroma := resolveEnglishNames(championID, skinID, baseSkinID)
 	if enChamp != "" {

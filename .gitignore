@@ -30,6 +30,9 @@ dist/
 Thumbs.db
 nul
 
+# Secrets
+.env
+
 # Old server (Bun/Node)
 server/node_modules/
 server/bun.lockb
