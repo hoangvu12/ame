@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p dist
           go mod tidy
-          go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}' -X 'github.com/hoangvu12/ame/internal/skin.rseKeyURL=${{ secrets.RSE_KEY_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.rseSkinBaseURL=${{ secrets.RSE_SKIN_BASE_URL }}'" -o dist/ame.exe ./cmd/ame
+          go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}' -X 'github.com/hoangvu12/ame/internal/skin.rseKeyURL=${{ secrets.RSE_KEY_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.rseSkinBaseURL=${{ secrets.RSE_SKIN_BASE_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.rseSkinIDsURL=${{ secrets.RSE_SKIN_IDS_URL }}'" -o dist/ame.exe ./cmd/ame
 
       - name: Create plugin zip
         shell: bash

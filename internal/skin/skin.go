@@ -33,26 +33,37 @@ func fetchSkinIDs() (map[string]string, error) {
 	}
 	skinIDsCacheMu.Unlock()
 
-	resp, err := http.Get(SKIN_IDS_URL)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("skin IDs returned status %d", resp.StatusCode)
+	urls := []string{SKIN_IDS_URL}
+	if rseSkinIDsURL != "" {
+		urls = []string{rseSkinIDsURL, SKIN_IDS_URL}
 	}
 
-	var data map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+	for _, u := range urls {
+		resp, err := http.Get(u)
+		if err != nil {
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+
+		var data map[string]string
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		skinIDsCacheMu.Lock()
+		skinIDsCache = data
+		skinIDsCacheMu.Unlock()
+
+		return data, nil
 	}
 
-	skinIDsCacheMu.Lock()
-	skinIDsCache = data
-	skinIDsCacheMu.Unlock()
-
-	return data, nil
+	return nil, fmt.Errorf("failed to fetch skin IDs from any source")
 }
 
 // resolveEnglishNames looks up English champion/skin/chroma names from the skin IDs mapping

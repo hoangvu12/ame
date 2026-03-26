@@ -21,6 +21,7 @@ import (
 var (
 	rseKeyURL      string
 	rseSkinBaseURL string
+	rseSkinIDsURL  string
 )
 
 var (
@@ -42,6 +43,9 @@ func init() {
 	}
 	if rseSkinBaseURL == "" {
 		rseSkinBaseURL = envVars["RSE_SKIN_BASE_URL"]
+	}
+	if rseSkinIDsURL == "" {
+		rseSkinIDsURL = envVars["RSE_SKIN_IDS_URL"]
 	}
 }
 
