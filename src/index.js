@@ -100,7 +100,7 @@ async function pollUI() {
     if (champId) {
       await loadChampionSkins(champId);
       await ensureOwnershipCache(champId);
-      ensureChromaButton();
+      if (isConnected()) ensureChromaButton();
       triggerRandomSkin(champId);
       updateSelfSplash(getChampionSkins());
       ownership = resolveOwnership(champId);
