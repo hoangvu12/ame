@@ -2,7 +2,7 @@ import { CHAMP_SELECT_PHASES, POST_GAME_PHASES, IN_GAME_PHASES, IN_GAME_POLL_MS,
 import { ensureSwiftplayButton, removeSwiftplayButton, updateSwiftplayButtonState, unlockSwiftplayCarousel, isSwiftplaySkinPanelOpen, ensureSwiftplayConnectionBanner, updateSwiftplayConnectionBanner } from './swiftplay';
 import { getMyChampionId, getChampionSkins, loadChampionSkins, resetSkinsCache, fetchJson, fetchSummonerId, fetchOwnedSkins, forceDefaultSkin, getChampionIdFromLobbyDOM } from './api';
 import { injectStyles, unlockSkinCarousel } from './styles';
-import { wsConnect, wsSend, isOverlayActive } from './websocket';
+import { wsConnect, wsSend, isOverlayActive, isConnected } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState, ensureConnectionBanner, updateConnectionBanner, initConnectionStatus } from './ui';
 import { ensureChromaButton, closeChromaPanel } from './chroma';
 import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply, lockRetrigger, setChampSelectActive } from './autoApply';
@@ -87,7 +87,7 @@ async function pollUI() {
     ensureConnectionBanner();
     updateConnectionBanner();
     ensureBenchSwap();
-    unlockSkinCarousel();
+    if (isConnected()) unlockSkinCarousel();
 
     const champId = lastChampionId || await getMyChampionId();
 
@@ -143,7 +143,7 @@ async function pollSwiftplayUI() {
     ensureSwiftplayConnectionBanner();
     updateSwiftplayConnectionBanner();
     ensureSwiftplayButton();
-    unlockSwiftplayCarousel();
+    if (isConnected()) unlockSwiftplayCarousel();
 
     let ownership = null;
     const champId = await getChampionIdFromLobbyDOM();
