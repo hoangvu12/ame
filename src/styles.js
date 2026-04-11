@@ -37,6 +37,28 @@ export function injectStyles() {
       border: 2px solid #c8aa6e;
       box-shadow: 0 0 6px #c8aa6e80;
     }
+    .ame-historic-marker {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+      background: #c8aa6e;
+      border-radius: 50%;
+      z-index: 10;
+      pointer-events: none;
+      box-shadow: 0 0 4px rgba(0,0,0,0.5);
+    }
+    .ame-historic-marker::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 10px;
+      height: 10px;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231e1e1e'%3E%3Cpath d='M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z'/%3E%3C/svg%3E") no-repeat center / contain;
+    }
     .ame-custom-skins-icon-btn {
       position: absolute !important;
       left: 50%;
@@ -1164,6 +1186,7 @@ export function injectStyles() {
     #${CUSTOM_SKINS_MODAL_ID} .brw-ext-inline {
       padding: 0 16px;
     }
+
   `;
   document.head.appendChild(style);
 }

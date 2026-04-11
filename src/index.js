@@ -16,6 +16,7 @@ import { readCurrentSkin, findSkinByName } from './skin';
 import { joinRoom, leaveRoom, loadRoomPartySetting, flushPendingRetrigger } from './roomParty';
 import { triggerRandomSkin, resetRandomSkin } from './randomSkin';
 import { updateSelfSplash, resetSplashState } from './splash';
+import { markHistoricSkin, clearHistoricMarkers } from './historicSkin';
 import { initSkinSuppression, disarmSkinSuppression } from './suppress';
 import { initChatStatus } from './chatStatus';
 import { initI18n } from './i18n';
@@ -75,6 +76,7 @@ function stopObserving() {
   removeApplyButton();
   closeChromaPanel();
   cleanupBenchSwap();
+  clearHistoricMarkers();
   document.querySelectorAll(`.${CHROMA_BTN_CLASS}`).forEach(el => el.remove());
 }
 
@@ -103,6 +105,7 @@ async function pollUI() {
       if (isConnected()) ensureChromaButton();
       triggerRandomSkin(champId);
       updateSelfSplash(getChampionSkins());
+      markHistoricSkin(champId);
       ownership = resolveOwnership(champId);
     }
 

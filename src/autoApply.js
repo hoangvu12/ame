@@ -11,6 +11,7 @@ import {
 import { setButtonState } from './ui';
 import { PREFETCH_DEBOUNCE_MS } from './constants';
 import { notifySkinChange } from './roomParty';
+import { recordHistoricSkin } from './historicSkin';
 import { t } from './i18n';
 import { createLogger } from './logger';
 
@@ -145,6 +146,8 @@ export async function forceApplyIfNeeded() {
     setAppliedSkinName(savedPayload.skinName);
     setAppliedChromaId(chroma?.id || null);
     setButtonState(t('ui.applied'), true);
+    const historicBase = chroma?.baseSkinId ?? savedPayload.skinId;
+    recordHistoricSkin(savedPayload.championId, historicBase % 1000, savedPayload.skinName);
     return;
   }
 
@@ -185,6 +188,7 @@ export async function forceApplyIfNeeded() {
   setAppliedSkinName(skinName);
   setAppliedChromaId(chroma?.id || null);
   setButtonState(t('ui.applied'), true);
+  recordHistoricSkin(championId, skin.id % 1000, skin.name);
 }
 
 /**
@@ -436,6 +440,7 @@ async function triggerAutoApply() {
   setAppliedSkinName(startSkin);
   setAppliedChromaId(startChroma?.id || null);
   setButtonState(t('ui.applied'), true);
+  recordHistoricSkin(championId, skin.id % 1000, skinLabel);
 }
 
 // --- Debug helpers ---
