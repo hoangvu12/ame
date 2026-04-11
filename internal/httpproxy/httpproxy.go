@@ -1,13 +1,10 @@
 package httpproxy
 
 import (
-	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hoangvu12/ame/internal/display"
+	"github.com/hoangvu12/ame/internal/httputil"
 )
 
 // No per-domain rate limiting — extensions need to make many concurrent
@@ -48,19 +46,7 @@ const (
 	requestTimeout  = 30 * time.Second
 )
 
-// httpClient forces IPv4 + HTTP/1.1 to avoid Cloudflare connection resets.
-var httpClient = &http.Client{
-	Timeout: requestTimeout,
-	Transport: &http.Transport{
-		TLSClientConfig:   &tls.Config{},
-		ForceAttemptHTTP2:  false,
-		DisableKeepAlives:  false,
-		TLSNextProto:       make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, "tcp4", addr)
-		},
-	},
-}
+var httpClient = httputil.NewIPv4Client(requestTimeout)
 
 // HandleProxy handles a proxied HTTP request from the frontend via WebSocket.
 func HandleProxy(conn *websocket.Conn, raw json.RawMessage) {
@@ -115,7 +101,7 @@ func doProxy(req Request) Response {
 
 		httpResp, err := httpClient.Do(httpReq)
 		if err != nil {
-			if attempt < maxRetries-1 && isRetryableErr(err) {
+			if attempt < maxRetries-1 && httputil.IsRetryableErr(err) {
 				continue
 			}
 			resp.Error = fmt.Sprintf("fetch error: %v", err)
@@ -151,15 +137,6 @@ func doProxy(req Request) Response {
 	}
 
 	return resp
-}
-
-func isRetryableErr(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "EOF") ||
-		strings.Contains(msg, "connection reset") ||
-		strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "closed") ||
-		strings.Contains(msg, "timeout")
 }
 
 func isTextContent(ct string) bool {
@@ -228,7 +205,7 @@ func ServeImageProxy(w http.ResponseWriter, r *http.Request) {
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			if attempt < maxRetries-1 && isRetryableErr(err) {
+			if attempt < maxRetries-1 && httputil.IsRetryableErr(err) {
 				continue
 			}
 			display.Log(fmt.Sprintf("Image proxy error: %v", err))

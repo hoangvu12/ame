@@ -149,19 +149,23 @@ func (rs *RoomState) IsActive() bool {
 	return rs.active
 }
 
-// GetAllModNames returns a slash-separated mod directory name list for mkoverlay --mods.
-// mod-tools expects slash-separated names (e.g. "skin_1/skin_2/skin_3").
-// It includes the user's own skin and all teammate skins that exist in ModsDir.
-func (rs *RoomState) GetAllModNames(ownSkinID string) string {
+// copyTeammates returns a snapshot of the current teammates slice.
+func (rs *RoomState) copyTeammates() []Member {
 	rs.mu.Lock()
 	teammates := make([]Member, len(rs.teammates))
 	copy(teammates, rs.teammates)
 	rs.mu.Unlock()
+	return teammates
+}
 
+// GetAllModNames returns a slash-separated mod directory name list for mkoverlay --mods.
+// mod-tools expects slash-separated names (e.g. "skin_1/skin_2/skin_3").
+// It includes the user's own skin and all teammate skins that exist in ModsDir.
+func (rs *RoomState) GetAllModNames(ownSkinID string) string {
 	names := []string{fmt.Sprintf("skin_%s", ownSkinID)}
 	seen := map[string]bool{ownSkinID: true}
 
-	for _, tm := range teammates {
+	for _, tm := range rs.copyTeammates() {
 		sid := tm.SkinInfo.SkinID
 		if sid == "" || seen[sid] {
 			continue
@@ -179,14 +183,9 @@ func (rs *RoomState) GetAllModNames(ownSkinID string) string {
 // ComputeModKey returns a sorted, deduplicated, comma-separated skin ID list
 // for cache-keying the prebuilt overlay.
 func (rs *RoomState) ComputeModKey(ownSkinID string) string {
-	rs.mu.Lock()
-	teammates := make([]Member, len(rs.teammates))
-	copy(teammates, rs.teammates)
-	rs.mu.Unlock()
-
 	ids := []string{ownSkinID}
 	seen := map[string]bool{ownSkinID: true}
-	for _, tm := range teammates {
+	for _, tm := range rs.copyTeammates() {
 		sid := tm.SkinInfo.SkinID
 		if sid == "" || seen[sid] {
 			continue
@@ -202,14 +201,9 @@ func (rs *RoomState) ComputeModKey(ownSkinID string) string {
 // the own skin and teammate skins whose mod directories actually exist in ModsDir.
 // Use this (instead of ComputeModKey) when recording what was actually built into the overlay.
 func (rs *RoomState) ComputeBuiltModKey(ownSkinID string) string {
-	rs.mu.Lock()
-	teammates := make([]Member, len(rs.teammates))
-	copy(teammates, rs.teammates)
-	rs.mu.Unlock()
-
 	ids := []string{ownSkinID}
 	seen := map[string]bool{ownSkinID: true}
-	for _, tm := range teammates {
+	for _, tm := range rs.copyTeammates() {
 		sid := tm.SkinInfo.SkinID
 		if sid == "" || seen[sid] {
 			continue

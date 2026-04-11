@@ -11,6 +11,13 @@ import (
 	"strings"
 )
 
+// lcuClient trusts the local LCU self-signed certificate.
+var lcuClient = &http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
+}
+
 // IsClientRunning checks if LeagueClientUx.exe is currently running.
 func IsClientRunning() bool {
 	cmd := exec.Command("wmic", "process", "where", "name='LeagueClientUx.exe'", "get", "ProcessId", "/value")
@@ -33,19 +40,13 @@ func RestartClient() error {
 
 	auth := base64.StdEncoding.EncodeToString([]byte("riot:" + token))
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
 	req, err := http.NewRequest("POST", fmt.Sprintf("https://127.0.0.1:%s/riotclient/kill-and-restart-ux", port), nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Basic "+auth)
 
-	resp, err := client.Do(req)
+	resp, err := lcuClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -71,19 +72,13 @@ func GetRegionLocale() (string, error) {
 
 	auth := base64.StdEncoding.EncodeToString([]byte("riot:" + token))
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://127.0.0.1:%s/riotclient/region-locale", port), nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Basic "+auth)
 
-	resp, err := client.Do(req)
+	resp, err := lcuClient.Do(req)
 	if err != nil {
 		return "", err
 	}

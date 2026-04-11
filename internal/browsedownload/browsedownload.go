@@ -1,39 +1,24 @@
 package browsedownload
 
 import (
-	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/hoangvu12/ame/internal/config"
 	"github.com/hoangvu12/ame/internal/custommods"
 	"github.com/hoangvu12/ame/internal/display"
+	"github.com/hoangvu12/ame/internal/httputil"
 )
 
-// browserClient forces IPv4 + HTTP/1.1 to avoid Cloudflare connection resets.
-var browserClient = &http.Client{
-	Timeout: 5 * time.Minute,
-	Transport: &http.Transport{
-		TLSClientConfig:   &tls.Config{},
-		ForceAttemptHTTP2:  false,
-		DisableKeepAlives:  false,
-		TLSNextProto:       make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, "tcp4", addr)
-		},
-	},
-}
+var browserClient = httputil.NewIPv4Client(5 * time.Minute)
 
 // DownloadRequest is the WS message from frontend to start a mod download.
 type DownloadRequest struct {
@@ -95,7 +80,7 @@ func HandleDownload(conn *websocket.Conn, raw json.RawMessage) {
 			resp, err := browserClient.Do(httpReq)
 			if err != nil {
 				dlErr = err
-				if attempt < maxRetries-1 && isRetryable(err) {
+				if attempt < maxRetries-1 && httputil.IsRetryableErr(err) {
 					display.Log(fmt.Sprintf("Browse download retry %d: %v", attempt+1, err))
 					continue
 				}
@@ -222,7 +207,7 @@ func downloadThumbnail(imgURL string) string {
 
 		resp, err := browserClient.Do(req)
 		if err != nil {
-			if attempt < 2 && isRetryable(err) {
+			if attempt < 2 && httputil.IsRetryableErr(err) {
 				continue
 			}
 			return ""
@@ -248,11 +233,3 @@ func downloadThumbnail(imgURL string) string {
 	return ""
 }
 
-func isRetryable(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "EOF") ||
-		strings.Contains(msg, "connection reset") ||
-		strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "closed") ||
-		strings.Contains(msg, "timeout")
-}
