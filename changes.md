@@ -1,2 +1,2 @@
-- Fixed skins showing as unlocked when ame is not open
-- Fixed auto-apply missing the new skin when changing champion or skin during apply
+- Added last used skin indicator in champ select
+- Fixed features still trying to run when ame is not open
