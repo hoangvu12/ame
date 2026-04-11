@@ -411,7 +411,7 @@ export function wsSendUnstuck() {
  */
 export function wsSendApply(obj) {
   if (applyResolve) {
-    return;
+    return false;
   }
 
   lastApplyPayload = {
@@ -433,6 +433,7 @@ export function wsSendApply(obj) {
   });
 
   wsSend(obj);
+  return true;
 }
 
 // --- Custom mods ---

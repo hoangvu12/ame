@@ -132,17 +132,16 @@ export async function forceApplyIfNeeded() {
     }
     const chroma = getSelectedChroma();
     logger.log(` forceApply: applying from payload ${savedPayload.skinName} (${savedPayload.skinId}${chroma ? ', chroma: ' + chroma.id : ''})`);
-    if (chroma) {
-      wsSendApply({
-        type: 'apply', championId: savedPayload.championId,
-        skinId: chroma.id, baseSkinId: chroma.baseSkinId,
-        championName: savedPayload.championName,
-        skinName: chroma.baseSkinName || savedPayload.skinName,
-        chromaName: chroma.chromaName,
-      });
-    } else {
-      wsSendApply({ ...savedPayload, type: 'apply' });
-    }
+    const sent = chroma
+      ? wsSendApply({
+          type: 'apply', championId: savedPayload.championId,
+          skinId: chroma.id, baseSkinId: chroma.baseSkinId,
+          championName: savedPayload.championName,
+          skinName: chroma.baseSkinName || savedPayload.skinName,
+          chromaName: chroma.chromaName,
+        })
+      : wsSendApply({ ...savedPayload, type: 'apply' });
+    if (!sent) return;
     setAppliedSkinName(savedPayload.skinName);
     setAppliedChromaId(chroma?.id || null);
     setButtonState(t('ui.applied'), true);
@@ -177,18 +176,11 @@ export async function forceApplyIfNeeded() {
   const champName = await getChampionName(championId);
   const chroma = getSelectedChroma();
   logger.log(` forceApply: applying ${skinName} (champ: ${champName}, skin: ${skin.id}${chroma ? ', chroma: ' + chroma.id : ''})`);
-  if (chroma) {
-    const payload = {
-      type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId,
-      championName: champName, skinName: chroma.baseSkinName || skin.name, chromaName: chroma.chromaName,
-    };
-    lastPrefetchPayload = payload;
-    wsSendApply(payload);
-  } else {
-    const payload = { type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name };
-    lastPrefetchPayload = payload;
-    wsSendApply(payload);
-  }
+  const payload = chroma
+    ? { type: 'apply', championId, skinId: chroma.id, baseSkinId: chroma.baseSkinId, championName: champName, skinName: chroma.baseSkinName || skin.name, chromaName: chroma.chromaName }
+    : { type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name };
+  lastPrefetchPayload = payload;
+  if (!wsSendApply(payload)) return;
 
   setAppliedSkinName(skinName);
   setAppliedChromaId(chroma?.id || null);
@@ -422,17 +414,24 @@ async function triggerAutoApply() {
   setSkinForced(true);
   logger.log(` skinForced set to true`);
 
+  if (epoch !== startEpoch) return;
+
   const champName = await getChampionName(championId);
-  if (startChroma) {
-    wsSendApply({
-      type: 'apply', championId, skinId: startChroma.id, baseSkinId: startChroma.baseSkinId,
-      championName: champName, skinName: startChroma.baseSkinName || skin.name, chromaName: startChroma.chromaName,
-    });
-    notifySkinChange(championId, startChroma.id, startChroma.baseSkinId, champName, startChroma.baseSkinName || skin.name, startChroma.chromaName);
-  } else {
-    wsSendApply({ type: 'apply', championId, skinId: skin.id, championName: champName, skinName: skin.name });
-    notifySkinChange(championId, skin.id, '', champName, skin.name, '');
-  }
+
+  if (epoch !== startEpoch) return;
+
+  const skinId = startChroma ? startChroma.id : skin.id;
+  const baseSkinId = startChroma ? startChroma.baseSkinId : '';
+  const skinLabel = startChroma ? (startChroma.baseSkinName || skin.name) : skin.name;
+  const chromaName = startChroma ? startChroma.chromaName : '';
+
+  const sent = wsSendApply({
+    type: 'apply', championId, skinId, baseSkinId,
+    championName: champName, skinName: skinLabel, chromaName,
+  });
+  if (!sent) return;
+
+  notifySkinChange(championId, skinId, baseSkinId, champName, skinLabel, chromaName);
 
   setAppliedSkinName(startSkin);
   setAppliedChromaId(startChroma?.id || null);
