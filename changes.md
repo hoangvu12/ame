@@ -1,1 +1,2 @@
-- Added alternate skin source for better availability
+- Fixed skins showing as unlocked when ame is not open
+- Fixed auto-apply missing the new skin when changing champion or skin during apply
