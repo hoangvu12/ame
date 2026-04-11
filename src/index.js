@@ -107,7 +107,7 @@ async function pollUI() {
     }
 
     updateButtonState(ownership);
-    checkAutoApply(champId, ownership);
+    if (isConnected()) checkAutoApply(champId, ownership);
   } finally {
     pollRunning = false;
   }
@@ -249,7 +249,7 @@ export async function init(context) {
       setChampSelectActive(false);
       stopObserving();
       flushPendingRetrigger();
-      forceApplyIfNeeded().finally(() => {
+      (isConnected() ? forceApplyIfNeeded() : Promise.resolve()).finally(() => {
         logger.log('forceApplyIfNeeded settled');
         resetAutoApply(true);
       });
