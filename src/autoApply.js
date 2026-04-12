@@ -310,7 +310,12 @@ export function checkAutoApply(championId, isCurrentSkinOwned) {
 
   // null = ownership data not loaded yet; true = owned skin
   if (isCurrentSkinOwned !== false) {
-    lastSharedSelectionKey = null;
+    // Still notify room party teammates even for owned skins
+    if (isCurrentSkinOwned === true) {
+      maybeNotifyImmediateSelection(championId, skinName, chroma);
+    } else {
+      lastSharedSelectionKey = null;
+    }
     autoApplyTriggered = false;
     // Don't clear the saved payload when we deliberately forced to base skin
     if (!getSkinForced()) lastPrefetchPayload = null;
