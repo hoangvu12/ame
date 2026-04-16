@@ -57,7 +57,6 @@ export function markHistoricSkin(championId) {
   for (const item of items) {
     if (getSkinKeyFromItem(item) === historic.skinNum) {
       const badge = el('div', { class: MARKER_CLASS, title: historic.skinName });
-      item.style.position = 'relative';
       item.appendChild(badge);
       return;
     }
