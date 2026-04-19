@@ -1,2 +1,2 @@
-- Added last used skin indicator in champ select
-- Fixed features still trying to run when ame is not open
+- Fixed last used skin indicator shifting skins in champ select
+- Fixed sharing owned skins in room party not working
