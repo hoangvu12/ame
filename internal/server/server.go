@@ -355,7 +355,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	// Download skin if not default
 	var zipPath string
 	if hasSkin {
-		zipPath = skin.GetCachedPath(championID, skinID)
+		zipPath = skin.GetValidCachedPath(championID, skinID, baseSkinID)
 		if zipPath == "" {
 			downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
 			if err != nil {
@@ -657,7 +657,7 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	// Download skin if not default
 	var zipPath string
 	if hasSkin {
-		zipPath = skin.GetCachedPath(championID, skinID)
+		zipPath = skin.GetValidCachedPath(championID, skinID, baseSkinID)
 		if zipPath == "" {
 			downloaded, err := skin.Download(championID, skinID, baseSkinID, championName, skinName, chromaName)
 			if err != nil {

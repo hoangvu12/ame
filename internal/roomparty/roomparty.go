@@ -238,7 +238,7 @@ func (rs *RoomState) DownloadTeammateSkins() {
 		wg.Add(1)
 		go func(si SkinInfo) {
 			defer wg.Done()
-			zipPath := skin.GetCachedPath(si.ChampionID, si.SkinID)
+			zipPath := skin.GetValidCachedPath(si.ChampionID, si.SkinID, si.BaseSkinID)
 			if zipPath == "" {
 				downloaded, err := skin.Download(si.ChampionID, si.SkinID, si.BaseSkinID, si.ChampionName, si.SkinName, si.ChromaName)
 				if err != nil {
@@ -448,7 +448,7 @@ func (rs *RoomState) prefetchTeammateSkins(old, current []Member) {
 			continue
 		}
 		// Skip if already cached
-		if skin.GetCachedPath(m.SkinInfo.ChampionID, m.SkinInfo.SkinID) != "" {
+		if skin.GetValidCachedPath(m.SkinInfo.ChampionID, m.SkinInfo.SkinID, m.SkinInfo.BaseSkinID) != "" {
 			continue
 		}
 		// Download in background

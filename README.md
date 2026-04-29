@@ -1,6 +1,6 @@
 # ame
 
-A League of Legends skin changer for Windows. Lets you select and apply skins directly in the client during champion select. Heavily inspired by [Rose](https://github.com/Alban1911/Rose). Skins are sourced from [LeagueSkins](https://github.com/Alban1911/LeagueSkins/tree/main/skins).
+A League of Legends skin changer for Windows. Lets you select and apply skins directly in the client during champion select. Heavily inspired by [Rose](https://github.com/Alban1911/Rose).
 
 ## How it works
 
@@ -59,7 +59,6 @@ src/            League client plugin (JavaScript)
 
 - [Pengu Loader](https://github.com/PenguLoader/PenguLoader) — JavaScript plugin loader for the League of Legends Client
 - [Rose](https://github.com/Alban1911/Rose) — Inspiration for this project
-- [LeagueSkins](https://github.com/Alban1911/LeagueSkins) — Skin data source
 
 ## Disclaimer
 

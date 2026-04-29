@@ -6,157 +6,164 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/display"
 )
 
-const SKIN_BASE_URL = "https://raw.githubusercontent.com/Alban1911/LeagueSkins/main/skins"
-const SKIN_IDS_URL = "https://raw.githubusercontent.com/Alban1911/LeagueSkins/refs/heads/main/resources/en/skin_ids.json"
+const cacheMetadataFile = "cache.json"
+const cacheValidationTTL = 12 * time.Hour
 
-var (
-	skinIDsCache   map[string]string
-	skinIDsCacheMu sync.Mutex
-)
-
-// fetchSkinIDs fetches the skin ID-to-name mapping and caches it
-func fetchSkinIDs() (map[string]string, error) {
-	skinIDsCacheMu.Lock()
-	if skinIDsCache != nil {
-		skinIDsCacheMu.Unlock()
-		return skinIDsCache, nil
-	}
-	skinIDsCacheMu.Unlock()
-
-	urls := []string{SKIN_IDS_URL}
-	if rseSkinIDsURL != "" {
-		urls = []string{rseSkinIDsURL, SKIN_IDS_URL}
-	}
-
-	for _, u := range urls {
-		resp, err := http.Get(u)
-		if err != nil {
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			continue
-		}
-
-		var data map[string]string
-		err = json.NewDecoder(resp.Body).Decode(&data)
-		resp.Body.Close()
-		if err != nil {
-			continue
-		}
-
-		skinIDsCacheMu.Lock()
-		skinIDsCache = data
-		skinIDsCacheMu.Unlock()
-
-		return data, nil
-	}
-
-	return nil, fmt.Errorf("failed to fetch skin IDs from any source")
+type cacheMetadata struct {
+	Source       string    `json:"source"`
+	Path         string    `json:"path"`
+	ETag         string    `json:"etag"`
+	LastModified string    `json:"lastModified"`
+	Size         int64     `json:"size"`
+	CheckedAt    time.Time `json:"checkedAt"`
 }
 
-// resolveEnglishNames looks up English champion/skin/chroma names from the skin IDs mapping
-func resolveEnglishNames(championID, skinID, baseSkinID string) (champName, skinName, chromaName string) {
-	data, err := fetchSkinIDs()
+type remoteSkinVersion struct {
+	Path         string
+	ETag         string
+	LastModified string
+	Size         int64
+}
+
+func skinDir(championID, skinID string) string {
+	return filepath.Join(config.SkinsDir, championID, skinID)
+}
+
+func skinCacheMetadataPath(championID, skinID string) string {
+	return filepath.Join(skinDir(championID, skinID), cacheMetadataFile)
+}
+
+func rseSkinPath(championID, skinID, baseSkinID string) string {
+	if baseSkinID != "" && baseSkinID != "0" {
+		return fmt.Sprintf("%s/%s/%s/%s.rse", championID, baseSkinID, skinID, skinID)
+	}
+	return fmt.Sprintf("%s/%s/%s.rse", championID, skinID, skinID)
+}
+
+func rseSkinURL(championID, skinID, baseSkinID string) string {
+	return strings.TrimRight(rseSkinBaseURL, "/") + "/" + rseSkinPath(championID, skinID, baseSkinID)
+}
+
+func logSkin(msg string) {
+	display.Log("Skin: " + msg)
+}
+
+func readCacheMetadata(championID, skinID string) (*cacheMetadata, error) {
+	data, err := os.ReadFile(skinCacheMetadataPath(championID, skinID))
 	if err != nil {
-		return "", "", ""
+		return nil, err
 	}
 
-	// Champion name is the base skin entry (championID * 1000)
-	championIDNum, _ := strconv.Atoi(championID)
-	champName = data[strconv.Itoa(championIDNum*1000)]
-
-	baseSkinIDNum, _ := strconv.Atoi(baseSkinID)
-
-	if baseSkinID != "" && baseSkinIDNum != 0 {
-		// Chroma: baseSkinID is the parent skin, skinID is the chroma
-		skinName = data[baseSkinID]
-		chromaName = data[skinID]
-	} else {
-		// Non-chroma: skinID is the skin itself
-		skinName = data[skinID]
+	var meta cacheMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, err
 	}
-
-	return
+	return &meta, nil
 }
 
-// Download downloads a skin file (.fantome or .zip)
+func writeCacheMetadata(championID, skinID string, remote *remoteSkinVersion) {
+	if !hasRemoteVersion(remote) {
+		return
+	}
+
+	meta := cacheMetadata{
+		Source:       "RSE",
+		Path:         remote.Path,
+		ETag:         remote.ETag,
+		LastModified: remote.LastModified,
+		Size:         remote.Size,
+		CheckedAt:    time.Now().UTC(),
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(skinDir(championID, skinID), os.ModePerm); err != nil {
+		return
+	}
+	_ = os.WriteFile(skinCacheMetadataPath(championID, skinID), data, 0644)
+}
+
+func fetchRSESkinVersion(championID, skinID, baseSkinID string) (*remoteSkinVersion, error) {
+	if !rseAvailable() {
+		return nil, fmt.Errorf("RSE source not configured")
+	}
+
+	path := rseSkinPath(championID, skinID, baseSkinID)
+	logSkin(fmt.Sprintf("checking cache version for %s", path))
+	req, err := http.NewRequest("HEAD", rseSkinURL(championID, skinID, baseSkinID), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "ame")
+
+	resp, err := rseClient.Do(req)
+	if err != nil {
+		logSkin(fmt.Sprintf("version check failed for %s: %v", path, err))
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		logSkin(fmt.Sprintf("version check missing for %s (404)", path))
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		logSkin(fmt.Sprintf("version check failed for %s (status %d)", path, resp.StatusCode))
+		return nil, fmt.Errorf("skin source returned status %d", resp.StatusCode)
+	}
+	logSkin(fmt.Sprintf("version check ok for %s", path))
+
+	return &remoteSkinVersion{
+		Path:         path,
+		ETag:         resp.Header.Get("ETag"),
+		LastModified: resp.Header.Get("Last-Modified"),
+		Size:         resp.ContentLength,
+	}, nil
+}
+
+func hasRemoteVersion(remote *remoteSkinVersion) bool {
+	return remote != nil && (remote.ETag != "" || remote.LastModified != "" || remote.Size > 0)
+}
+
+func sameRemoteVersion(a, b *remoteSkinVersion) bool {
+	if a == nil || b == nil || a.Path != b.Path {
+		return false
+	}
+	if a.ETag != "" && b.ETag != "" {
+		return a.ETag == b.ETag
+	}
+	if a.LastModified != "" && b.LastModified != "" && a.Size > 0 && b.Size > 0 {
+		return a.LastModified == b.LastModified && a.Size == b.Size
+	}
+	return a.Size > 0 && b.Size > 0 && a.Size == b.Size
+}
+
+func removeCacheMetadata(championID, skinID string) {
+	_ = os.Remove(skinCacheMetadataPath(championID, skinID))
+}
+
+// Download downloads a skin file.
 func Download(championID, skinID, baseSkinID, championName, skinName, chromaName string) (string, error) {
-	// Try RSE source first (encrypted skins)
-	if rseAvailable() {
-		if path, err := downloadRSE(championID, skinID, baseSkinID); err == nil {
-			return path, nil
-		}
+	if !rseAvailable() {
+		logSkin(fmt.Sprintf("source not configured (keyURL=%v baseURL=%v)", rseKeyURL != "", rseSkinBaseURL != ""))
+		return "", fmt.Errorf("skin source not configured")
 	}
-
-	// Fallback to LeagueSkins repo
-	// Resolve English names from skin IDs mapping (overrides localized names from client)
-	enChamp, enSkin, enChroma := resolveEnglishNames(championID, skinID, baseSkinID)
-	if enChamp != "" {
-		championName = enChamp
+	path, err := downloadRSE(championID, skinID, baseSkinID)
+	if err == nil {
+		return path, nil
 	}
-	if enSkin != "" {
-		skinName = enSkin
-	}
-	if enChroma != "" {
-		chromaName = enChroma
-	}
-
-	skinDir := filepath.Join(config.SkinsDir, championID, skinID)
-	os.MkdirAll(skinDir, os.ModePerm)
-
-	extensions := []string{"zip", "fantome"}
-
-	for _, ext := range extensions {
-		var downloadURL string
-		if championName != "" && skinName != "" {
-			if chromaName != "" {
-				// Chroma: skins/{ChampionName}/{SkinName}/{ChromaName}/{ChromaName}.ext
-				downloadURL = fmt.Sprintf("%s/%s/%s/%s/%s.%s",
-					SKIN_BASE_URL,
-					url.PathEscape(championName),
-					url.PathEscape(skinName),
-					url.PathEscape(chromaName),
-					url.PathEscape(chromaName),
-					ext,
-				)
-			} else {
-				// Base skin: skins/{ChampionName}/{SkinName}/{SkinName}.ext
-				downloadURL = fmt.Sprintf("%s/%s/%s/%s.%s",
-					SKIN_BASE_URL,
-					url.PathEscape(championName),
-					url.PathEscape(skinName),
-					url.PathEscape(skinName),
-					ext,
-				)
-			}
-		} else {
-			// Fallback to old numeric URL pattern
-			if baseSkinID != "" {
-				downloadURL = fmt.Sprintf("%s/%s/%s/%s/%s.%s", SKIN_BASE_URL, championID, baseSkinID, skinID, skinID, ext)
-			} else {
-				downloadURL = fmt.Sprintf("%s/%s/%s/%s.%s", SKIN_BASE_URL, championID, skinID, skinID, ext)
-			}
-		}
-
-		filePath := filepath.Join(skinDir, fmt.Sprintf("%s.%s", skinID, ext))
-
-		if err := downloadFile(downloadURL, filePath); err == nil {
-			return filePath, nil
-		}
-	}
-
+	logSkin(fmt.Sprintf("download failed for %s: %v", rseSkinPath(championID, skinID, baseSkinID), err))
+	removeCacheMetadata(championID, skinID)
 	return "", fmt.Errorf("skin not available for download")
 }
 
@@ -210,16 +217,16 @@ func Extract(archivePath, destDir string) error {
 
 // GetCachedPath returns the path to a cached skin file if it exists
 func GetCachedPath(championID, skinID string) string {
-	skinDir := filepath.Join(config.SkinsDir, championID, skinID)
+	dir := skinDir(championID, skinID)
 
 	// Check for zip first
-	zipPath := filepath.Join(skinDir, fmt.Sprintf("%s.zip", skinID))
+	zipPath := filepath.Join(dir, fmt.Sprintf("%s.zip", skinID))
 	if _, err := os.Stat(zipPath); err == nil {
 		return zipPath
 	}
 
 	// Check for fantome
-	fantomePath := filepath.Join(skinDir, fmt.Sprintf("%s.fantome", skinID))
+	fantomePath := filepath.Join(dir, fmt.Sprintf("%s.fantome", skinID))
 	if _, err := os.Stat(fantomePath); err == nil {
 		return fantomePath
 	}
@@ -227,24 +234,50 @@ func GetCachedPath(championID, skinID string) string {
 	return ""
 }
 
-// downloadFile downloads a file from URL to destination
-func downloadFile(url, dest string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
+// GetValidCachedPath returns a cached skin only when it is not known to be stale.
+// Legacy caches without metadata stay usable when the configured skin source cannot be checked.
+func GetValidCachedPath(championID, skinID, baseSkinID string) string {
+	cachedPath := GetCachedPath(championID, skinID)
+	if cachedPath == "" {
+		return ""
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %d", resp.StatusCode)
+	if !rseAvailable() {
+		logSkin(fmt.Sprintf("using cached %s without validation (source not configured)", rseSkinPath(championID, skinID, baseSkinID)))
+		return cachedPath
 	}
 
-	out, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
+	meta, err := readCacheMetadata(championID, skinID)
+	if err == nil && meta.Source == "RSE" && meta.Path == rseSkinPath(championID, skinID, baseSkinID) {
+		if time.Since(meta.CheckedAt) < cacheValidationTTL {
+			logSkin(fmt.Sprintf("using cached %s (recent metadata)", meta.Path))
+			return cachedPath
+		}
 
-	_, err = io.Copy(out, resp.Body)
-	return err
+		remote, err := fetchRSESkinVersion(championID, skinID, baseSkinID)
+		if err != nil || !hasRemoteVersion(remote) {
+			logSkin(fmt.Sprintf("using cached %s (validation unavailable)", meta.Path))
+			return cachedPath
+		}
+		cached := &remoteSkinVersion{Path: meta.Path, ETag: meta.ETag, LastModified: meta.LastModified, Size: meta.Size}
+		if sameRemoteVersion(cached, remote) {
+			writeCacheMetadata(championID, skinID, remote)
+			logSkin(fmt.Sprintf("using cached %s (up to date)", meta.Path))
+			return cachedPath
+		}
+
+		logSkin(fmt.Sprintf("cache stale for %s", meta.Path))
+		removeCacheMetadata(championID, skinID)
+		return ""
+	}
+
+	remote, err := fetchRSESkinVersion(championID, skinID, baseSkinID)
+	if err != nil || !hasRemoteVersion(remote) {
+		logSkin(fmt.Sprintf("using legacy cached %s (validation unavailable)", rseSkinPath(championID, skinID, baseSkinID)))
+		return cachedPath
+	}
+
+	// A legacy cache may predate the current source file; redownload once to bootstrap metadata.
+	logSkin(fmt.Sprintf("refreshing legacy cached %s to add metadata", remote.Path))
+	removeCacheMetadata(championID, skinID)
+	return ""
 }
