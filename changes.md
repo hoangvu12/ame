@@ -1,2 +1,2 @@
-- Fixed last used skin indicator shifting skins in champ select
-- Fixed sharing owned skins in room party not working
+- Faster connection to League Client when ame.exe starts after the client
+- Fixed skin downloads failing due to updated key server
