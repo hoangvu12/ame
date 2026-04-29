@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/hoangvu12/ame/internal/game"
 )
 
 // lcuClient trusts the local LCU self-signed certificate.
@@ -18,8 +22,29 @@ var lcuClient = &http.Client{
 	},
 }
 
-// IsClientRunning checks if LeagueClientUx.exe is currently running.
+// readLockfile returns port and token from the LCU lockfile, which the client
+// writes on startup and removes on shutdown. Format: name:pid:port:password:protocol.
+func readLockfile() (port, token string, ok bool) {
+	gameDir := game.FindGameDir()
+	if gameDir == "" {
+		return "", "", false
+	}
+	data, err := os.ReadFile(filepath.Join(gameDir, "..", "lockfile"))
+	if err != nil {
+		return "", "", false
+	}
+	parts := strings.Split(strings.TrimSpace(string(data)), ":")
+	if len(parts) < 5 {
+		return "", "", false
+	}
+	return parts[2], parts[3], true
+}
+
+// IsClientRunning checks if the League client is currently running.
 func IsClientRunning() bool {
+	if _, _, ok := readLockfile(); ok {
+		return true
+	}
 	cmd := exec.Command("wmic", "process", "where", "name='LeagueClientUx.exe'", "get", "ProcessId", "/value")
 	cmd.SysProcAttr = getSysProcAttr()
 	output, err := cmd.Output()
@@ -105,8 +130,13 @@ var (
 	portRe  = regexp.MustCompile(`--app-port=(\S+)`)
 )
 
-// getCredentials extracts the auth token and port from the LeagueClientUx.exe command line.
+// getCredentials extracts the LCU auth token and port. It prefers the lockfile
+// (instant) and falls back to parsing LeagueClientUx.exe's command line via wmic.
 func getCredentials() (port string, token string, err error) {
+	if p, t, ok := readLockfile(); ok {
+		return p, t, nil
+	}
+
 	cmd := exec.Command("wmic", "process", "where", "name='LeagueClientUx.exe'", "get", "CommandLine", "/value")
 	cmd.SysProcAttr = getSysProcAttr()
 	output, err := cmd.Output()
