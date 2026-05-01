@@ -268,7 +268,6 @@ func (rs *RoomState) connectAndRun(roomKey, puuid string) {
 			rs.mu.Unlock()
 			return
 		}
-		skinInfo := rs.mySkinInfo
 		rs.mu.Unlock()
 
 		conn, err := rs.connectWS(roomKey)
@@ -288,14 +287,15 @@ func (rs *RoomState) connectAndRun(roomKey, puuid string) {
 		rs.cancelRead = cancel
 		rs.mu.Unlock()
 
-		// Send join message
-		joinMsg, _ := json.Marshal(map[string]interface{}{
-			"type":     "join",
-			"puuid":    puuid,
-			"skinInfo": skinInfo,
-		})
+		// Send join message with the latest skin info captured after connect.
 		rs.mu.Lock()
 		if rs.conn != nil {
+			skinInfo := rs.mySkinInfo
+			joinMsg, _ := json.Marshal(map[string]interface{}{
+				"type":     "join",
+				"puuid":    puuid,
+				"skinInfo": skinInfo,
+			})
 			rs.conn.WriteMessage(websocket.TextMessage, joinMsg)
 		}
 		rs.mu.Unlock()

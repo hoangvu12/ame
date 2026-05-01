@@ -1,2 +1,1 @@
-- Faster connection to League Client when ame.exe starts after the client
-- Fixed skin downloads failing due to updated key server
+- Fixed room party teammate skins sometimes missing when several ame users join

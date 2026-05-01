@@ -14,12 +14,23 @@ const RETRIGGER_DEBOUNCE_MS = 5000;
 let enabled = false;
 let joined = false;
 let joining = false;
+let currentRoomKey = null;
+let currentTeamKey = '';
 let currentTeammates = [];
 let unsubUpdate = null;
 let retriggerDebounceTimer = null;
 
 function teammateSkinKey(teammates) {
   return teammates.map(t => t.skinInfo?.skinId || '').sort().join(',');
+}
+
+function teamPuuidKey(puuids) {
+  return puuids.slice().sort().join(',');
+}
+
+function hasNewTeamPuuids(puuids, oldKey) {
+  const oldSet = new Set(oldKey.split(',').filter(Boolean));
+  return puuids.some(p => !oldSet.has(p));
 }
 
 export function loadRoomPartySetting() {
@@ -34,8 +45,8 @@ export function loadRoomPartySetting() {
 }
 
 export async function joinRoom(existingSession) {
-  if (!enabled || joined || joining) {
-    logger.log(' joinRoom skipped:', !enabled ? 'not enabled' : joined ? 'already joined' : 'join in progress');
+  if (!enabled || joining) {
+    logger.log(' joinRoom skipped:', !enabled ? 'not enabled' : 'join in progress');
     return;
   }
   joining = true;
@@ -53,8 +64,26 @@ export async function joinRoom(existingSession) {
     const teamPuuids = session.myTeam
       .map(p => p.puuid)
       .filter(p => p && p !== '' && p !== summoner.puuid);
+    const nextTeamKey = teamPuuidKey(teamPuuids);
 
-    logger.log(' joinRoom: joining room', roomKey, 'with', teamPuuids.length, 'teammates');
+    if (joined) {
+      if (roomKey === currentRoomKey && nextTeamKey === currentTeamKey) {
+        logger.log(' joinRoom skipped: already joined');
+        return;
+      }
+      if (roomKey === currentRoomKey && !hasNewTeamPuuids(teamPuuids, currentTeamKey)) {
+        logger.log(' joinRoom skipped: ignoring incomplete team update');
+        return;
+      }
+      logger.log(' joinRoom: refreshing room', roomKey, 'with', teamPuuids.length, 'teammates');
+    } else {
+      logger.log(' joinRoom: joining room', roomKey, 'with', teamPuuids.length, 'teammates');
+    }
+
+    if (joined && roomKey !== currentRoomKey) {
+      currentTeammates = [];
+      removeTeammateIndicators();
+    }
 
     wsSend({
       type: 'roomPartyJoin',
@@ -64,31 +93,35 @@ export async function joinRoom(existingSession) {
     });
 
     joined = true;
+    currentRoomKey = roomKey;
+    currentTeamKey = nextTeamKey;
 
-    unsubUpdate = onRoomPartyUpdate((teammates) => {
-      const oldKey = teammateSkinKey(currentTeammates);
-      const newKey = teammateSkinKey(teammates);
-      logger.log(` roomPartyUpdate: ${teammates.length} teammates, skinKey: "${oldKey}" -> "${newKey}"`);
-      currentTeammates = teammates;
-      renderTeammateIndicators();
-      if (newKey !== oldKey) {
-        // Only retrigger if there are new or changed skins — not when teammates
-        // disappear (transient polling gaps should not remove already-applied skins).
-        const oldIds = new Set(oldKey.split(',').filter(Boolean));
-        const hasNewSkins = newKey.split(',').filter(Boolean).some(id => !oldIds.has(id));
-        if (hasNewSkins) {
-          if (retriggerDebounceTimer) clearTimeout(retriggerDebounceTimer);
-          logger.log(` roomPartyUpdate: new teammate skins detected, debouncing retrigger`);
-          retriggerDebounceTimer = setTimeout(() => {
-            retriggerDebounceTimer = null;
-            logger.log(` roomPartyUpdate: debounce fired, retriggering prefetch`);
-            retriggerPrefetch();
-          }, RETRIGGER_DEBOUNCE_MS);
-        } else {
-          logger.log(` roomPartyUpdate: teammate skins removed, skipping retrigger`);
+    if (!unsubUpdate) {
+      unsubUpdate = onRoomPartyUpdate((teammates) => {
+        const oldKey = teammateSkinKey(currentTeammates);
+        const newKey = teammateSkinKey(teammates);
+        logger.log(` roomPartyUpdate: ${teammates.length} teammates, skinKey: "${oldKey}" -> "${newKey}"`);
+        currentTeammates = teammates;
+        renderTeammateIndicators();
+        if (newKey !== oldKey) {
+          // Only retrigger if there are new or changed skins — not when teammates
+          // disappear (transient polling gaps should not remove already-applied skins).
+          const oldIds = new Set(oldKey.split(',').filter(Boolean));
+          const hasNewSkins = newKey.split(',').filter(Boolean).some(id => !oldIds.has(id));
+          if (hasNewSkins) {
+            if (retriggerDebounceTimer) clearTimeout(retriggerDebounceTimer);
+            logger.log(` roomPartyUpdate: new teammate skins detected, debouncing retrigger`);
+            retriggerDebounceTimer = setTimeout(() => {
+              retriggerDebounceTimer = null;
+              logger.log(` roomPartyUpdate: debounce fired, retriggering prefetch`);
+              retriggerPrefetch();
+            }, RETRIGGER_DEBOUNCE_MS);
+          } else {
+            logger.log(` roomPartyUpdate: teammate skins removed, skipping retrigger`);
+          }
         }
-      }
-    });
+      });
+    }
   } finally {
     joining = false;
   }
@@ -123,6 +156,8 @@ export function leaveRoom() {
   logger.log(' leaveRoom: leaving room party');
   wsSend({ type: 'roomPartyLeave' });
   joined = false;
+  currentRoomKey = null;
+  currentTeamKey = '';
   currentTeammates = [];
   if (unsubUpdate) {
     unsubUpdate();
@@ -133,6 +168,8 @@ export function leaveRoom() {
 
 export function resetRoomPartyJoin() {
   joined = false;
+  currentRoomKey = null;
+  currentTeamKey = '';
 }
 
 function removeTeammateIndicators() {
