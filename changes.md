@@ -1,1 +1,1 @@
-- Fixed room party teammate skins sometimes missing when several ame users join
+- Fixed startup getting stuck or closing after an interrupted update

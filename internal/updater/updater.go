@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"debug/pe"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,12 +17,14 @@ import (
 const (
 	GITHUB_REPO    = "hoangvu12/ame"
 	GITHUB_API_URL = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest"
+	minExeSize     = 1024 * 1024
 )
 
 var (
-	VERSION_FILE = filepath.Join(config.AmeDir, "version.txt")
-	UPDATE_FILE  = filepath.Join(config.AmeDir, "ame_update.exe")
-	CORE_FILE    = filepath.Join(config.AmeDir, "ame_core.exe")
+	VERSION_FILE     = filepath.Join(config.AmeDir, "version.txt")
+	UPDATE_FILE      = filepath.Join(config.AmeDir, "ame_update.exe")
+	UPDATE_TEMP_FILE = filepath.Join(config.AmeDir, "ame_update.exe.tmp")
+	CORE_FILE        = filepath.Join(config.AmeDir, "ame_core.exe")
 )
 
 // GitHubRelease represents the GitHub API response for a release
@@ -62,7 +65,7 @@ func SaveVersion(version string) error {
 
 // fetchLatestRelease gets the latest release info from GitHub
 func fetchLatestRelease() (*GitHubRelease, error) {
-	client := &http.Client{}
+	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest("GET", GITHUB_API_URL, nil)
 	if err != nil {
 		return nil, err
@@ -100,7 +103,11 @@ func getExeDownloadURL(release *GitHubRelease) string {
 
 // downloadUpdate downloads the new version to the update path
 func downloadUpdate(url string) error {
-	resp, err := http.Get(url)
+	os.MkdirAll(config.AmeDir, os.ModePerm)
+	os.Remove(UPDATE_TEMP_FILE)
+
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
 	if err != nil {
 		return err
 	}
@@ -110,22 +117,37 @@ func downloadUpdate(url string) error {
 		return fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
 
-	out, err := os.Create(UPDATE_FILE)
+	out, err := os.Create(UPDATE_TEMP_FILE)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
 	written, err := io.Copy(out, resp.Body)
 	if err != nil {
+		out.Close()
+		os.Remove(UPDATE_TEMP_FILE)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(UPDATE_TEMP_FILE)
 		return err
 	}
 
-	if written < 1024 {
+	if written < minExeSize {
+		os.Remove(UPDATE_TEMP_FILE)
 		return fmt.Errorf("download too small (%d bytes), likely failed", written)
 	}
+	if resp.ContentLength > 0 && written != resp.ContentLength {
+		os.Remove(UPDATE_TEMP_FILE)
+		return fmt.Errorf("download incomplete (%d/%d bytes)", written, resp.ContentLength)
+	}
+	if !verifyExeFile(UPDATE_TEMP_FILE) {
+		os.Remove(UPDATE_TEMP_FILE)
+		return fmt.Errorf("downloaded update is not a valid executable")
+	}
 
-	return nil
+	os.Remove(UPDATE_FILE)
+	return os.Rename(UPDATE_TEMP_FILE, UPDATE_FILE)
 }
 
 // compareVersions returns true if latest is newer than current
@@ -217,16 +239,28 @@ func NeedsPluginReinstall(currentVersion string) bool {
 // CleanupUpdateFile removes the downloaded update file if it exists
 func CleanupUpdateFile() {
 	os.Remove(UPDATE_FILE)
+	os.Remove(UPDATE_TEMP_FILE)
 }
 
 // VerifyUpdateFile checks if the update file exists and is valid
 func VerifyUpdateFile() bool {
-	info, err := os.Stat(UPDATE_FILE)
+	return verifyExeFile(UPDATE_FILE)
+}
+
+func verifyExeFile(path string) bool {
+	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}
-	// Must be at least 1MB for a valid exe
-	return info.Size() > 1024*1024
+	if info.Size() < minExeSize {
+		return false
+	}
+	f, err := pe.Open(path)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	return true
 }
 
 // ApplyPendingUpdate replaces ame_core.exe with ame_update.exe if a pending update exists.
@@ -269,9 +303,10 @@ func ApplyPendingUpdate() bool {
 
 // BootstrapCore copies the current executable to ame_core.exe if it doesn't exist.
 func BootstrapCore(srcExe string) error {
-	if _, err := os.Stat(CORE_FILE); err == nil {
+	if verifyExeFile(CORE_FILE) {
 		return nil // already exists
 	}
+	os.Remove(CORE_FILE)
 	os.MkdirAll(config.AmeDir, os.ModePerm)
 	return copyFile(srcExe, CORE_FILE)
 }
