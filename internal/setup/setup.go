@@ -232,11 +232,18 @@ func createDirectories() {
 	}
 }
 
-// setupModTools downloads and extracts the mod-tools zip if not present
-func setupModTools(toolsZipURL string) bool {
+// SetupModTools downloads and extracts the mod-tools zip if missing or forced.
+func SetupModTools(toolsZipURL string, force bool) bool {
 	modToolsPath := filepath.Join(config.ToolsDir, "mod-tools.exe")
-	if _, err := os.Stat(modToolsPath); err == nil {
-		return true
+	if !force {
+		if _, err := os.Stat(modToolsPath); err == nil {
+			return true
+		}
+	}
+
+	if strings.TrimSpace(toolsZipURL) == "" {
+		statusFail("mod-tools URL missing")
+		return false
 	}
 
 	info("Downloading mod-tools...")
@@ -267,6 +274,7 @@ func setupModTools(toolsZipURL string) bool {
 		return false
 	}
 
+	os.RemoveAll(config.ToolsDir)
 	os.MkdirAll(config.ToolsDir, os.ModePerm)
 
 	for _, entry := range entries {
@@ -410,7 +418,7 @@ func RunSetup(config Config) bool {
 	createDirectories()
 
 	// Setup mod-tools
-	if !setupModTools(config.ToolsZipURL) {
+	if !SetupModTools(config.ToolsZipURL, false) {
 		return false
 	}
 

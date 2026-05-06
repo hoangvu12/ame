@@ -1,1 +1,2 @@
-- Fixed startup getting stuck or closing after an interrupted update
+- Updated mod-tools automatically after installing a new version
+- Hid the mod-tools download link from the public build files

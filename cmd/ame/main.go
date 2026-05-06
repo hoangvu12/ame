@@ -29,13 +29,16 @@ import (
 // Version is set at build time via -ldflags
 var Version = "dev"
 
+// toolsZipURL is set at build time via -ldflags.
+var toolsZipURL string
+
 const PORT = 18765
 
 var minimized bool
 
 // Setup URLs
 var setupConfig = setup.Config{
-	ToolsZipURL: "https://file.garden/acA69gGzKEt8EwHf/tools.zip",
+	ToolsZipURL: toolsZipURL,
 	PenguURL:    "https://github.com/PenguLoader/PenguLoader/releases/download/v1.1.6/pengu-loader-v1.1.6.zip",
 	PluginURL:   "https://github.com/hoangvu12/ame/releases/latest/download/plugin.zip",
 }
@@ -227,11 +230,11 @@ func clearConsole() {
 	type coord struct{ X, Y int16 }
 	type smallRect struct{ Left, Top, Right, Bottom int16 }
 	type bufferInfo struct {
-		Size       coord
-		Cursor     coord
-		Attrs      uint16
-		Window     smallRect
-		MaxSize    coord
+		Size    coord
+		Cursor  coord
+		Attrs   uint16
+		Window  smallRect
+		MaxSize coord
 	}
 
 	var info bufferInfo
@@ -420,6 +423,8 @@ func main() {
 
 	// Check if plugin reinstall is needed (after an update)
 	if updater.NeedsPluginReinstall(Version) {
+		fmt.Println("  Updating mod-tools...")
+		setup.SetupModTools(setupConfig.ToolsZipURL, true)
 		fmt.Println("  Updating plugin...")
 		setup.DetectAndSetPenguPaths()
 		setup.SetupPlugin(setupConfig.PluginURL)
