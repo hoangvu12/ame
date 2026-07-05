@@ -1,6 +1,7 @@
 package skin
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -102,7 +103,10 @@ func loadEnvFile() map[string]string {
 }
 
 func rseAvailable() bool {
-	return rseKeyURL != "" && rseSkinBaseURL != "" && rseAuthSecret != "" && rseClientHalf != ""
+	// A skin source only needs a base URL. Key/auth material is required solely
+	// for RSE-encrypted sources; plain sources (e.g. LeagueSkins .fantome files)
+	// are downloaded and used as-is.
+	return rseSkinBaseURL != ""
 }
 
 func rseKeyBaseURL() string {
@@ -242,15 +246,16 @@ func rseKeystream(key, nonce []byte, length int) []byte {
 }
 
 func decryptRSE(data []byte) ([]byte, error) {
+	// Plain sources such as LeagueSkins serve unencrypted .fantome (zip) files.
+	// When the RSE magic header is absent the payload is already a usable
+	// archive, so pass it through untouched (no key fetch/decryption needed).
+	if !bytes.HasPrefix(data, rseMagic) {
+		return data, nil
+	}
+
 	headerSize := len(rseMagic) + rseNonceSize
 	if len(data) < headerSize {
 		return nil, fmt.Errorf("rse data too short")
-	}
-
-	for i, b := range rseMagic {
-		if data[i] != b {
-			return nil, fmt.Errorf("invalid rse magic")
-		}
 	}
 
 	key, err := fetchRSEKey()

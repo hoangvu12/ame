@@ -1,2 +1,2 @@
-- Updated mod-tools automatically after installing a new version
-- Hid the mod-tools download link from the public build files
+- Fixed skins not downloading after the old skin source was taken down
+- Switched to a new skin source so skins and chromas work again

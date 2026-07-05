@@ -44,9 +44,9 @@ func skinCacheMetadataPath(championID, skinID string) string {
 
 func rseSkinPath(championID, skinID, baseSkinID string) string {
 	if baseSkinID != "" && baseSkinID != "0" {
-		return fmt.Sprintf("%s/%s/%s/%s.rse", championID, baseSkinID, skinID, skinID)
+		return fmt.Sprintf("%s/%s/%s/%s.fantome", championID, baseSkinID, skinID, skinID)
 	}
-	return fmt.Sprintf("%s/%s/%s.rse", championID, skinID, skinID)
+	return fmt.Sprintf("%s/%s/%s.fantome", championID, skinID, skinID)
 }
 
 func rseSkinURL(championID, skinID, baseSkinID string) string {
