@@ -1,2 +1,1 @@
-- Fixed skins not downloading after the old skin source was taken down
-- Switched to a new skin source so skins and chromas work again
+- Fixed owned skins sometimes reverting to the default or previously selected skin

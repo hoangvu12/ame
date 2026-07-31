@@ -3,6 +3,7 @@ import { createLogger } from './logger';
 const logger = createLogger('suppress');
 
 let suppressFlag = false;
+let suppressedSkinId = null;
 let suppressTimeout = null;
 
 /**
@@ -10,13 +11,15 @@ let suppressTimeout = null;
  * event will be silently dropped before the champ-select UI processes it.
  * Auto-expires after 3 s if the event never arrives.
  */
-export function suppressNextSkinEvent() {
+export function suppressNextSkinEvent(skinId) {
   suppressFlag = true;
+  suppressedSkinId = skinId;
   if (suppressTimeout) clearTimeout(suppressTimeout);
   suppressTimeout = setTimeout(() => {
     if (suppressFlag) {
       logger.log('suppress timeout expired, disarming');
       suppressFlag = false;
+      suppressedSkinId = null;
     }
     suppressTimeout = null;
   }, 3000);
@@ -29,6 +32,7 @@ export function suppressNextSkinEvent() {
 export function disarmSkinSuppression() {
   if (suppressFlag) logger.log('disarming suppression');
   suppressFlag = false;
+  suppressedSkinId = null;
   if (suppressTimeout) { clearTimeout(suppressTimeout); suppressTimeout = null; }
 }
 
@@ -61,9 +65,11 @@ export function initSkinSuppression() {
             if (
               Array.isArray(payload) &&
               payload[1] === 'OnJsonApiEvent' &&
-              payload[2]?.uri === '/lol-champ-select/v1/skin-selector-info'
+              payload[2]?.uri === '/lol-champ-select/v1/skin-selector-info' &&
+              payload[2]?.data?.selectedSkinId === suppressedSkinId
             ) {
               suppressFlag = false;
+              suppressedSkinId = null;
               if (suppressTimeout) { clearTimeout(suppressTimeout); suppressTimeout = null; }
               logger.log('suppressed skin-selector-info event');
               return; // drop the event

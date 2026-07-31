@@ -4,6 +4,7 @@ export const SKIN_SELECTORS = [
 ];
 export const POLL_INTERVAL_MS = 300;
 export const PREFETCH_DEBOUNCE_MS = 2000;
+export const OWNED_SELECTION_DELAY_MS = 150;
 export const CHAMP_SELECT_PHASES = ['ChampSelect'];
 export const POST_GAME_PHASES = ['None', 'Lobby', 'EndOfGame', 'PreEndOfGame', 'Matchmaking', 'ReadyCheck'];
 export const WS_URL = 'ws://localhost:18765';

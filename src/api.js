@@ -139,19 +139,56 @@ export async function fetchOwnedSkins(summonerId, championId) {
   return owned;
 }
 
-export async function forceDefaultSkin(championId) {
+let skinSelectionQueue = Promise.resolve();
+let skinSelectionRevision = 0;
+let latestSkinId = null;
+let latestSkinSelection = null;
+
+export function cancelPendingSkinSelections() {
+  skinSelectionRevision++;
+  latestSkinId = null;
+  latestSkinSelection = null;
+}
+
+export function selectSkin(skinId, suppressEvent = false) {
+  if (skinId === latestSkinId && latestSkinSelection) return latestSkinSelection;
+
+  const revision = ++skinSelectionRevision;
+  const request = async () => {
+    if (revision !== skinSelectionRevision) {
+      logger.log(` selectSkin: skipped stale selectedSkinId=${skinId}`);
+      return false;
+    }
+    if (suppressEvent) suppressNextSkinEvent(skinId);
+    try {
+      const res = await fetch('/lol-champ-select/v1/session/my-selection', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectedSkinId: skinId }),
+      });
+      logger.log(` selectSkin: PATCH selectedSkinId=${skinId} status=${res.status}`);
+      return res.ok;
+    } catch (err) {
+      logger.log(` selectSkin: error`, err);
+      return false;
+    }
+  };
+
+  const result = skinSelectionQueue.then(request, request);
+  const trackedResult = result.then((selected) => {
+    if (!selected && revision === skinSelectionRevision) {
+      latestSkinId = null;
+      latestSkinSelection = null;
+    }
+    return selected;
+  });
+  latestSkinId = skinId;
+  latestSkinSelection = trackedResult;
+  skinSelectionQueue = trackedResult.then(() => undefined, () => undefined);
+  return trackedResult;
+}
+
+export function forceDefaultSkin(championId) {
   const defaultSkinId = championId * 1000;
-  suppressNextSkinEvent();
-  try {
-    const res = await fetch('/lol-champ-select/v1/session/my-selection', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selectedSkinId: defaultSkinId }),
-    });
-    logger.log(` forceDefaultSkin: PATCH selectedSkinId=${defaultSkinId} status=${res.status}`);
-    return res.ok;
-  } catch (err) {
-    logger.log(` forceDefaultSkin: error`, err);
-    return false;
-  }
+  return selectSkin(defaultSkinId, true);
 }
