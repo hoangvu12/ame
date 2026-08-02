@@ -1,4 +1,4 @@
-import { wsSend, onRoomPartyUpdate, onSetting } from './websocket';
+import { wsSend, onRoomPartyUpdate, onSetting, clearRoomPartySkins } from './websocket';
 import { fetchJson } from './api';
 import { el } from './dom';
 import { ROOM_PARTY_INDICATOR_CLASS } from './constants';
@@ -82,6 +82,7 @@ export async function joinRoom(existingSession) {
 
     if (joined && roomKey !== currentRoomKey) {
       currentTeammates = [];
+      clearRoomPartySkins();
       removeTeammateIndicators();
     }
 
@@ -151,7 +152,10 @@ export function flushPendingRetrigger() {
 }
 
 export function leaveRoom() {
-  if (!joined) return;
+  if (!joined) {
+    clearRoomPartySkins();
+    return;
+  }
   if (retriggerDebounceTimer) { clearTimeout(retriggerDebounceTimer); retriggerDebounceTimer = null; }
   logger.log(' leaveRoom: leaving room party');
   wsSend({ type: 'roomPartyLeave' });
@@ -159,6 +163,7 @@ export function leaveRoom() {
   currentRoomKey = null;
   currentTeamKey = '';
   currentTeammates = [];
+  clearRoomPartySkins();
   if (unsubUpdate) {
     unsubUpdate();
     unsubUpdate = null;

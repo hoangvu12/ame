@@ -76,6 +76,7 @@ test('owned selection invalidates a previously forced unowned skin', async () =>
       isApplyInFlight: () => false,
       isOverlayActive: () => false,
       hasEnabledCustomMods: () => false,
+      hasRoomPartySkins: () => false,
     },
     './ui': { setButtonState: () => {} },
     './constants': { PREFETCH_DEBOUNCE_MS: 0, OWNED_SELECTION_DELAY_MS: 0 },
@@ -121,6 +122,7 @@ test('explicit chroma payload remains applicable on an owned base skin', async (
       isApplyInFlight: () => false,
       isOverlayActive: () => false,
       hasEnabledCustomMods: () => false,
+      hasRoomPartySkins: () => false,
     },
     './ui': { setButtonState: () => {} },
     './constants': { PREFETCH_DEBOUNCE_MS: 0, OWNED_SELECTION_DELAY_MS: 0 },
@@ -167,6 +169,7 @@ test('visible forced base does not discard the unowned payload', async () => {
       isApplyInFlight: () => false,
       isOverlayActive: () => false,
       hasEnabledCustomMods: () => false,
+      hasRoomPartySkins: () => false,
     },
     './ui': { setButtonState: () => {} },
     './constants': { PREFETCH_DEBOUNCE_MS: 0, OWNED_SELECTION_DELAY_MS: 0 },
@@ -184,4 +187,52 @@ test('visible forced base does not discard the unowned payload', async () => {
 
   assert.equal(applied.length, 1);
   assert.equal(applied[0].skinId, 1001);
+});
+
+test('owned skin still applies teammate room-party skins', async () => {
+  const skins = [{ id: 1002, name: 'Owned' }];
+  const applied = [];
+  const prefetched = [];
+  let forcedDefaults = 0;
+  const autoApply = await loadAutoApply({
+    './api': {
+      loadChampionSkins: async () => skins,
+      getChampionSkins: () => skins,
+      getMyChampionId: async () => 1,
+      getChampionName: async () => 'Champion',
+      fetchJson: async () => null,
+      forceDefaultSkin: async () => { forcedDefaults++; return true; },
+      selectSkin: async () => true,
+      cancelPendingSkinSelections: () => {},
+    },
+    './skin': {
+      readCurrentSkin: () => 'Owned',
+      findSkinByName: (list, name) => list.find((skin) => skin.name === name) || null,
+      isDefaultSkin: () => false,
+    },
+    './websocket': {
+      wsSend: (payload) => { prefetched.push(payload); return true; },
+      wsSendApply: (payload) => { applied.push(payload); return true; },
+      isApplyInFlight: () => false,
+      isOverlayActive: () => false,
+      hasEnabledCustomMods: () => false,
+      hasRoomPartySkins: () => true,
+    },
+    './ui': { setButtonState: () => {} },
+    './constants': { PREFETCH_DEBOUNCE_MS: 0, OWNED_SELECTION_DELAY_MS: 0 },
+    './roomParty': { notifySkinChange: () => {} },
+    './historicSkin': { recordHistoricSkin: () => {} },
+    './i18n': { t: (key) => key },
+    './logger': { createLogger: () => ({ log: () => {} }) },
+  });
+
+  autoApply.setChampSelectActive(true);
+  autoApply.checkAutoApply(1, true);
+  await autoApply.forceApplyIfNeeded();
+
+  assert.equal(prefetched.length, 1);
+  assert.equal(prefetched[0].skinId, 0);
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0].skinId, 0);
+  assert.equal(forcedDefaults, 0);
 });

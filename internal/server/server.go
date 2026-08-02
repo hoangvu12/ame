@@ -314,9 +314,11 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	hasSkin := skinID != "" && skinID != "0"
 	enabledCustomMods := config.GetEnabledCustomMods()
 	hasCustomMods := len(enabledCustomMods) > 0
+	hasTeammateSkins := roomState.IsActive() && roomState.HasTeammateSkins()
 
-	// Nothing to apply: default skin and no custom mods
-	if !hasSkin && !hasCustomMods {
+	// Nothing to apply: default skin with no auxiliary mods.
+	if !hasSkin && !hasCustomMods && !hasTeammateSkins {
+		sendStatus(conn, "noop", "Nothing to apply")
 		return
 	}
 
@@ -565,11 +567,10 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 		// Build mod list: own skin + teammate skins + custom mods
 		var modName string
-		if hasSkin {
+		if roomState.IsActive() {
+			modName = roomState.GetAllModNames(skinID)
+		} else if hasSkin {
 			modName = fmt.Sprintf("skin_%s", skinID)
-			if roomState.IsActive() {
-				modName = roomState.GetAllModNames(skinID)
-			}
 		}
 		// Append custom mod names (highest priority — last in list)
 		if len(customModNames) > 0 {
@@ -598,6 +599,9 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		}
 	}
 	overlayBuildMu.Unlock()
+	if roomState.IsActive() {
+		teammateSkinCount = roomState.BuiltTeammateSkinCount()
+	}
 
 	// Start runoverlay (hooks game process when it finds it)
 	configPath := filepath.Join(config.OverlayDir, "cslol-config.json")
@@ -648,9 +652,10 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
 	hasSkin := skinID != "" && skinID != "0"
 	hasCustomMods := len(config.GetEnabledCustomMods()) > 0
+	hasTeammateSkins := roomState.IsActive() && roomState.HasTeammateSkins()
 
 	// Nothing to prefetch
-	if !hasSkin && !hasCustomMods {
+	if !hasSkin && !hasCustomMods && !hasTeammateSkins {
 		return
 	}
 
@@ -728,11 +733,10 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 
 	// Build mod list: own skin + teammate skins + custom mods
 	var modName string
-	if hasSkin {
+	if roomState.IsActive() {
+		modName = roomState.GetAllModNames(skinID)
+	} else if hasSkin {
 		modName = fmt.Sprintf("skin_%s", skinID)
-		if roomState.IsActive() {
-			modName = roomState.GetAllModNames(skinID)
-		}
 	}
 	if len(customModNames) > 0 {
 		if modName != "" {

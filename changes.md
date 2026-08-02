@@ -1,1 +1,1 @@
-- Fixed owned skins sometimes reverting to the default or previously selected skin
+- Fixed teammate Ame skins not appearing when using an owned skin

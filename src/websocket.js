@@ -45,6 +45,7 @@ const chatStatusListeners = [];
 
 // Room party: teammate update listeners
 const roomPartyListeners = [];
+let roomPartyTeammatesCache = [];
 
 // Custom mods: cache + listeners
 let customModsCache = [];
@@ -222,7 +223,8 @@ export function wsConnect() {
           overlayActive = !!msg.overlayActive;
           logger.log('State from server:', overlayActive ? 'active' : 'inactive', lastApplyPayload);
         } else if (msg.type === 'roomPartyUpdate') {
-          roomPartyListeners.forEach(cb => cb(msg.teammates || []));
+          roomPartyTeammatesCache = msg.teammates || [];
+          roomPartyListeners.forEach(cb => cb(roomPartyTeammatesCache));
         } else if (msg.type === 'gamePath') {
           if (gamePathCallback) {
             gamePathCallback(msg.path || '');
@@ -299,8 +301,8 @@ export function wsConnect() {
           // Individual setting response (from set* calls)
           applySetting(msg.type, msg.enabled);
         } else if (msg.type === 'status') {
-          if (msg.status === 'ready' && applyResolve) {
-            applyResolve();
+          if ((msg.status === 'ready' || msg.status === 'noop') && applyResolve) {
+            applyResolve(msg.status === 'ready');
             applyResolve = null;
             applyReject = null;
           } else if (msg.status === 'error') {
@@ -424,7 +426,7 @@ export function wsSendApply(obj) {
     applyReject = reject;
   });
 
-  promise.then(() => { overlayActive = true; });
+  promise.then((active) => { overlayActive = active; });
 
   toastPromise(promise, {
     loading: t('toast.apply.loading'),
@@ -453,6 +455,14 @@ export function refreshCustomMods() { wsSend({ type: 'getCustomMods' }); }
 
 export function hasEnabledCustomMods() {
   return customModsCache.some(m => m.enabled);
+}
+
+export function hasRoomPartySkins() {
+  return roomPartyTeammatesCache.some(teammate => teammate.skinInfo?.skinId);
+}
+
+export function clearRoomPartySkins() {
+  roomPartyTeammatesCache = [];
 }
 
 export function pickCustomModFile(cb) {

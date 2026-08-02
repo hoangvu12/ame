@@ -1,6 +1,6 @@
 import { loadChampionSkins, getChampionSkins, getMyChampionId, getChampionName, fetchJson, forceDefaultSkin, selectSkin, cancelPendingSkinSelections } from './api';
 import { readCurrentSkin, findSkinByName, isDefaultSkin } from './skin';
-import { wsSend, wsSendApply, isApplyInFlight, isOverlayActive, hasEnabledCustomMods } from './websocket';
+import { wsSend, wsSendApply, isApplyInFlight, isOverlayActive, hasEnabledCustomMods, hasRoomPartySkins } from './websocket';
 import {
   getAppliedSkinName, setAppliedSkinName,
   getSelectedChroma, setSelectedChroma, clearSelectedChroma,
@@ -119,10 +119,18 @@ export async function forceApplyIfNeeded() {
   // if the InProgress phase fires during the forceDefaultSkin await.
   const savedPayload = lastPrefetchPayload;
   if (savedPayload) {
+    if (savedPayload.partyOnly && !hasRoomPartySkins() && !hasEnabledCustomMods()) {
+      lastPrefetchPayload = null;
+      return;
+    }
     const championId = savedPayload.championId || lastTrackedChampion;
-    if (championId) {
+    if (championId && !savedPayload.partyOnly) {
       const forced = await forceDefaultSkin(championId);
       logger.log(` forceApply: forceDefaultSkin result: ${forced}`);
+    }
+    if (savedPayload.partyOnly) {
+      wsSendApply({ ...savedPayload, type: 'apply' });
+      return;
     }
     const chroma = getSelectedChroma();
     logger.log(` forceApply: applying from payload ${savedPayload.skinName} (${savedPayload.skinId}${chroma ? ', chroma: ' + chroma.id : ''})`);
@@ -145,7 +153,7 @@ export async function forceApplyIfNeeded() {
   }
 
   if (lastTrackedSkinOwned === true) {
-    await applyCustomModsOnly();
+    await applyAuxiliaryModsOnly();
     return;
   }
 
@@ -153,21 +161,21 @@ export async function forceApplyIfNeeded() {
   const skinName = lastTrackedSkin || readCurrentSkin();
   const championId = lastTrackedChampion || await getMyChampionId();
   if (!skinName || !championId) {
-    // No skin data — still apply custom mods if enabled
-    await applyCustomModsOnly();
+    // No skin data — still apply auxiliary mods if enabled.
+    await applyAuxiliaryModsOnly();
     return;
   }
 
   const skins = await loadChampionSkins(championId);
   if (!skins) {
-    await applyCustomModsOnly();
+    await applyAuxiliaryModsOnly();
     return;
   }
 
   const skin = findSkinByName(skins, skinName);
   if (!skin || isDefaultSkin(skin)) {
-    // Default skin selected — still apply custom mods if enabled
-    await applyCustomModsOnly();
+    // Default skin selected — still apply auxiliary mods if enabled.
+    await applyAuxiliaryModsOnly();
     return;
   }
 
@@ -189,18 +197,16 @@ export async function forceApplyIfNeeded() {
   recordHistoricSkin(championId, skin.id % 1000, skin.name);
 }
 
-/**
- * Apply only custom mods (no skin). Used when default skin is selected but custom mods are enabled.
- */
-async function applyCustomModsOnly() {
-  if (!hasEnabledCustomMods()) return;
+/** Apply custom mods and teammate skins without replacing the local LCU skin. */
+async function applyAuxiliaryModsOnly() {
+  if (!hasEnabledCustomMods() && !hasRoomPartySkins()) return;
   if (isApplyInFlight()) return;
   if (isOverlayActive()) return;
 
   const championId = lastTrackedChampion || await getMyChampionId();
   if (!championId) return;
   const champName = await getChampionName(championId);
-  logger.log(` applyCustomModsOnly: applying custom mods for ${champName}`);
+  logger.log(` applyAuxiliaryModsOnly: applying custom mods or teammate skins for ${champName}`);
   wsSendApply({ type: 'apply', championId, skinId: 0, championName: champName, skinName: '' });
 }
 
@@ -248,14 +254,20 @@ export function retriggerPrefetch() {
   if (retriggerTimer) { clearTimeout(retriggerTimer); retriggerTimer = null; }
 
   if (!lastPrefetchPayload) {
-    logger.log(` retriggerPrefetch: no saved payload, skipping`);
-    return;
+    if (!lastTrackedSkinOwned || !hasRoomPartySkins()) {
+      logger.log(` retriggerPrefetch: no saved payload, skipping`);
+      return;
+    }
+    lastPrefetchPayload = {
+      type: 'prefetch', championId: lastTrackedChampion, skinId: 0,
+      championName: '', skinName: '', partyOnly: true,
+    };
   }
 
   // Staleness check: only applies during champ select where the DOM is live.
   if (champSelectActive) {
     const currentSkin = readCurrentSkin();
-    if (currentSkin && lastPrefetchPayload.skinName !== currentSkin) {
+    if (!lastPrefetchPayload.partyOnly && currentSkin && lastPrefetchPayload.skinName !== currentSkin) {
       logger.log(` retriggerPrefetch: stale payload (${lastPrefetchPayload.skinName} != ${currentSkin}), skipping`);
       return;
     }
@@ -346,6 +358,13 @@ export function checkAutoApply(championId, isCurrentSkinOwned) {
             logger.log(` owned skin selection: selectedSkinId=${currentSkin.id} result=${selected}`);
             return selected;
           });
+      }
+      if (hasRoomPartySkins()) {
+        lastPrefetchPayload = {
+          type: 'prefetch', championId, skinId: 0,
+          championName: '', skinName: '', partyOnly: true,
+        };
+        if (champSelectActive && !isOverlayActive()) wsSend(lastPrefetchPayload);
       }
     }
     maybeNotifyImmediateSelection(championId, skinName, chroma);

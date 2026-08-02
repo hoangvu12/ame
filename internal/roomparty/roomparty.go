@@ -149,6 +149,16 @@ func (rs *RoomState) IsActive() bool {
 	return rs.active
 }
 
+// HasTeammateSkins reports whether any teammate has shared a skin selection.
+func (rs *RoomState) HasTeammateSkins() bool {
+	for _, tm := range rs.copyTeammates() {
+		if tm.SkinInfo.SkinID != "" && tm.SkinInfo.SkinID != "0" {
+			return true
+		}
+	}
+	return false
+}
+
 // copyTeammates returns a snapshot of the current teammates slice.
 func (rs *RoomState) copyTeammates() []Member {
 	rs.mu.Lock()
@@ -162,8 +172,12 @@ func (rs *RoomState) copyTeammates() []Member {
 // mod-tools expects slash-separated names (e.g. "skin_1/skin_2/skin_3").
 // It includes the user's own skin and all teammate skins that exist in ModsDir.
 func (rs *RoomState) GetAllModNames(ownSkinID string) string {
-	names := []string{fmt.Sprintf("skin_%s", ownSkinID)}
-	seen := map[string]bool{ownSkinID: true}
+	names := []string{}
+	seen := map[string]bool{}
+	if ownSkinID != "" && ownSkinID != "0" {
+		names = append(names, fmt.Sprintf("skin_%s", ownSkinID))
+		seen[ownSkinID] = true
+	}
 
 	for _, tm := range rs.copyTeammates() {
 		sid := tm.SkinInfo.SkinID
@@ -180,11 +194,24 @@ func (rs *RoomState) GetAllModNames(ownSkinID string) string {
 	return strings.Join(names, "/")
 }
 
+// BuiltTeammateSkinCount returns the number of unique teammate skins available for overlays.
+func (rs *RoomState) BuiltTeammateSkinCount() int {
+	modNames := rs.GetAllModNames("")
+	if modNames == "" {
+		return 0
+	}
+	return len(strings.Split(modNames, "/"))
+}
+
 // ComputeModKey returns a sorted, deduplicated, comma-separated skin ID list
 // for cache-keying the prebuilt overlay.
 func (rs *RoomState) ComputeModKey(ownSkinID string) string {
-	ids := []string{ownSkinID}
-	seen := map[string]bool{ownSkinID: true}
+	ids := []string{}
+	seen := map[string]bool{}
+	if ownSkinID != "" && ownSkinID != "0" {
+		ids = append(ids, ownSkinID)
+		seen[ownSkinID] = true
+	}
 	for _, tm := range rs.copyTeammates() {
 		sid := tm.SkinInfo.SkinID
 		if sid == "" || seen[sid] {
@@ -201,8 +228,12 @@ func (rs *RoomState) ComputeModKey(ownSkinID string) string {
 // the own skin and teammate skins whose mod directories actually exist in ModsDir.
 // Use this (instead of ComputeModKey) when recording what was actually built into the overlay.
 func (rs *RoomState) ComputeBuiltModKey(ownSkinID string) string {
-	ids := []string{ownSkinID}
-	seen := map[string]bool{ownSkinID: true}
+	ids := []string{}
+	seen := map[string]bool{}
+	if ownSkinID != "" && ownSkinID != "0" {
+		ids = append(ids, ownSkinID)
+		seen[ownSkinID] = true
+	}
 	for _, tm := range rs.copyTeammates() {
 		sid := tm.SkinInfo.SkinID
 		if sid == "" || seen[sid] {
