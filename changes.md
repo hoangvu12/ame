@@ -1,1 +1,8 @@
-- Fixed teammate Ame skins not appearing when using an owned skin
+- Only one copy of Ame can run now — opening it again brings up the one already running instead of starting a second one that broke both
+- Ame connects much faster, especially when you are already in champion select
+- Fixed Ame sometimes never showing up in champion select if it started while the client was still loading
+- Fixed Ame not detecting the League client at all on recent Windows 11 updates
+- Fixed Ame freezing on startup when the League client was patching or stuck
+- Fixed a slow startup on PCs with disconnected network drives
+- Ame no longer accepts connections from other computers on your network
+- Updates no longer leave a leftover skin process running behind
