@@ -173,6 +173,14 @@ func restartViaLauncher() {
 	if minimized {
 		args = append(args, "--minimized")
 	}
+	// Mark this as a deliberate handoff so the incoming core waits for our
+	// single-instance lock rather than mistaking us for a duplicate and exiting.
+	args = append(args, "--restarting")
+
+	// Release the overlay, mod-tools and Pengu before the replacement starts.
+	// This used to exit straight to os.Exit(0), which orphaned a running
+	// mod-tools overlay and left the port held on the way out.
+	cleanup()
 
 	cmd := exec.Command(launcherPath, args...)
 	cmd.Stdin = os.Stdin
@@ -360,6 +368,20 @@ func runLauncher() {
 }
 
 func main() {
+	minimized = hasFlag("--minimized")
+	restarting := hasFlag("--restarting")
+
+	// A second launch must reuse the instance already running, not become a
+	// duplicate. Probe before the admin check: a loopback TCP connect needs no
+	// elevation, so an accidental double-click surfaces the running copy
+	// instead of raising a UAC prompt only to refuse to start afterwards.
+	//
+	// Skipped during an update handoff, where the outgoing core is still
+	// listening and the incoming one is meant to replace it.
+	if !restarting && requestShow(!minimized) {
+		os.Exit(0)
+	}
+
 	// Check for admin privileges first (both launcher and core need it)
 	if !isAdmin() {
 		runAsAdmin()
@@ -374,7 +396,28 @@ func main() {
 	}
 
 	// === CORE MODE ===
-	minimized = hasFlag("--minimized")
+
+	// Claim the single-instance lock. The probe above catches the common case;
+	// this closes the race where two launches get past it together, and is the
+	// authoritative answer because it does not depend on the port being bound.
+	if restarting {
+		// Deliberate handoff: the outgoing core is on its way out, so wait for
+		// it. Exiting here instead would leave nothing running after an update.
+		if !waitForInstanceLock(lockWaitTimeout) {
+			fmt.Println("  ! Timed out waiting for the previous ame to exit")
+			os.Exit(1)
+		}
+	} else if !acquireInstanceLock() {
+		if notifyRunningInstance(!minimized) {
+			os.Exit(0)
+		}
+		// Holds the lock but will not answer. Say so rather than starting a
+		// duplicate that would corrupt the running instance's state.
+		if !minimized {
+			showAlreadyRunningMessage()
+		}
+		os.Exit(1)
+	}
 
 	// Initialize console handle for tray functionality
 	initConsoleHandle()
@@ -394,6 +437,33 @@ func main() {
 	if err := config.Init(); err != nil {
 		fmt.Printf("  ! Failed to load settings: %v\n", err)
 	}
+
+	// Wire up uninstall callback to trigger graceful exit
+	server.OnUninstall = func() {
+		quitTray()
+	}
+
+	// Let a second launch surface this instance instead of starting its own
+	server.OnShowRequested = showConsole
+
+	// Start the server before anything slow. Update checks, dependency setup
+	// and game detection used to run first, which meant the plugin could not
+	// connect for as long as they took — the cause of ame appearing to take
+	// forever to connect. Commands that need setup are gated until SetReady;
+	// everything else (state, settings, custom mods) works immediately.
+	go func() {
+		if err := server.StartServer(PORT); err != nil {
+			display.Log(fmt.Sprintf("! Server error: %v", err))
+			fmt.Printf("\n  ! Could not start ame's server: %v\n", err)
+			fmt.Println("  Another program may be using port 18765.")
+			if !minimized {
+				fmt.Println("  Press Enter to exit...")
+				fmt.Scanln()
+			}
+			cleanup()
+			os.Exit(1)
+		}
+	}()
 
 	// Initialize console locale (best-effort)
 	i18n.Init()
@@ -470,13 +540,9 @@ func main() {
 		}
 	}
 
-	// Wire up uninstall callback to trigger graceful exit
-	server.OnUninstall = func() {
-		quitTray()
-	}
-
-	// Start WebSocket server in background
-	go server.StartServer(PORT)
+	// Setup finished — release the commands that need mod-tools and the game
+	// install, and tell any client that connected while we were still starting.
+	server.SetReady()
 
 	display.Init(Version)
 	display.Log("Started")

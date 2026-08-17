@@ -3,12 +3,14 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -879,6 +881,11 @@ func handleConnection(conn *websocket.Conn) {
 	display.SetStatusKey("display.value.connected", nil)
 	display.Log("Client connected")
 
+	// Tell the client where startup got to, so a plugin that connects during
+	// setup knows to wait rather than showing itself as fully operational.
+	readyMsg, _ := json.Marshal(map[string]interface{}{"type": "ready", "ready": ready.Load()})
+	conn.WriteMessage(websocket.TextMessage, readyMsg)
+
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -887,6 +894,14 @@ func handleConnection(conn *websocket.Conn) {
 
 		var incoming IncomingMessage
 		if err := json.Unmarshal(message, &incoming); err != nil {
+			continue
+		}
+
+		// Hold back anything that needs mod-tools or the game install until
+		// setup has finished. The plugin is allowed to connect and read state
+		// well before that point, so it can be told what is going on.
+		if commandsNeedingSetup[incoming.Type] && !ready.Load() {
+			sendStatus(conn, "starting", "ame is still starting up")
 			continue
 		}
 
@@ -1354,9 +1369,75 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ame server running - connect via ws://localhost:18765"))
 }
 
-// StartServer starts the WebSocket server
-func StartServer(port int) {
-	http.HandleFunc("/custom-mod-image/", func(w http.ResponseWriter, r *http.Request) {
+// ShowAck is the exact body served from /show. A second ame process checks for
+// it so it can distinguish a running ame from an unrelated program that
+// happens to hold the port.
+const ShowAck = "ame-show-ok"
+
+// OnShowRequested is invoked when another ame process asks this instance to
+// reveal itself. Set by main.
+var OnShowRequested func()
+
+// showHandler lets a second ame instance surface the one already running,
+// instead of starting a duplicate that would fight over settings, the overlay
+// directory and mod-tools.
+//
+// focus=0 asks only for the acknowledgement, so a second launch that was itself
+// started minimized (the logon task firing while ame already runs) can confirm
+// an instance exists without yanking its console into view.
+func showHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("focus") != "0" && OnShowRequested != nil {
+		OnShowRequested()
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(ShowAck))
+}
+
+// ready reports whether startup has progressed far enough to run commands that
+// depend on mod-tools and the game install being in place.
+var ready atomic.Bool
+
+// SetReady marks setup as complete, unblocking the gated commands.
+func SetReady() {
+	ready.Store(true)
+	broadcastReady()
+}
+
+// IsReady reports whether gated commands are currently accepted.
+func IsReady() bool { return ready.Load() }
+
+// commandsNeedingSetup lists the commands that touch mod-tools, the overlay
+// directory or the game install. The server now starts listening before setup
+// runs so the plugin can connect immediately, which means these have to be
+// held back until the things they depend on actually exist.
+var commandsNeedingSetup = map[string]bool{
+	"apply":           true,
+	"prefetch":        true,
+	"cleanup":         true,
+	"unstuck":         true,
+	"roomPartySkin":   true,
+	"importCustomMod": true,
+}
+
+// broadcastReady tells every connected client that setup has finished.
+func broadcastReady() {
+	payload := map[string]interface{}{"type": "ready", "ready": true}
+	data, _ := json.Marshal(payload)
+
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+	for conn := range clients {
+		conn.WriteMessage(websocket.TextMessage, data)
+	}
+}
+
+// newMux builds the HTTP routes. It uses a dedicated mux rather than
+// http.DefaultServeMux so that retrying a failed bind cannot panic on
+// duplicate route registration.
+func newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/custom-mod-image/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/custom-mod-image/")
 		if id == "" {
 			http.NotFound(w, r)
@@ -1366,11 +1447,11 @@ func StartServer(port int) {
 		custommods.ServeImage(w, r, id)
 	})
 
-	http.HandleFunc("/form-icon/", formicons.ServeFormIcon)
+	mux.HandleFunc("/form-icon/", formicons.ServeFormIcon)
+	mux.HandleFunc("/proxy-image", httpproxy.ServeImageProxy)
+	mux.HandleFunc("/show", showHandler)
 
-	http.HandleFunc("/proxy-image", httpproxy.ServeImageProxy)
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {
 			wsHandler(w, r)
 		} else {
@@ -1378,8 +1459,40 @@ func StartServer(port int) {
 		}
 	})
 
-	addr := fmt.Sprintf(":%d", port)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		display.Log(fmt.Sprintf("! Server error: %v", err))
+	return mux
+}
+
+// listenTimeout bounds how long StartServer waits for the port to free up.
+// It exists for the update handoff, where the outgoing core's established
+// connections can hold the port in TIME_WAIT for a moment after it exits.
+const listenTimeout = 10 * time.Second
+
+// StartServer binds the loopback port and serves until the process exits.
+//
+// It binds explicitly to 127.0.0.1. Binding all interfaces exposed the whole
+// command surface — including uninstall, which deletes directories and rewrites
+// HKLM keys — to anyone on the same network.
+//
+// A bind failure is returned rather than logged and forgotten: the port is how
+// the plugin reaches ame, so a process that cannot bind it is useless and must
+// not keep running as a silent duplicate.
+func StartServer(port int) error {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+
+	var ln net.Listener
+	var err error
+	deadline := time.Now().Add(listenTimeout)
+	for {
+		ln, err = net.Listen("tcp", addr)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("listen on %s: %w", addr, err)
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
+
+	srv := &http.Server{Handler: newMux()}
+	return srv.Serve(ln)
 }
