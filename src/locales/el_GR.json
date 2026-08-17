@@ -5,6 +5,7 @@
     "owned": "Owned",
     "loading": "Loading...",
     "open_ame": "Open ame.exe",
+    "starting": "Starting ame...",
     "connection_banner": "Ame is not running. Open ame.exe to enable apply.",
     "remove_skin": "Remove Skin",
     "im_stuck": "I'm stuck"

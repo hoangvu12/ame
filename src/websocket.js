@@ -1,4 +1,4 @@
-import { WS_URL, WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS } from './constants';
+import { WS_URL, WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, WS_RECONNECT_JITTER_MS } from './constants';
 import { toastError, toastPromise } from './toast';
 import { el } from './dom';
 import { t } from './i18n';
@@ -69,7 +69,31 @@ const connectionListeners = [];
 function setConnected(v) {
   if (wsConnected === v) return;
   wsConnected = v;
+  if (!v) serverReady = false;
   connectionListeners.forEach(cb => cb(wsConnected));
+}
+
+// serverReady tracks whether ame has finished starting up. It is separate from
+// wsConnected: the socket now opens early so the UI can show real state, but
+// skin commands stay unavailable until setup completes.
+let serverReady = false;
+const readyListeners = [];
+
+function setServerReady(v) {
+  if (serverReady === v) return;
+  serverReady = v;
+  readyListeners.forEach(cb => cb(serverReady));
+}
+
+export function isServerReady() { return serverReady; }
+
+export function onServerReady(cb) {
+  readyListeners.push(cb);
+  cb(serverReady);
+  return () => {
+    const idx = readyListeners.indexOf(cb);
+    if (idx !== -1) readyListeners.splice(idx, 1);
+  };
 }
 
 /**
@@ -300,8 +324,20 @@ export function wsConnect() {
         } else if (settingsListeners[msg.type] && 'enabled' in msg) {
           // Individual setting response (from set* calls)
           applySetting(msg.type, msg.enabled);
+        } else if (msg.type === 'ready') {
+          // ame now accepts the WebSocket well before setup finishes, so it
+          // reports separately whether skin commands will actually work.
+          setServerReady(!!msg.ready);
         } else if (msg.type === 'status') {
-          if ((msg.status === 'ready' || msg.status === 'noop') && applyResolve) {
+          if (msg.status === 'starting') {
+            setServerReady(false);
+            toastError(msg.message);
+            if (applyReject) {
+              applyReject(new Error(msg.message));
+              applyResolve = null;
+              applyReject = null;
+            }
+          } else if ((msg.status === 'ready' || msg.status === 'noop') && applyResolve) {
             applyResolve(msg.status === 'ready');
             applyResolve = null;
             applyReject = null;
@@ -332,12 +368,43 @@ export function wsConnect() {
 
 function wsScheduleReconnect() {
   if (wsReconnectTimer) return;
+  const jitter = Math.random() * WS_RECONNECT_JITTER_MS;
   wsReconnectTimer = setTimeout(() => {
     wsReconnectTimer = null;
     wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_RECONNECT_MAX_MS);
     wsConnect();
-  }, wsReconnectDelay);
+  }, wsReconnectDelay + jitter);
 }
+
+// Retry immediately instead of waiting out the backoff.
+//
+// Backoff alone means that if ame starts after the plugin has already backed
+// off, the plugin sits disconnected for the rest of the interval even though
+// ame is up. These are the moments the user is most likely to have just
+// launched or restarted ame, so it is worth spending a connect attempt on them.
+export function wsRetryNow() {
+  if (wsConnected) return;
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  wsReconnectDelay = WS_RECONNECT_BASE_MS;
+  wsConnect();
+}
+
+function installReconnectTriggers() {
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) wsRetryNow();
+    });
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', () => wsRetryNow());
+    window.addEventListener('online', () => wsRetryNow());
+  }
+}
+
+installReconnectTriggers();
 
 export function getLastApplyPayload() { return lastApplyPayload; }
 export function isApplyInFlight() { return !!applyResolve; }

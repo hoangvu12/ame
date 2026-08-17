@@ -1,8 +1,8 @@
-import { CHAMP_SELECT_PHASES, POST_GAME_PHASES, IN_GAME_PHASES, IN_GAME_POLL_MS, POLL_INTERVAL_MS, CHROMA_BTN_CLASS } from './constants';
+import { CHAMP_SELECT_PHASES, POST_GAME_PHASES, IN_GAME_PHASES, IN_GAME_POLL_MS, POLL_INTERVAL_MS, CHROMA_BTN_CLASS, PHASE_SEED_BASE_MS, PHASE_SEED_MAX_MS, PHASE_SEED_MAX_RETRIES } from './constants';
 import { ensureSwiftplayButton, removeSwiftplayButton, updateSwiftplayButtonState, unlockSwiftplayCarousel, isSwiftplaySkinPanelOpen, ensureSwiftplayConnectionBanner, updateSwiftplayConnectionBanner } from './swiftplay';
 import { getMyChampionId, getChampionSkins, loadChampionSkins, resetSkinsCache, fetchJson, fetchSummonerId, fetchOwnedSkins, forceDefaultSkin, getChampionIdFromLobbyDOM } from './api';
 import { injectStyles, unlockSkinCarousel } from './styles';
-import { wsConnect, wsSend, isOverlayActive, isConnected } from './websocket';
+import { wsConnect, wsSend, isOverlayActive, isConnected, isServerReady } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState, ensureConnectionBanner, updateConnectionBanner, initConnectionStatus } from './ui';
 import { ensureChromaButton, closeChromaPanel } from './chroma';
 import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply, lockRetrigger, setChampSelectActive } from './autoApply';
@@ -110,7 +110,10 @@ async function pollUI() {
     }
 
     updateButtonState(ownership);
-    if (isConnected()) checkAutoApply(champId, ownership);
+    // Also requires ame to have finished starting, not just to be connected.
+    // Skipping is safe: this poll runs every 300ms, so auto-apply fires as
+    // soon as ame is ready.
+    if (isConnected() && isServerReady()) checkAutoApply(champId, ownership);
   } finally {
     pollRunning = false;
   }
@@ -188,8 +191,14 @@ export async function init(context) {
   initChatStatus(context);
 
   context.socket.observe('/lol-champ-select/v1/session', (event) => {
-    if (event.eventType === 'Delete' || !inChampSelect) return;
+    if (event.eventType === 'Delete') return;
     const session = event.data;
+    // A live session event is itself proof we are in champ select. This used
+    // to also require inChampSelect, which meant that if the phase seed below
+    // lost its race the UI stayed dead for the whole of champ select even
+    // though working events were arriving the entire time.
+    if (!inChampSelect && session) handlePhase('ChampSelect');
+    if (!inChampSelect) return;
     handleChampSelectSession(session);
     const me = session.myTeam?.find(p => p.cellId === session.localPlayerCellId);
     const champId = me?.championId || null;
@@ -252,7 +261,7 @@ export async function init(context) {
       setChampSelectActive(false);
       stopObserving();
       flushPendingRetrigger();
-      (isConnected() ? forceApplyIfNeeded() : Promise.resolve()).finally(() => {
+      (isConnected() && isServerReady() ? forceApplyIfNeeded() : Promise.resolve()).finally(() => {
         logger.log('forceApplyIfNeeded settled');
         resetAutoApply(true);
       });
@@ -293,7 +302,26 @@ export async function init(context) {
     handlePhase(event.data);
   });
 
-  fetchJson('/lol-gameflow/v1/gameflow-phase').then(phase => {
-    if (phase) handlePhase(phase);
-  });
+  seedGameflowPhase();
+
+  // Seed the current phase, retrying while the LCU warms up.
+  //
+  // The client registers its backend routes asynchronously, so this endpoint
+  // can 404 or 503 for a while after the plugin loads. A single attempt that
+  // silently gave up left the plugin believing no phase had ever been entered
+  // — so loading straight into an in-progress champ select showed nothing at
+  // all until the next phase change.
+  async function seedGameflowPhase(attempt = 0) {
+    const phase = await fetchJson('/lol-gameflow/v1/gameflow-phase');
+    if (phase) {
+      handlePhase(phase);
+      return;
+    }
+    if (attempt >= PHASE_SEED_MAX_RETRIES) {
+      logger.log('Could not seed gameflow phase; waiting for the next event');
+      return;
+    }
+    const delay = Math.min(PHASE_SEED_BASE_MS * 2 ** attempt, PHASE_SEED_MAX_MS);
+    setTimeout(() => seedGameflowPhase(attempt + 1), delay);
+  }
 }

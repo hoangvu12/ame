@@ -4,17 +4,43 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/winproc"
 )
 
-var cachedGameDir string
+// cachedGameDir is read and written from request-handling goroutines
+// (handleApply, handlePrefetch), so it is guarded.
+var (
+	cachedGameDirMu sync.RWMutex
+	cachedGameDir   string
+)
+
+// loadCachedGameDir returns the cached directory if it is still valid.
+func loadCachedGameDir() string {
+	cachedGameDirMu.RLock()
+	dir := cachedGameDir
+	cachedGameDirMu.RUnlock()
+	if dir != "" && isValidGameDir(dir) {
+		return dir
+	}
+	return ""
+}
+
+// storeCachedGameDir records dir as the resolved game directory.
+func storeCachedGameDir(dir string) {
+	cachedGameDirMu.Lock()
+	cachedGameDir = dir
+	cachedGameDirMu.Unlock()
+}
 
 // commonPathSuffixes lists directory patterns (relative to a drive root) where
 // League of Legends may be installed.
@@ -87,8 +113,8 @@ func newestGameDir(candidates []string) string {
 // modified League of Legends.exe (i.e. the actively-patched installation).
 func FindGameDir() string {
 	// 0. In-memory cache
-	if cachedGameDir != "" && isValidGameDir(cachedGameDir) {
-		return cachedGameDir
+	if dir := loadCachedGameDir(); dir != "" {
+		return dir
 	}
 
 	// Collect all candidate directories, then pick the newest.
@@ -110,21 +136,21 @@ func FindGameDir() string {
 	}
 
 	if best := newestGameDir(candidates); best != "" {
-		cachedGameDir = best
+		storeCachedGameDir(best)
 		SaveGameDir(best)
 		return best
 	}
 
 	// 4. Running LeagueClientUx.exe process (expensive — only if nothing above matched)
 	if dir := findFromRunningProcess(); dir != "" {
-		cachedGameDir = dir
+		storeCachedGameDir(dir)
 		SaveGameDir(dir)
 		return dir
 	}
 
 	// 5. Registry lookup
 	if dir := findFromRegistry(); dir != "" {
-		cachedGameDir = dir
+		storeCachedGameDir(dir)
 		SaveGameDir(dir)
 		return dir
 	}
@@ -171,18 +197,18 @@ func appendFromRiotClientInstalls(candidates []string) []string {
 }
 
 // findFromRunningProcess tries to locate the game dir from a running LeagueClientUx.exe.
+//
+// This used to shell out to wmic, which no longer exists on Windows 11 24H2+.
+// QueryFullProcessImageName via winproc returns the same executable path
+// without a process spawn.
 func findFromRunningProcess() string {
-	output := runCommand("wmic", "process", "where", "name='LeagueClientUx.exe'", "get", "ExecutablePath", "/value")
-	if output == "" {
+	exePath := winproc.FindImagePath("LeagueClientUx.exe")
+	if exePath == "" {
 		return ""
 	}
-	re := regexp.MustCompile(`ExecutablePath=(.+)`)
-	if match := re.FindStringSubmatch(output); len(match) > 1 {
-		exePath := strings.TrimSpace(match[1])
-		gameDir := filepath.Join(exePath, "..", "Game")
-		if isValidGameDir(gameDir) {
-			return filepath.Clean(gameDir)
-		}
+	gameDir := filepath.Join(exePath, "..", "Game")
+	if isValidGameDir(gameDir) {
+		return filepath.Clean(gameDir)
 	}
 	return ""
 }
@@ -226,7 +252,7 @@ func PromptGameDir() string {
 		input = strings.Trim(input, `"'`)
 
 		if isValidGameDir(input) {
-			cachedGameDir = input
+			storeCachedGameDir(input)
 			SaveGameDir(input)
 			fmt.Printf("  > %s\n", input)
 			return input
@@ -237,22 +263,43 @@ func PromptGameDir() string {
 	}
 }
 
-// getFixedDrives returns list of accessible drives (C:, D:, etc.)
-func getFixedDrives() []string {
-	var drives []string
+var (
+	fixedDrivesOnce  sync.Once
+	fixedDrivesCache []string
+)
 
-	// Try drives A-Z
-	for i := 'A'; i <= 'Z'; i++ {
-		drive := string(i) + `:\`
-		if info, err := os.Stat(drive); err == nil && info.IsDir() {
-			// Check if accessible by trying to read directory
-			if _, err := os.ReadDir(drive); err == nil {
-				drives = append(drives, drive)
+// getFixedDrives returns the local fixed drives (C:, D:, ...) that are readable.
+//
+// Two things matter here. It asks the OS which letters exist and filters to
+// DRIVE_FIXED, because the previous A-Z probe also touched optical drives with
+// no media and disconnected network mappings — the latter block for the full
+// SMB timeout, stalling game detection for tens of seconds. And it reads a
+// single directory entry to test readability rather than materializing the
+// whole drive root. The result is memoized because drive letters do not
+// meaningfully change within one run.
+func getFixedDrives() []string {
+	fixedDrivesOnce.Do(func() {
+		for _, drive := range logicalFixedDrives() {
+			if isReadableDir(drive) {
+				fixedDrivesCache = append(fixedDrivesCache, drive)
 			}
 		}
-	}
+	})
+	return fixedDrivesCache
+}
 
-	return drives
+// isReadableDir reports whether dir can be opened and listed, reading at most
+// one entry so an enormous drive root costs the same as an empty one.
+func isReadableDir(dir string) bool {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	if _, err := f.Readdirnames(1); err != nil && err != io.EOF {
+		return false
+	}
+	return true
 }
 
 // fileExists checks if a file exists

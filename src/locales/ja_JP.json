@@ -5,6 +5,7 @@
     "owned": "所持",
     "loading": "読み込み中...",
     "open_ame": "ame.exe を開く",
+    "starting": "Starting ame...",
     "connection_banner": "Ame が起動していません。ame.exe を開いて適用を有効にしてください。",
     "remove_skin": "スキンを解除",
     "im_stuck": "フリーズした"

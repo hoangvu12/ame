@@ -1,6 +1,6 @@
 import { BUTTON_ID, CUSTOM_SKINS_BTN_ID, CONNECTION_BANNER_ID } from './constants';
 import { readCurrentSkin } from './skin';
-import { wsSend, isOverlayActive, isConnected, onConnection } from './websocket';
+import { wsSend, isOverlayActive, isConnected, onConnection, onServerReady } from './websocket';
 import { getAppliedSkinName, setAppliedSkinName, getSkinForced } from './state';
 import { removeElement, el } from './dom';
 import { openCustomSkinsModal } from './customSkins';
@@ -87,6 +87,14 @@ export function initConnectionStatus() {
     setConnectionBanner(connected);
     if (!connected) {
       setButtonState(t('ui.open_ame'), true);
+    }
+  });
+  // ame accepts connections before it has finished starting, so a connected
+  // socket no longer means skins can be applied yet. Say which it is instead
+  // of offering a button that would fail.
+  onServerReady((ready) => {
+    if (isConnected() && !ready) {
+      setButtonState(t('ui.starting'), true);
     }
   });
 }

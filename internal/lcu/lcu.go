@@ -7,18 +7,28 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
+	"time"
 
 	"github.com/hoangvu12/ame/internal/game"
+	"github.com/hoangvu12/ame/internal/winproc"
 )
 
+// clientProcess is the League client process that owns the LCU API.
+const clientProcess = "LeagueClientUx.exe"
+
 // lcuClient trusts the local LCU self-signed certificate.
+//
+// The timeouts are not optional: a client that is mid-patch or waiting on
+// Vanguard accepts the connection and then never answers, and this client sits
+// on the synchronous startup path. Without a deadline that hangs ame forever
+// before it can serve anything.
 var lcuClient = &http.Client{
+	Timeout: 3 * time.Second,
 	Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		TLSHandshakeTimeout: 2 * time.Second,
 	},
 }
 
@@ -41,17 +51,12 @@ func readLockfile() (port, token string, ok bool) {
 }
 
 // IsClientRunning checks if the League client is currently running.
+//
+// This asks the OS for the process rather than trusting the lockfile: the
+// client only deletes its lockfile on a clean shutdown, so after a crash a
+// stale lockfile would report a dead client as running.
 func IsClientRunning() bool {
-	if _, _, ok := readLockfile(); ok {
-		return true
-	}
-	cmd := exec.Command("wmic", "process", "where", "name='LeagueClientUx.exe'", "get", "ProcessId", "/value")
-	cmd.SysProcAttr = getSysProcAttr()
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(output), "ProcessId=")
+	return winproc.IsRunning(clientProcess)
 }
 
 // RestartClient restarts the League Client UX by calling the LCU API.
@@ -125,37 +130,19 @@ func GetRegionLocale() (string, error) {
 	return payload.Locale, nil
 }
 
-var (
-	tokenRe = regexp.MustCompile(`--remoting-auth-token=(\S+)`)
-	portRe  = regexp.MustCompile(`--app-port=(\S+)`)
-)
-
-// getCredentials extracts the LCU auth token and port. It prefers the lockfile
-// (instant) and falls back to parsing LeagueClientUx.exe's command line via wmic.
+// getCredentials extracts the LCU auth token and port from the lockfile.
+//
+// There used to be a wmic fallback that parsed --app-port/--remoting-auth-token
+// off the client's command line. It has been removed: wmic no longer ships with
+// Windows, so it could only ever fail, and it failed silently in a way that was
+// indistinguishable from "the client isn't running". The lockfile carries both
+// values anyway, and reading it is a single file read.
 func getCredentials() (port string, token string, err error) {
 	if p, t, ok := readLockfile(); ok {
 		return p, t, nil
 	}
-
-	cmd := exec.Command("wmic", "process", "where", "name='LeagueClientUx.exe'", "get", "CommandLine", "/value")
-	cmd.SysProcAttr = getSysProcAttr()
-	output, err := cmd.Output()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to query process: %w", err)
+	if !IsClientRunning() {
+		return "", "", fmt.Errorf("League client is not running")
 	}
-
-	line := string(output)
-
-	if m := tokenRe.FindStringSubmatch(line); len(m) > 1 {
-		token = strings.Trim(m[1], `"`)
-	}
-	if m := portRe.FindStringSubmatch(line); len(m) > 1 {
-		port = strings.Trim(m[1], `"`)
-	}
-
-	if token == "" || port == "" {
-		return "", "", fmt.Errorf("could not find LCU credentials from process")
-	}
-
-	return port, token, nil
+	return "", "", fmt.Errorf("could not read LCU lockfile")
 }

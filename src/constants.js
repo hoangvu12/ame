@@ -6,10 +6,20 @@ export const POLL_INTERVAL_MS = 300;
 export const PREFETCH_DEBOUNCE_MS = 2000;
 export const OWNED_SELECTION_DELAY_MS = 150;
 export const CHAMP_SELECT_PHASES = ['ChampSelect'];
+// The LCU registers its routes asynchronously, so the initial phase read can
+// fail for a few seconds after the plugin loads.
+export const PHASE_SEED_BASE_MS = 300;
+export const PHASE_SEED_MAX_MS = 2000;
+export const PHASE_SEED_MAX_RETRIES = 8;
 export const POST_GAME_PHASES = ['None', 'Lobby', 'EndOfGame', 'PreEndOfGame', 'Matchmaking', 'ReadyCheck'];
 export const WS_URL = 'ws://localhost:18765';
 export const WS_RECONNECT_BASE_MS = 1000;
-export const WS_RECONNECT_MAX_MS = 30000;
+// Capped at 5s, not 30s. This is a loopback connect, so retrying costs
+// essentially nothing, and a 30s cap meant ame could be running for half a
+// champ select before the plugin noticed it.
+export const WS_RECONNECT_MAX_MS = 5000;
+// Spread reconnects so several tabs/reloads don't retry in lockstep.
+export const WS_RECONNECT_JITTER_MS = 400;
 export const BUTTON_ID = 'ame-apply-btn';
 export const CHROMA_BTN_CLASS = 'ame-chroma-button';
 export const CHROMA_PANEL_ID = 'ame-chroma-panel-container';
