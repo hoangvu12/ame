@@ -20,6 +20,7 @@ func NewSuspender(pid uint32) (*Suspender, error) {
 }
 
 func (s *Suspender) WaitReady(done <-chan struct{}, timeout time.Duration) error { return nil }
-func (s *Suspender) Suspend() (int, error)                                      { return 0, nil }
-func (s *Suspender) Resume() error                                              { return nil }
-func (s *Suspender) Close()                                                     {}
+func (s *Suspender) Suspend() (int, error)                                       { return 0, nil }
+func (s *Suspender) SuspendProcess() error                                       { return nil }
+func (s *Suspender) Resume() error                                               { return nil }
+func (s *Suspender) Close()                                                      {}

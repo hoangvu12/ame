@@ -40,3 +40,11 @@ server/dist/
 
 # Worker (Cloudflare)
 worker/node_modules/
+
+# Python caches
+__pycache__/
+
+# Bundled runtime build products (release embeds the prepared bundle)
+internal/ltk/assets/*.zip
+tools/ltk-runtime/target/
+tools/ltk-runtime/build/

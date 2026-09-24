@@ -439,11 +439,13 @@ export function wsSend(obj) {
  * Shows a Toast.promise tracking the result.
  */
 export function wsSendUnstuck() {
+  logger.log('Unstuck requested');
   const promise = new Promise((resolve, reject) => {
     const originalOnMessage = ws.onmessage;
     const timeout = setTimeout(() => {
       ws.onmessage = originalOnMessage;
       reject(new Error('Timeout'));
+      logger.warn('Unstuck response timeout after 10000ms');
     }, 10000);
 
     ws.onmessage = (e) => {
@@ -502,6 +504,7 @@ export function wsSendApply(obj) {
   });
 
   wsSend(obj);
+  logger.log(`apply sent champion=${obj.championId} skin=${obj.skinId}`);
   return true;
 }
 

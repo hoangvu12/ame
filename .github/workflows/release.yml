@@ -26,12 +26,30 @@ jobs:
         with:
           go-version: '1.21'
 
+      - name: Carry forward skin generator bundle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The generator bundle is built outside this repo and attached by the
+          # maintainer. Carry the previous release's asset forward so fresh
+          # installs always find one; skip silently on the very first release.
+          gh release download --repo hoangvu12/ame --pattern "skin-generator.zip" --dir dist --clobber || \
+            echo "No previous skin-generator.zip asset; attach one with: gh release upload <tag> skin-generator.zip"
+
+      - name: Setup Rust for LTK overlay builder
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build bundled LTK runtime
+        shell: pwsh
+        run: ./tools/ltk-runtime/build.ps1
+
       - name: Build server
         shell: bash
         run: |
           mkdir -p dist
           go mod tidy
-          go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}' -X 'main.toolsZipURL=${{ secrets.TOOLS_ZIP_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.rseKeyURL=${{ secrets.RSE_KEY_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.rseSkinBaseURL=${{ secrets.RSE_SKIN_BASE_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.rseSkinIDsURL=${{ secrets.RSE_SKIN_IDS_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.rseAuthSecret=${{ secrets.RSE_AUTH_SECRET }}' -X 'github.com/hoangvu12/ame/internal/skin.rseClientHalf=${{ secrets.RSE_CLIENT_HALF }}'" -o dist/ame.exe ./cmd/ame
+          go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}'" -o dist/ame.exe ./cmd/ame
 
       - name: Create plugin zip
         shell: bash
@@ -53,7 +71,7 @@ jobs:
           3. Open League client to use the skin selector
 
           ## What happens on first run
-          - Downloads and installs mod-tools
+          - Installs the bundled LTK runtime
           - Downloads and installs Pengu Loader
           - Installs the ame plugin
           - Asks you to activate Pengu Loader (one-time)
@@ -76,6 +94,7 @@ jobs:
           files: |
             dist/ame.exe
             dist/plugin.zip
+            dist/skin-generator.zip
             uninstall.bat
           draft: false
           prerelease: false

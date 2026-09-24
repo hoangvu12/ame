@@ -5,6 +5,7 @@ package display
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,16 +25,18 @@ type logEntry struct {
 }
 
 var (
-	mu         sync.Mutex
-	version    string
-	status     string
-	skin       string
-	overlay    string
-	party      string
-	logs       []logEntry
-	exportLogs []logEntry // Larger buffer for export
-	paused     bool
-	started    bool
+	mu               sync.Mutex
+	version          string
+	status           string
+	skin             string
+	overlay          string
+	party            string
+	logs             []logEntry
+	exportLogs       []logEntry // Larger buffer for export
+	paused           bool
+	started          bool
+	diagnosticPath   string
+	diagnosticFailed bool
 )
 
 // enableVT enables Virtual Terminal Processing on the Windows console,
@@ -67,6 +70,13 @@ func Init(ver string) {
 	exportLogs = nil
 	started = true
 	paused = false
+	diagnosticPath = filepath.Join(os.Getenv("LOCALAPPDATA"), "ame", "logs", "launch.jsonl")
+	diagnosticFailed = false
+	entry := LogExportEntry{Timestamp: time.Now().UnixMilli(), Source: "server", Message: fmt.Sprintf("Session: ame=%s pid=%d", ver, os.Getpid())}
+	if err := appendDiagnostic(diagnosticPath, entry, diagnosticLimit); err != nil {
+		diagnosticFailed = true
+		exportLogs = append(exportLogs, logEntry{Time: time.Now(), Message: diagnosticWriteError(err)})
+	}
 
 	render()
 }
@@ -143,10 +153,20 @@ func SetOverlay(s string) {
 
 // Log adds a message to the activity log and re-renders.
 func Log(msg string) {
+	if !launchDiagnostic(msg) {
+		return
+	}
+	msg = cleanDiagnostic(msg)
 	mu.Lock()
 	defer mu.Unlock()
 
 	entry := logEntry{Time: time.Now(), Message: msg}
+	if diagnosticPath != "" {
+		if err := appendDiagnostic(diagnosticPath, LogExportEntry{Timestamp: entry.Time.UnixMilli(), Source: "server", Message: msg}, diagnosticLimit); err != nil && !diagnosticFailed {
+			diagnosticFailed = true
+			exportLogs = append(exportLogs, logEntry{Time: time.Now(), Message: diagnosticWriteError(err)})
+		}
+	}
 
 	// Add to display buffer (shown in console)
 	logs = append(logs, entry)
@@ -240,6 +260,11 @@ type LogExportEntry struct {
 func GetLogsJSON() []LogExportEntry {
 	mu.Lock()
 	defer mu.Unlock()
+	if diagnosticPath != "" && !diagnosticFailed {
+		if entries := readDiagnostics(diagnosticPath); len(entries) > 0 {
+			return entries
+		}
+	}
 
 	result := make([]LogExportEntry, len(exportLogs))
 	for i, entry := range exportLogs {

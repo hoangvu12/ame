@@ -260,18 +260,14 @@ func (rs *RoomState) DownloadTeammateSkins() {
 		if info.SkinID == "" {
 			continue
 		}
-		// Skip if already extracted in mods dir
 		modDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", info.SkinID))
-		if _, err := os.Stat(modDir); err == nil {
-			continue
-		}
 
 		wg.Add(1)
 		go func(si SkinInfo) {
 			defer wg.Done()
 			zipPath := skin.GetValidCachedPath(si.ChampionID, si.SkinID, si.BaseSkinID)
 			if zipPath == "" {
-				downloaded, err := skin.Download(si.ChampionID, si.SkinID, si.BaseSkinID, si.ChampionName, si.SkinName, si.ChromaName)
+				downloaded, err := skin.Download(si.ChampionID, si.SkinID, si.BaseSkinID)
 				if err != nil {
 					display.Log(fmt.Sprintf("! Teammate skin unavailable: %s", si.SkinName))
 					return
@@ -280,7 +276,7 @@ func (rs *RoomState) DownloadTeammateSkins() {
 			}
 
 			os.MkdirAll(modDir, os.ModePerm)
-			if err := skin.Extract(zipPath, modDir); err != nil {
+			if err := skin.ExtractPackage(zipPath, modDir); err != nil {
 				display.Log(fmt.Sprintf("! Failed to extract teammate skin: %s", si.SkinName))
 				return
 			}
@@ -484,7 +480,7 @@ func (rs *RoomState) prefetchTeammateSkins(old, current []Member) {
 		}
 		// Download in background
 		go func(si SkinInfo) {
-			_, err := skin.Download(si.ChampionID, si.SkinID, si.BaseSkinID, si.ChampionName, si.SkinName, si.ChromaName)
+			_, err := skin.Download(si.ChampionID, si.SkinID, si.BaseSkinID)
 			if err == nil {
 				display.Log(fmt.Sprintf("Prefetched teammate skin: %s", si.SkinName))
 			}

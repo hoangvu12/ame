@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/ltk"
+	"github.com/hoangvu12/ame/internal/zipname"
 )
 
 var (
@@ -92,10 +94,9 @@ func GetPluginDir() string {
 
 // Config holds setup URLs
 type Config struct {
-	ToolsZipURL string // URL to a .zip containing a tools/ folder
-	PenguURL    string
-	PluginURL   string
-	DevSrcDir   string // When non-empty, copy plugin from this local dir instead of downloading
+	PenguURL  string
+	PluginURL string
+	DevSrcDir string // When non-empty, copy plugin from this local dir instead of downloading
 }
 
 // statusFail prints a failure message (success is silent)
@@ -114,10 +115,7 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-
-	if strings.Contains(url, "filebin.net") {
-		req.AddCookie(&http.Cookie{Name: "verified", Value: "2024-05-24"})
-	}
+	req.Header.Set("User-Agent", "ame")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -150,7 +148,11 @@ func extractZip(zipPath, destDir string) error {
 	for _, f := range r.File {
 		fpath := filepath.Join(destDir, f.Name)
 
-		// Prevent zip slip vulnerability
+		// Reject entry names that could escape the destination directory;
+		// the resolved-path check below is defense in depth.
+		if zipname.Unsafe(f.Name) {
+			return fmt.Errorf("invalid file path: %s", f.Name)
+		}
 		if !strings.HasPrefix(filepath.Clean(fpath), filepath.Clean(destDir)+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid file path: %s", f.Name)
 		}
@@ -232,68 +234,13 @@ func createDirectories() {
 	}
 }
 
-// SetupModTools downloads and extracts the mod-tools zip if missing or forced.
-func SetupModTools(toolsZipURL string, force bool) bool {
-	modToolsPath := filepath.Join(config.ToolsDir, "mod-tools.exe")
-	if !force {
-		if _, err := os.Stat(modToolsPath); err == nil {
-			return true
-		}
-	}
-
-	if strings.TrimSpace(toolsZipURL) == "" {
-		statusFail("mod-tools URL missing")
+// SetupModTools prepares the bundled runtime: immutable, content-addressed
+// files extracted from the embedded bundle. No download is needed.
+func SetupModTools() bool {
+	if _, err := ltk.Prepare(); err != nil {
+		info(err.Error())
 		return false
 	}
-
-	info("Downloading mod-tools...")
-
-	zipPath := filepath.Join(config.AmeDir, "tools.zip")
-
-	if err := downloadFile(toolsZipURL, zipPath); err != nil {
-		statusFail("mod-tools download")
-		return false
-	}
-	defer os.Remove(zipPath)
-
-	// Extract to a temp dir first, then move files from the tools/ subfolder
-	tmpDir := filepath.Join(config.AmeDir, "tools_tmp")
-	os.RemoveAll(tmpDir)
-	defer os.RemoveAll(tmpDir)
-
-	if err := extractZip(zipPath, tmpDir); err != nil {
-		statusFail("mod-tools extract")
-		return false
-	}
-
-	// The zip contains a tools/ folder — copy its contents to ToolsDir
-	extractedToolsDir := filepath.Join(tmpDir, "tools")
-	entries, err := os.ReadDir(extractedToolsDir)
-	if err != nil {
-		statusFail("mod-tools setup")
-		return false
-	}
-
-	os.RemoveAll(config.ToolsDir)
-	os.MkdirAll(config.ToolsDir, os.ModePerm)
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		src := filepath.Join(extractedToolsDir, entry.Name())
-		dst := filepath.Join(config.ToolsDir, entry.Name())
-		data, readErr := os.ReadFile(src)
-		if readErr != nil {
-			statusFail("mod-tools setup")
-			return false
-		}
-		if writeErr := os.WriteFile(dst, data, 0644); writeErr != nil {
-			statusFail("mod-tools setup")
-			return false
-		}
-	}
-
 	return true
 }
 
@@ -417,8 +364,8 @@ func RunSetup(config Config) bool {
 	// Create directories
 	createDirectories()
 
-	// Setup mod-tools
-	if !SetupModTools(config.ToolsZipURL, false) {
+	// Prepare the bundled runtime
+	if !SetupModTools() {
 		return false
 	}
 

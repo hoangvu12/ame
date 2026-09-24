@@ -62,9 +62,8 @@ const (
 	methodNtSuspend                         // NtSuspendProcess
 )
 
-// Suspender manages suspending and resuming a process.
-// Tries multiple methods in order: remote thread injection, direct SuspendThread,
-// NtSuspendProcess, and DebugActiveProcess.
+// Suspender manages suspending and resuming a process, either with
+// NtSuspendProcess (SuspendProcess) or remote thread injection (Suspend).
 type Suspender struct {
 	pid     uint32
 	hProc   windows.Handle
@@ -227,16 +226,18 @@ func NewSuspender(pid uint32) (*Suspender, error) {
 	}, nil
 }
 
-// Suspend freezes the target process. Tries two methods in order:
-// 1. Remote thread injection (CreateRemoteThread + DuplicateHandle)
-// 2. NtSuspendProcess
+// Suspend freezes the target process by injecting remote threads that call
+// SuspendThread (CreateRemoteThread + DuplicateHandle). Fallback for when
+// SuspendProcess is denied; resuming needs new threads in the target, so it
+// can deadlock if a frozen thread holds the loader lock.
 func (s *Suspender) Suspend() (int, error) {
 	tids, _ := getThreadIDs(s.pid)
 	display.Log(fmt.Sprintf("[Suspend] PID %d has %d threads", s.pid, len(tids)))
 
-	// Method 1: Remote thread injection
+	// Remote thread injection: SuspendThread called from a fresh thread inside
+	// the target (CreateRemoteThread + DuplicateHandle).
 	if len(tids) > 0 {
-		display.Log("[Suspend] Trying method 1: Remote thread injection")
+		display.Log("[Suspend] Trying remote thread injection")
 		for _, tid := range tids {
 			hLocal, _, err := procOpenThread.Call(threadSuspendResume, 0, uintptr(tid))
 			if hLocal == 0 {
@@ -277,23 +278,28 @@ func (s *Suspender) Suspend() (int, error) {
 		}
 		if len(s.threads) > 0 {
 			s.method = methodRemoteThread
-			display.Log(fmt.Sprintf("[Suspend] Method 1 success: suspended %d/%d threads", len(s.threads), len(tids)))
+			display.Log(fmt.Sprintf("[Suspend] Remote thread injection suspended %d/%d threads", len(s.threads), len(tids)))
 			return len(s.threads), nil
 		}
-		display.Log("[Suspend] Method 1 failed: no threads suspended")
+		display.Log("[Suspend] Remote thread injection failed: no threads suspended")
 	}
 
-	// Method 2: NtSuspendProcess
-	display.Log("[Suspend] Trying method 2: NtSuspendProcess")
-	r, _, ntErr := procNtSuspendProcess.Call(uintptr(s.hProc))
-	if r == 0 {
-		s.method = methodNtSuspend
-		display.Log("[Suspend] Method 2 success: NtSuspendProcess returned 0")
-		return 1, nil
-	}
-	display.Log(fmt.Sprintf("[Suspend] Method 2 failed: NtSuspendProcess returned %d, err=%v", r, ntErr))
+	return 0, fmt.Errorf("remote thread suspend failed")
+}
 
-	return 0, fmt.Errorf("all suspend methods failed")
+// SuspendProcess freezes the whole process with NtSuspendProcess, called from
+// our side (Rose's approach). Unlike Suspend it never runs code inside the
+// target, so resuming can't deadlock on a lock held by a frozen thread. Try
+// this first and fall back to WaitReady + Suspend only if it fails.
+func (s *Suspender) SuspendProcess() error {
+	r, _, _ := procNtSuspendProcess.Call(uintptr(s.hProc))
+	if r != 0 {
+		display.Log(fmt.Sprintf("[Suspend] NtSuspendProcess failed: NTSTATUS 0x%08X", uint32(r)))
+		return fmt.Errorf("NtSuspendProcess: NTSTATUS 0x%08X", uint32(r))
+	}
+	s.method = methodNtSuspend
+	display.Log(fmt.Sprintf("[Suspend] NtSuspendProcess suspended PID %d", s.pid))
+	return nil
 }
 
 // Close releases the process handle without resuming threads.
@@ -309,6 +315,7 @@ func (s *Suspender) Close() {
 // Guarantees all threads are fully resumed by looping until suspend count reaches 0.
 func (s *Suspender) Resume() error {
 	display.Log(fmt.Sprintf("[Resume] Resuming PID %d using method %d", s.pid, s.method))
+	var resumeErr error
 
 	switch s.method {
 	case methodRemoteThread:
@@ -334,6 +341,7 @@ func (s *Suspender) Resume() error {
 			}
 			if !resumed {
 				display.Log(fmt.Sprintf("[Resume] TID %d may not be fully resumed, cleaning up handle", ft.tid))
+				resumeErr = fmt.Errorf("thread %d did not confirm resume", ft.tid)
 			}
 			callRemote(s.hProc, s.addrCloseHandle, uintptr(ft.remoteHandle))
 			windows.CloseHandle(ft.localHandle)
@@ -345,7 +353,8 @@ func (s *Suspender) Resume() error {
 		display.Log("[Resume] Calling NtResumeProcess")
 		r, _, err := procNtResumeProcess.Call(uintptr(s.hProc))
 		if r != 0 {
-			display.Log(fmt.Sprintf("[Resume] NtResumeProcess returned %d: %v", r, err))
+			display.Log(fmt.Sprintf("[Resume] NtResumeProcess failed: NTSTATUS 0x%08X (%v)", uint32(r), err))
+			resumeErr = fmt.Errorf("NtResumeProcess: NTSTATUS 0x%08X", uint32(r))
 		} else {
 			display.Log("[Resume] NtResumeProcess success")
 		}
@@ -364,5 +373,5 @@ func (s *Suspender) Resume() error {
 		display.Log(fmt.Sprintf("[Resume] WARNING: Process %d no longer exists after resume!", s.pid))
 	}
 
-	return nil
+	return resumeErr
 }

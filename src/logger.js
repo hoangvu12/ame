@@ -7,6 +7,9 @@ function formatTimestamp(date) {
 }
 
 function addLog(level, tag, message, ...args) {
+	// Keep only launch/apply and recovery diagnostics; omit UI/selection chatter.
+	if (!((tag === 'ws' && /WebSocket|Unstuck|apply sent|onmessage error/i.test(message)) ||
+	    (tag === 'auto' && /applying|sending as apply|apply in-flight/i.test(message)))) return;
   const timestamp = new Date();
   const formattedArgs = args.map(arg => {
     if (typeof arg === 'object') {

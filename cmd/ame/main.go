@@ -22,6 +22,7 @@ import (
 	"github.com/hoangvu12/ame/internal/lcu"
 	"github.com/hoangvu12/ame/internal/server"
 	"github.com/hoangvu12/ame/internal/setup"
+	"github.com/hoangvu12/ame/internal/skin"
 	"github.com/hoangvu12/ame/internal/startup"
 	"github.com/hoangvu12/ame/internal/updater"
 )
@@ -29,18 +30,14 @@ import (
 // Version is set at build time via -ldflags
 var Version = "dev"
 
-// toolsZipURL is set at build time via -ldflags.
-var toolsZipURL string
-
 const PORT = 18765
 
 var minimized bool
 
 // Setup URLs
 var setupConfig = setup.Config{
-	ToolsZipURL: toolsZipURL,
-	PenguURL:    "https://github.com/PenguLoader/PenguLoader/releases/download/v1.1.6/pengu-loader-v1.1.6.zip",
-	PluginURL:   "https://github.com/hoangvu12/ame/releases/latest/download/plugin.zip",
+	PenguURL:  "https://github.com/PenguLoader/PenguLoader/releases/download/v1.1.6/pengu-loader-v1.1.6.zip",
+	PluginURL: "https://github.com/hoangvu12/ame/releases/latest/download/plugin.zip",
 }
 
 // findDevSrcDir locates the local plugin source directory relative to the executable.
@@ -289,6 +286,7 @@ func promptSettings() {
 }
 
 func cleanup() {
+	skin.ShutdownLocalGenerator()
 	display.Pause()
 	fmt.Println("\n  Shutting down...")
 	server.HandleCleanup()
@@ -452,6 +450,7 @@ func main() {
 	// forever to connect. Commands that need setup are gated until SetReady;
 	// everything else (state, settings, custom mods) works immediately.
 	go func() {
+		go skin.PrepareLocalGenerator()
 		if err := server.StartServer(PORT); err != nil {
 			display.Log(fmt.Sprintf("! Server error: %v", err))
 			fmt.Printf("\n  ! Could not start ame's server: %v\n", err)
@@ -493,8 +492,8 @@ func main() {
 
 	// Check if plugin reinstall is needed (after an update)
 	if updater.NeedsPluginReinstall(Version) {
-		fmt.Println("  Updating mod-tools...")
-		setup.SetupModTools(setupConfig.ToolsZipURL, true)
+		fmt.Println("  Updating runtime...")
+		setup.SetupModTools()
 		fmt.Println("  Updating plugin...")
 		setup.DetectAndSetPenguPaths()
 		setup.SetupPlugin(setupConfig.PluginURL)
