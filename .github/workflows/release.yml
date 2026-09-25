@@ -67,7 +67,7 @@ jobs:
         run: |
           mkdir -p dist
           go mod tidy
-          go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}'" -o dist/ame.exe ./cmd/ame
+          go build -trimpath -ldflags="-s -w -X 'main.Version=${{ steps.version.outputs.VERSION }}' -X 'github.com/hoangvu12/ame/internal/skin.DefaultCDNURL=${{ secrets.AME_CDN_URL }}' -X 'github.com/hoangvu12/ame/internal/skin.DefaultCDNToken=${{ secrets.AME_CDN_TOKEN }}'" -o dist/ame.exe ./cmd/ame
 
       - name: Create plugin zip
         shell: bash
