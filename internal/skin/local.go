@@ -21,7 +21,7 @@ import (
 	"github.com/hoangvu12/ame/internal/game"
 )
 
-const generatorVersion = "ame-local-7"
+const generatorVersion = "ame-local-8"
 
 // The generator bundle is a release asset, downloaded and installed on
 // demand like the other setup components. A local path can override the
