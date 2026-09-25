@@ -1,8 +1,8 @@
-- Only one copy of Ame can run now — opening it again brings up the one already running instead of starting a second one that broke both
-- Ame connects much faster, especially when you are already in champion select
-- Fixed Ame sometimes never showing up in champion select if it started while the client was still loading
-- Fixed Ame not detecting the League client at all on recent Windows 11 updates
-- Fixed Ame freezing on startup when the League client was patching or stuck
-- Fixed a slow startup on PCs with disconnected network drives
-- Ame no longer accepts connections from other computers on your network
-- Updates no longer leave a leftover skin process running behind
+- New skin runtime with much better compatibility
+- Skins are now generated from your own game files instead of downloaded
+- Fixed sounds not playing for most skins (skill sounds and voices)
+- Fixed the game crashing with form skins like Elementalist Lux's dark form
+- Fixed DJ Sona and Kai'Sa Immortalized skins
+- Fixed some old skins not working (Anivia, Kog'Maw, Olaf)
+- Fixed visual issues with Swain's demon form
+- Every skin is now verified automatically before it is used
