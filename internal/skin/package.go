@@ -72,6 +72,11 @@ func ArtifactKey(skinID string) string {
 		}
 		return fmt.Sprintf("%s@%x", skinID, h.Sum(nil)[:12])
 	}
+	if m.Source == "remote" && m.Remote != nil && len(m.Remote.Digest) >= 12 {
+		// The remote artifact identity is its content digest; a catalog
+		// revision with new bytes must invalidate cached overlays.
+		return skinID + "@" + m.Remote.Digest[:12]
+	}
 	return skinID
 }
 

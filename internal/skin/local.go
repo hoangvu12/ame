@@ -393,6 +393,14 @@ func ensurePackage(ctx context.Context, r PackageRequest, gameDir string) (strin
 			logSkin("using local package " + r.SkinID)
 			return path, nil
 		}
+	}
+	// Pre-generated CDN packages come before on-device generation; every
+	// remote failure path returns "" and falls through to local generation.
+	if path := remoteEnsurePackage(ctx, r, gameDir); path != "" {
+		logSkin("using remote package " + r.SkinID)
+		return path, nil
+	}
+	if localErr == nil {
 		var path string
 		if path, localErr = generatePackage(ctx, r, gameDir, dir, m); localErr == nil {
 			logSkin("generated local package " + r.SkinID)
@@ -536,8 +544,13 @@ func GetValidCachedPath(championID, skinID, baseSkinID string) string {
 		path := localCached(r, m)
 		if path != "" {
 			logSkin("using local package " + r.SkinID + " (validated installed inputs)")
+			return path
 		}
-		return path
+		if path := remoteValidCachedPath(r, m.Build); path != "" {
+			logSkin("using remote package " + r.SkinID + " (validated installed build)")
+			return path
+		}
+		return ""
 	}
 	return ""
 }

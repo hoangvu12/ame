@@ -46,6 +46,11 @@ The skin generator bundle is built and distributed separately: AME downloads
 `skin-generator.zip` from the latest release on first use. For development
 builds, point `AME_SKIN_GENERATOR_ZIP` at a local bundle zip instead.
 
+Releases can also serve pre-generated skin packages from a remote catalog,
+tried before on-device generation. Set `AME_SKIN_CDN_URL` and
+`AME_SKIN_CDN_TOKEN` to point a build at one; without them ame generates
+locally as before.
+
 ## Project structure
 
 ```

@@ -47,3 +47,4 @@ __pycache__/
 # LTK overlay builder scratch (the prepared runtime bundle is committed)
 tools/ltk-runtime/target/
 tools/ltk-runtime/build/
+internal/skin/assets/
