@@ -1,8 +1,2 @@
-- New skin runtime with much better compatibility
-- Skins are now generated from your own game files instead of downloaded
-- Fixed sounds not playing for most skins (skill sounds and voices)
-- Fixed the game crashing with form skins like Elementalist Lux's dark form
-- Fixed DJ Sona and Kai'Sa Immortalized skins
-- Fixed some old skins not working (Anivia, Kog'Maw, Olaf)
-- Fixed visual issues with Swain's demon form
-- Every skin is now verified automatically before it is used
+- Skins now download from an online library and apply instantly instead of being generated on your PC
+- Generating skins on your PC still works as a backup when a skin is not available online
