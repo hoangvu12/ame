@@ -37,12 +37,30 @@ jobs:
           gh release download --repo hoangvu12/ame --pattern "skin-generator.zip" --dir dist --clobber || \
             echo "No previous skin-generator.zip asset; attach one with: gh release upload <tag> skin-generator.zip"
 
-      - name: Setup Rust for LTK overlay builder
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Build bundled LTK runtime
         shell: pwsh
-        run: ./tools/ltk-runtime/build.ps1
+        run: |
+          # runtime.zip is committed (signed LTK binaries + overlay helper,
+          # hash- and signature-pinned). Rebuild it only when updating the
+          # LTK revision: run tools/ltk-runtime/build.ps1 (needs Rust) and
+          # commit the regenerated bundle.
+          $expected = @{
+            'ltk_patcher_host.exe' = 'a7c4047ce7548c7ae820bc440735f15b9d1a495acf061dbb5a5a2893a0ed8d7c'
+            'ltk_patcher_dll.dll' = '07a43bf36a389eb00f6276e333bd7f2b95218f25a58e1e128ff4d2e4ab2dc99b'
+          }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead("internal/ltk/assets/runtime.zip")
+          foreach ($name in $expected.Keys) {
+            $entry = $zip.GetEntry($name)
+            if (-not $entry) { throw "LTK bundle missing entry: $name" }
+            $stream = $entry.Open()
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            $hash = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace("-", "").ToLowerInvariant()
+            $stream.Close()
+            if ($hash -ne $expected[$name]) { throw "Unexpected LTK binary: $name" }
+          }
+          $zip.Dispose()
+          Write-Output "LTK runtime bundle verified."
 
       - name: Build server
         shell: bash

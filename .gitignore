@@ -44,7 +44,6 @@ worker/node_modules/
 # Python caches
 __pycache__/
 
-# Bundled runtime build products (release embeds the prepared bundle)
-internal/ltk/assets/*.zip
+# LTK overlay builder scratch (the prepared runtime bundle is committed)
 tools/ltk-runtime/target/
 tools/ltk-runtime/build/
