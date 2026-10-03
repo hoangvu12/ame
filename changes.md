@@ -1,2 +1,1 @@
-- Skins now download from an online library and apply instantly instead of being generated on your PC
-- Generating skins on your PC still works as a backup when a skin is not available online
+- Fixed skins failing to apply in matches after the first one until you restarted ame
