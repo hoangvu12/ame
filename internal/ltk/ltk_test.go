@@ -47,7 +47,7 @@ func TestHostChild(t *testing.T) {
 				fmt.Println("error 0 test failure")
 			case "exit":
 				os.Exit(24)
-			case "scan":
+			case "scan", "detach":
 				fmt.Println("status 0 injecting scanning for game")
 			case "late":
 				fmt.Println("status 0 injecting scanning for game")
@@ -57,6 +57,16 @@ func TestHostChild(t *testing.T) {
 				fmt.Println("status 0 injecting scanning for game")
 				fmt.Println("status 0 injected dll attached")
 			}
+		}
+		if line == "attach" {
+			fmt.Println("1.000000000s INFO ltk_patcher_host::worker: game found; hook installed tid=1 pid=424242")
+			fmt.Println("status 1 injecting game found")
+			fmt.Println("status 1 injected dll attached")
+			fmt.Println("status 1 waiting awaiting game exit")
+		}
+		if line == "detach" {
+			fmt.Println("status 2 injecting scanning for game")
+			fmt.Println("status 2 exited dll detached")
 		}
 		if line == "stop" {
 			os.Exit(0)

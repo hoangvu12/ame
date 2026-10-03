@@ -500,7 +500,16 @@ func startHostMode(dir, overlay string, command func(string, ...string) *exec.Cm
 			fields := strings.Fields(line)
 			if len(fields) >= 3 && fields[0] == "status" {
 				h.mu.Lock()
-				h.scanning = fields[2] == "injecting" && strings.Contains(line, "scanning for game")
+				if fields[2] == "injecting" && strings.Contains(line, "scanning for game") {
+					// The worker is scanning for a game, so no game is attached:
+					// release any hook retained from a finished match so the
+					// scanner can be paused for the next preparation.
+					h.scanning = true
+					h.hooked = false
+					h.hookPID = 0
+				} else {
+					h.scanning = false
+				}
 				switch fields[2] {
 				case "injected", "waiting":
 					h.hooked = true
@@ -509,6 +518,13 @@ func startHostMode(dir, overlay string, command func(string, ...string) *exec.Cm
 					if fields[2] == "failed" {
 						h.failure = line
 					}
+				case "exited":
+					// The attached game left. The worker announces its return to
+					// scanning before the dll detach completes, so mirror that
+					// state here instead of keeping the finished match's hook.
+					h.hooked = false
+					h.hookPID = 0
+					h.scanning = true
 				}
 				h.mu.Unlock()
 				if fields[2] == "injecting" {

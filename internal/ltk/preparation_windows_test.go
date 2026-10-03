@@ -52,6 +52,49 @@ func TestScannerPauseRetainsSessionThroughPreparation(t *testing.T) {
 	}
 }
 
+// A finished match must release the scanner: the host returns to scanning
+// after the game exits, and a stale hook PID would block every later
+// preparation with "attachment has started" until ame restarts.
+func TestGameExitReleasesScannerForNextPreparation(t *testing.T) {
+	factory := func(_ string, _ ...string) *exec.Cmd {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestHostChild$")
+		cmd.Env = append(os.Environ(), "AME_LTK_TEST_CHILD=detach")
+		return cmd
+	}
+	if err := startHost(t.TempDir(), t.TempDir(), factory, true); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(Stop)
+	h := active
+	if _, err := fmt.Fprintln(h.stdin, "attach"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for (!Hooked() || WaitingForGame()) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !Hooked() || WaitingForGame() {
+		t.Fatal("game attach sequence ignored")
+	}
+	if _, err := fmt.Fprintln(h.stdin, "detach"); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(time.Second)
+	for !WaitingForGame() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !WaitingForGame() {
+		t.Fatal("scanner stayed attached to the finished game")
+	}
+	resume, err := pausePreparedScanner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resume(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStopDuringScannerPreparation(t *testing.T) {
 	startOwnedScannerFixture(t)
 	resume, err := pausePreparedScanner()
