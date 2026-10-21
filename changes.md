@@ -1,1 +1,2 @@
-- Fixed skins failing to apply in matches after the first one until you restarted ame
+- Fixed skins not working after the latest League update
+- Skins are now always downloaded ready to use instead of being made on your computer
