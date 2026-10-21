@@ -47,8 +47,8 @@ func validatePackage(path string) error {
 	return nil
 }
 
-// ArtifactKey includes source provenance and live input fingerprints. A patch
-// invalidates an overlay even before the corresponding package is regenerated.
+// ArtifactKey adds the cached package's content digest, so a catalog revision
+// invalidates overlays built from the previous package.
 func ArtifactKey(skinID string) string {
 	id, err := strconv.Atoi(skinID)
 	if err != nil || id < 1000 {
@@ -58,19 +58,6 @@ func ArtifactKey(skinID string) string {
 	m, err := readCacheMetadata(champion, skinID)
 	if err != nil {
 		return skinID
-	}
-	h := sha256.New()
-	// CheckedAt is cache bookkeeping, not artifact identity.
-	if m.Source == "local" && m.Local != nil {
-		fmt.Fprint(h, m.Local.Digest, m.Local.Generator, m.Local.Schema, generatorVersion)
-		if dir, err := helperDir(); err == nil {
-			fmt.Fprint(h, filepath.Base(dir))
-		}
-		for _, input := range m.Local.Inputs {
-			current, _ := fingerprint(input.Path)
-			fmt.Fprint(h, current)
-		}
-		return fmt.Sprintf("%s@%x", skinID, h.Sum(nil)[:12])
 	}
 	if m.Source == "remote" && m.Remote != nil && len(m.Remote.Digest) >= 12 {
 		// The remote artifact identity is its content digest; a catalog

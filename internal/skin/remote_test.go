@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -47,25 +48,6 @@ func stubGameDir(t *testing.T) string {
 	os.WriteFile(filepath.Join(gameDir, "League of Legends.exe"), []byte("stub exe"), 0600)
 	os.WriteFile(filepath.Join(champ, "Ahri.wad.client"), []byte("stub wad"), 0600)
 	return gameDir
-}
-
-// stubGeneratorBundle installs a fake generator bundle so localProvenance can
-// resolve without network access, mirroring the local-bundle tests.
-func stubGeneratorBundle(t *testing.T) {
-	t.Helper()
-	bundle := filepath.Join(t.TempDir(), "bundle.zip")
-	f, _ := os.Create(bundle)
-	zw := zip.NewWriter(f)
-	w, _ := zw.Create("skin-generator.exe")
-	w.Write([]byte("helper"))
-	w2, _ := zw.Create("aliases.json")
-	w2.Write([]byte(`{"103":"Ahri"}`))
-	w3, _ := zw.Create("schema.json")
-	w3.Write([]byte(`{"revision":1}`))
-	zw.Close()
-	f.Close()
-	t.Setenv(generatorAssetEnv, bundle)
-	preparedHelper, preparedRoot = "", ""
 }
 
 func TestPackageKeyFormat(t *testing.T) {
@@ -121,7 +103,7 @@ func TestRemoteFetchCachesAndRevalidates(t *testing.T) {
 		catalogHits.Add(1)
 		catalog := cdnCatalog{
 			Version:   1,
-			Generator: generatorVersion,
+			Generator: catalogGenerator,
 			Build:     "",
 			Packages:  map[string]cdnPackage{"103001": {SHA256: digest, Size: int64(len(pkg))}},
 		}
@@ -139,9 +121,9 @@ func TestRemoteFetchCachesAndRevalidates(t *testing.T) {
 	r := PackageRequest{"103", "103001", ""}
 	gameDir := stubGameDir(t)
 
-	path := remoteEnsurePackage(context.Background(), r, gameDir)
-	if path == "" {
-		t.Fatal("remote package not fetched")
+	path, err := remoteEnsurePackage(context.Background(), r, gameDir)
+	if err != nil {
+		t.Fatalf("remote package not fetched: %v", err)
 	}
 	if data, err := os.ReadFile(path); err != nil || fmt.Sprintf("%x", sha256.Sum256(data)) != digest {
 		t.Fatalf("fetched package digest mismatch: %v", err)
@@ -151,7 +133,7 @@ func TestRemoteFetchCachesAndRevalidates(t *testing.T) {
 	}
 
 	// Second acquisition is served from the on-disk cache without any HTTP.
-	path2 := remoteEnsurePackage(context.Background(), r, gameDir)
+	path2, _ := remoteEnsurePackage(context.Background(), r, gameDir)
 	if path2 != path {
 		t.Fatalf("second acquisition returned %q, want cached %q", path2, path)
 	}
@@ -179,7 +161,7 @@ func TestRemoteRejectsDigestMismatch(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/catalog", func(w http.ResponseWriter, r *http.Request) {
-		catalog := cdnCatalog{Version: 1, Generator: generatorVersion, Packages: map[string]cdnPackage{
+		catalog := cdnCatalog{Version: 1, Generator: catalogGenerator, Packages: map[string]cdnPackage{
 			"103001": {SHA256: wrongDigest, Size: int64(len(pkg))},
 		}}
 		json.NewEncoder(w).Encode(catalog)
@@ -190,12 +172,12 @@ func TestRemoteRejectsDigestMismatch(t *testing.T) {
 	t.Setenv(cdnURLEnv, server.URL)
 	t.Setenv(cdnTokenEnv, "tok")
 
-	if path := remoteEnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t)); path != "" {
+	if _, err := remoteEnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t)); err == nil {
 		t.Fatal("digest mismatch accepted")
 	}
 }
 
-func TestRemoteUnavailableFallsBack(t *testing.T) {
+func TestRemoteUnavailable(t *testing.T) {
 	testCache(t)
 	resetCDNState()
 	defer resetCDNState()
@@ -207,7 +189,7 @@ func TestRemoteUnavailableFallsBack(t *testing.T) {
 	t.Setenv(cdnURLEnv, server.URL)
 	t.Setenv(cdnTokenEnv, "tok")
 
-	if path := remoteEnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t)); path != "" {
+	if _, err := remoteEnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t)); err == nil {
 		t.Fatal("unavailable cdn accepted")
 	}
 }
@@ -218,22 +200,21 @@ func TestRemoteNotConfigured(t *testing.T) {
 	defer resetCDNState()
 	t.Setenv(cdnURLEnv, "")
 	t.Setenv(cdnTokenEnv, "")
-	if path := remoteEnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t)); path != "" {
+	if _, err := remoteEnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t)); err == nil {
 		t.Fatal("remote package fetched without configuration")
 	}
 }
 
-func TestEnsurePackagePrefersRemoteOverLocalGeneration(t *testing.T) {
+func TestEnsurePackageFetchesFromCDN(t *testing.T) {
 	testCache(t)
 	resetCDNState()
 	defer resetCDNState()
-	stubGeneratorBundle(t)
 
 	pkg := testPackageBytes(t)
 	digest := fmt.Sprintf("%x", sha256.Sum256(pkg))
 	mux := http.NewServeMux()
 	mux.HandleFunc("/catalog", func(w http.ResponseWriter, r *http.Request) {
-		catalog := cdnCatalog{Version: 1, Generator: generatorVersion, Packages: map[string]cdnPackage{
+		catalog := cdnCatalog{Version: 1, Generator: catalogGenerator, Packages: map[string]cdnPackage{
 			"103001": {SHA256: digest, Size: int64(len(pkg))},
 		}}
 		json.NewEncoder(w).Encode(catalog)
@@ -244,22 +225,10 @@ func TestEnsurePackagePrefersRemoteOverLocalGeneration(t *testing.T) {
 	t.Setenv(cdnURLEnv, server.URL)
 	t.Setenv(cdnTokenEnv, "tok")
 
-	// The local helper must never run: remote satisfies the request first.
-	helperCalls := atomic.Int32{}
-	oldHelper := invokeHelper
-	invokeHelper = func(ctx context.Context, dir string, req helperRequest) (helperResult, error) {
-		helperCalls.Add(1)
-		return helperResult{}, fmt.Errorf("helper must not run")
-	}
-	defer func() { invokeHelper = oldHelper }()
-
 	gameDir := stubGameDir(t)
 	path, err := EnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, gameDir)
 	if err != nil || path == "" {
 		t.Fatalf("EnsurePackage failed: %v", err)
-	}
-	if helperCalls.Load() != 0 {
-		t.Fatal("local helper ran despite remote package being available")
 	}
 	if data, _ := os.ReadFile(path); fmt.Sprintf("%x", sha256.Sum256(data)) != digest {
 		t.Fatal("ensure returned wrong package")
@@ -322,16 +291,17 @@ func TestCDNCatalogErrorBackoff(t *testing.T) {
 	}
 }
 
-func TestEnsurePackageFallsBackWhenRemoteMissing(t *testing.T) {
+func TestEnsurePackageFailsWhenRemoteMissing(t *testing.T) {
 	testCache(t)
 	resetCDNState()
 	defer resetCDNState()
-	stubGeneratorBundle(t)
 
 	// Catalog exists but has no entry for the requested skin.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/catalog", func(w http.ResponseWriter, r *http.Request) {
-		catalog := cdnCatalog{Version: 1, Generator: generatorVersion, Packages: map[string]cdnPackage{}}
+		catalog := cdnCatalog{Version: 1, Generator: catalogGenerator, Packages: map[string]cdnPackage{
+			"1001": {SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("other")))},
+		}}
 		json.NewEncoder(w).Encode(catalog)
 	})
 	server := httptest.NewServer(mux)
@@ -339,21 +309,34 @@ func TestEnsurePackageFallsBackWhenRemoteMissing(t *testing.T) {
 	t.Setenv(cdnURLEnv, server.URL)
 	t.Setenv(cdnTokenEnv, "tok")
 
-	pkg := testPackageBytes(t)
-	oldHelper := invokeHelper
-	invokeHelper = func(ctx context.Context, dir string, req helperRequest) (helperResult, error) {
-		os.WriteFile(req.Output, pkg, 0600)
-		return helperResult{OK: true, Generator: generatorVersion, Inputs: []string{}, MeshCompatibility: true, LTKCompatibility: true}, nil
+	path, err := EnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t))
+	if err == nil || path != "" || !strings.Contains(err.Error(), "no cdn package for 103001") {
+		t.Fatalf("missing package = %q, %v", path, err)
 	}
-	defer func() { invokeHelper = oldHelper }()
+	entries, _ := os.ReadDir(skinDir("103", "103001"))
+	if len(entries) != 0 {
+		t.Fatalf("failed acquisition left cache entries: %v", entries)
+	}
+}
 
-	gameDir := stubGameDir(t)
-	// generatePackage re-fingerprints inputs after the helper runs and
-	// compares them with the helper's reported inputs; the stub reports none,
-	// so mismatch is expected to fail generation rather than succeed. Verify
-	// the fallback path was taken by checking the error mentions generation.
-	_, err := EnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, gameDir)
-	if err == nil {
-		t.Fatal("expected fallback to local generation to be attempted")
+func TestRemoteRejectsOtherCatalogFormat(t *testing.T) {
+	testCache(t)
+	resetCDNState()
+	defer resetCDNState()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/catalog", func(w http.ResponseWriter, r *http.Request) {
+		catalog := cdnCatalog{Version: 1, Generator: "next-format", Packages: map[string]cdnPackage{
+			"103001": {SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("package")))},
+		}}
+		json.NewEncoder(w).Encode(catalog)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	t.Setenv(cdnURLEnv, server.URL)
+	t.Setenv(cdnTokenEnv, "tok")
+
+	if _, err := remoteEnsurePackage(context.Background(), PackageRequest{"103", "103001", ""}, stubGameDir(t)); err == nil {
+		t.Fatal("unsupported catalog format accepted")
 	}
 }

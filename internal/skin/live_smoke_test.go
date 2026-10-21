@@ -30,9 +30,9 @@ func TestLiveCDNSmoke(t *testing.T) {
 		t.Skip("no League installation for live smoke")
 	}
 
-	path := remoteEnsurePackage(context.Background(), r, gameDir)
-	if path == "" {
-		t.Fatal("live CDN did not serve the package")
+	path, err := remoteEnsurePackage(context.Background(), r, gameDir)
+	if err != nil {
+		t.Fatalf("live CDN did not serve the package: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

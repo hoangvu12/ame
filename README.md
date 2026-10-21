@@ -8,7 +8,7 @@ A League of Legends skin changer for Windows. Lets you select and apply skins di
 2. Sets up Pengu Loader and the bundled LTK runtime on first run
 3. Injects a plugin into the League client that adds skin selection UI
 4. Communicates over WebSocket between the plugin and the Go backend
-5. Generates supported skins from installed game files and uses the signed LTK runtime to apply them
+5. Downloads pre-built skin packages for your game version and uses the signed LTK runtime to apply them
 
 ## Requirements
 
@@ -42,14 +42,9 @@ go mod tidy
 go build -trimpath -ldflags="-s -w" -o dist/ame.exe ./cmd/ame
 ```
 
-The skin generator bundle is built and distributed separately: AME downloads
-`skin-generator.zip` from the latest release on first use. For development
-builds, point `AME_SKIN_GENERATOR_ZIP` at a local bundle zip instead.
-
-Releases can also serve pre-generated skin packages from a remote catalog,
-tried before on-device generation. Set `AME_SKIN_CDN_URL` and
-`AME_SKIN_CDN_TOKEN` to point a build at one; without them ame generates
-locally as before.
+Skin packages come from a remote catalog that release builds have built in.
+Set `AME_SKIN_CDN_URL` and `AME_SKIN_CDN_TOKEN` to point a source build at
+one; without them a source build cannot apply skins.
 
 ## Project structure
 
@@ -71,7 +66,7 @@ src/            League client plugin (JavaScript)
 
 - Auto-detects League of Legends game directory
 - Skin selection UI injected into champion select
-- Installed skin and chroma generation, including inherited animations and the 30 alternate forms listed in AME. Gear forms are fixed selections; original in-game progression/form-switching systems are not implemented.
+- Skins and chromas, including inherited animations and the 30 alternate forms listed in AME. Gear forms are fixed selections; original in-game progression/form-switching systems are not implemented.
 - Auto-apply for ARAM and other game modes
 - System tray with show/hide controls
 - Automatic updates from GitHub releases
@@ -87,12 +82,11 @@ This is an unofficial fan-made tool. It is not endorsed by Riot Games. Use at yo
 
 ## Runtime notes
 
-The runtime is bundled with AME and applies generated packages through a
-hash-pinned mod runtime; its build inputs live in `tools/ltk-runtime`. Audio
-and visual output of generated skins varies per skin; locale WADs participate
-in package cache invalidation. Unsupported local conversions return an error
-instead of applying a stale package.
+The runtime is bundled with AME and applies skin packages through a
+hash-pinned mod runtime; its build inputs live in `tools/ltk-runtime`. Packages
+are made for one game build: after a League patch, skins are unavailable until
+packages for the new build are published, rather than applying stale ones.
 
-`go test ./...` covers the normal unit suite. Set `AME_TEST_GAME_DIR` to the installed `Game` directory for
-offline generator/cache/combined-overlay tests. `AME_TEST_LTK=1` enables a signed
+`go test ./...` covers the normal unit suite. Set `AME_TEST_GAME_DIR` to the installed `Game` directory
+(with `AME_TEST_CELESTIAL_INDEX`) for the offline Celestial routing test. `AME_TEST_LTK=1` enables a signed
 host configuration-only test; it does not scan for or attach to a game.

@@ -16,10 +16,14 @@ import (
 
 // DefaultCDNURL and DefaultCDNToken are injected at release time via
 // -ldflags="-X ...DefaultCDNURL=... -X ...DefaultCDNToken=...". Source builds
-// leave them empty, which disables remote packages entirely: those builds
-// behave exactly like local-generation-only ame.
+// leave them empty and have no skin packages unless AME_SKIN_CDN_URL and
+// AME_SKIN_CDN_TOKEN are set.
 var DefaultCDNURL string
 var DefaultCDNToken string
+
+// catalogGenerator is the package format this client accepts; the catalog's
+// "generator" field must match (CATALOG_GENERATOR in the catalog builder).
+const catalogGenerator = "ame-local-8"
 
 const (
 	cdnURLEnv   = "AME_SKIN_CDN_URL"
@@ -149,38 +153,36 @@ func cdnFail(err error) (*cdnCatalog, error) {
 	return nil, err
 }
 
-// remoteEnsurePackage tries the pre-generated CDN package for a selection.
-// It returns "" (never an error) so callers fall through to local generation.
-func remoteEnsurePackage(ctx context.Context, r PackageRequest, gameDir string) string {
+// remoteEnsurePackage returns the pre-generated CDN package for a selection,
+// from the on-disk cache when it still matches the catalog.
+func remoteEnsurePackage(ctx context.Context, r PackageRequest, gameDir string) (string, error) {
 	cfg, err := activeCDN()
 	if err != nil {
-		return ""
+		return "", err
 	}
 	catalog, err := fetchCDNCatalog(ctx, cfg)
 	if err != nil {
-		logSkin("cdn catalog unavailable: " + err.Error())
-		return ""
+		return "", fmt.Errorf("cdn catalog unavailable: %w", err)
 	}
-	if catalog.Generator != "" && catalog.Generator != generatorVersion {
-		return ""
+	if catalog.Generator != "" && catalog.Generator != catalogGenerator {
+		return "", fmt.Errorf("cdn catalog format %s is not supported by this version", catalog.Generator)
 	}
 	build := gameBuild(gameDir)
 	if !catalogBuildMatches(catalog.Build, build) {
-		return ""
+		return "", fmt.Errorf("cdn packages are for game build %s, installed game is %s", catalog.Build, build)
 	}
 	entry, ok := catalog.Packages[packageKey(r)]
 	if !ok {
-		return ""
+		return "", fmt.Errorf("no cdn package for %s", packageKey(r))
 	}
 	if path := remoteCached(r, catalog.Build, entry); path != "" {
-		return path
+		return path, nil
 	}
 	path, err := fetchRemotePackage(ctx, cfg, r, entry, catalog.Build)
 	if err != nil {
-		logSkin("cdn package fetch failed for " + r.SkinID + ": " + err.Error())
-		return ""
+		return "", fmt.Errorf("cdn package fetch failed: %w", err)
 	}
-	return path
+	return path, nil
 }
 
 // remoteCached validates an existing cached CDN package without network

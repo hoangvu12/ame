@@ -26,17 +26,6 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Carry forward skin generator bundle
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # The generator bundle is built outside this repo and attached by the
-          # maintainer. Carry the previous release's asset forward so fresh
-          # installs always find one; skip silently on the very first release.
-          gh release download --repo hoangvu12/ame --pattern "skin-generator.zip" --dir dist --clobber || \
-            echo "No previous skin-generator.zip asset; attach one with: gh release upload <tag> skin-generator.zip"
-
       - name: Build bundled LTK runtime
         shell: pwsh
         run: |
@@ -112,7 +101,6 @@ jobs:
           files: |
             dist/ame.exe
             dist/plugin.zip
-            dist/skin-generator.zip
             uninstall.bat
           draft: false
           prerelease: false

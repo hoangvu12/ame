@@ -4,12 +4,9 @@ package skin
 
 import (
 	"fmt"
-	"os/exec"
 	"syscall"
 	"unsafe"
 )
-
-func hideHelper(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true} }
 
 func installedBuild(path string) string {
 	dll := syscall.NewLazyDLL("version.dll")

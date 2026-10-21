@@ -13,6 +13,9 @@
 > builds inject the CDN URL/token via ldflags; source builds stay local-only.
 > R2 remains the documented fallback if the GitHub route ever fails
 > (`publish.py` works with any git remote; the worker backend is swappable).
+>
+> **Update:** local generation was later removed from ame. The CDN is now the
+> only package source; the generator runs only in the catalog build.
 
 Date: October 2025 (researched against current League patch 16.19)
 

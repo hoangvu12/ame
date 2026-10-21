@@ -286,7 +286,7 @@ func promptSettings() {
 }
 
 func cleanup() {
-	skin.ShutdownLocalGenerator()
+	skin.Shutdown()
 	display.Pause()
 	fmt.Println("\n  Shutting down...")
 	server.HandleCleanup()
@@ -450,7 +450,7 @@ func main() {
 	// forever to connect. Commands that need setup are gated until SetReady;
 	// everything else (state, settings, custom mods) works immediately.
 	go func() {
-		go skin.PrepareLocalGenerator()
+		go skin.RemoveLocalGenerator()
 		if err := server.StartServer(PORT); err != nil {
 			display.Log(fmt.Sprintf("! Server error: %v", err))
 			fmt.Printf("\n  ! Could not start ame's server: %v\n", err)

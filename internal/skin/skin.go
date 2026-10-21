@@ -17,10 +17,9 @@ import (
 
 const cacheMetadataFile = "cache.json"
 
-// cacheMetadata is the per-skin cache record. Only locally generated
-// packages are tracked; fields from older records are ignored on read.
+// cacheMetadata is the per-skin cache record. Only CDN packages are tracked;
+// records of locally generated packages from older versions are never used.
 type cacheMetadata struct {
-	Local     *localMetadata  `json:"local,omitempty"`
 	Remote    *remoteMetadata `json:"remote,omitempty"`
 	Source    string          `json:"source"`
 	CheckedAt time.Time       `json:"checkedAt"`
