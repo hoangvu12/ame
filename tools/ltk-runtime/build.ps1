@@ -6,10 +6,10 @@ try {
     if ($LASTEXITCODE) { throw 'LTK overlay build failed' }
     $stage = Join-Path $PSScriptRoot 'build/bundle'
     New-Item -ItemType Directory -Force $stage | Out-Null
-    $revision = 'ff7f2ebc0e2abccd280d8634bb015697400e0121'
+    $revision = '08468a32392f43dc604ebf7a8fcaf05c2bbeacb9'
     $expected = @{
-        'ltk_patcher_host.exe' = 'a7c4047ce7548c7ae820bc440735f15b9d1a495acf061dbb5a5a2893a0ed8d7c'
-        'ltk_patcher_dll.dll' = '07a43bf36a389eb00f6276e333bd7f2b95218f25a58e1e128ff4d2e4ab2dc99b'
+        'ltk_patcher_host.exe' = '23fa1aaeda1a0c743da44227f179084e1fb81c7cd262144a3c8604ffc49d3bc1'
+        'ltk_patcher_dll.dll' = '6d419057e6667994ba752ad0fb089b363db98267618644d7f7b6632441a21d74'
     }
     foreach ($name in $expected.Keys) {
         $target = Join-Path $stage $name
