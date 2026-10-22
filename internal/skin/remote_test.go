@@ -237,6 +237,10 @@ func TestEnsurePackageFetchesFromCDN(t *testing.T) {
 
 func TestRemoteValidCachedPathBuildCheck(t *testing.T) {
 	testCache(t)
+	resetCDNState()
+	defer resetCDNState()
+	t.Setenv(cdnURLEnv, "")
+	t.Setenv(cdnTokenEnv, "")
 	r := PackageRequest{"103", "103001", ""}
 	dir := skinDir(r.ChampionID, r.SkinID)
 	os.MkdirAll(dir, 0755)
@@ -260,6 +264,58 @@ func TestRemoteValidCachedPathBuildCheck(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, artifact), []byte("corrupt"), 0600)
 	if got := remoteValidCachedPath(r, "16.19.1"); got != "" {
 		t.Fatal("corrupt remote cache accepted")
+	}
+}
+
+func TestRemoteValidCachedPathFollowsRepublishedCatalog(t *testing.T) {
+	testCache(t)
+	resetCDNState()
+	defer resetCDNState()
+	r := PackageRequest{"103", "103001", ""}
+	dir := skinDir(r.ChampionID, r.SkinID)
+	os.MkdirAll(dir, 0755)
+	content := testPackageBytes(t)
+	digest := fmt.Sprintf("%x", sha256.Sum256(content))
+	artifact := "remote-" + digest + ".fantome"
+	os.WriteFile(filepath.Join(dir, artifact), content, 0600)
+	encoded, _ := json.Marshal(cacheMetadata{
+		Source: "remote",
+		Remote: &remoteMetadata{Build: "16.21.1", Digest: digest, Key: "103001", Artifact: artifact},
+	})
+	os.WriteFile(skinCacheMetadataPath(r.ChampionID, r.SkinID), encoded, 0600)
+
+	listed, build := digest, "16.21.1"
+	down := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if down {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		json.NewEncoder(w).Encode(cdnCatalog{Version: 1, Generator: catalogGenerator, Build: build, Packages: map[string]cdnPackage{
+			"103001": {SHA256: listed},
+		}})
+	}))
+	defer server.Close()
+	t.Setenv(cdnURLEnv, server.URL)
+	t.Setenv(cdnTokenEnv, "tok")
+
+	if got := remoteValidCachedPath(r, "16.21.1"); got != filepath.Join(dir, artifact) {
+		t.Fatalf("cache listed by the catalog rejected: %q", got)
+	}
+	resetCDNState()
+	listed = fmt.Sprintf("%x", sha256.Sum256([]byte("republished")))
+	if got := remoteValidCachedPath(r, "16.21.1"); got != "" {
+		t.Fatal("cache kept after the catalog republished the package")
+	}
+	resetCDNState()
+	build = "16.22.1" // a catalog for another game build does not judge this cache
+	if got := remoteValidCachedPath(r, "16.21.1"); got != filepath.Join(dir, artifact) {
+		t.Fatal("cache rejected by a catalog for another game build")
+	}
+	resetCDNState()
+	down = true
+	if got := remoteValidCachedPath(r, "16.21.1"); got != filepath.Join(dir, artifact) {
+		t.Fatal("cache rejected while the catalog is unreachable")
 	}
 }
 

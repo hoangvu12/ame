@@ -283,8 +283,10 @@ func fetchRemotePackage(ctx context.Context, cfg *cdnConfig, r PackageRequest, e
 	return path, nil
 }
 
-// remoteValidCachedPath is the offline validation used by GetValidCachedPath:
-// the cached CDN package must match the currently installed game build.
+// remoteValidCachedPath is the validation used by GetValidCachedPath: the
+// cached CDN package must match the currently installed game build and, when
+// the catalog is reachable, be the package it lists. A republished fix then
+// replaces the cached copy instead of waiting for the next game patch.
 func remoteValidCachedPath(r PackageRequest, installedBuildVersion string) string {
 	m, err := readCacheMetadata(r.ChampionID, r.SkinID)
 	if err != nil || m.Source != "remote" || m.Remote == nil {
@@ -301,7 +303,30 @@ func remoteValidCachedPath(r PackageRequest, installedBuildVersion string) strin
 	if err != nil || fmt.Sprintf("%x", sha256.Sum256(data)) != m.Remote.Digest {
 		return ""
 	}
+	if listed, ok := catalogDigest(r, installedBuildVersion); ok && listed != m.Remote.Digest {
+		return ""
+	}
 	return path
+}
+
+// catalogDigest is the package digest the CDN catalog lists for r, when the
+// catalog can be read (it is cached for cdnCatalogTTL) and serves this client
+// and game build.
+func catalogDigest(r PackageRequest, installedBuildVersion string) (string, bool) {
+	cfg, err := activeCDN()
+	if err != nil {
+		return "", false
+	}
+	catalog, err := fetchCDNCatalog(acquireContext, cfg)
+	if err != nil || (catalog.Generator != "" && catalog.Generator != catalogGenerator) ||
+		!catalogBuildMatches(catalog.Build, installedBuildVersion) {
+		return "", false
+	}
+	entry, ok := catalog.Packages[packageKey(r)]
+	if !ok {
+		return "", false
+	}
+	return strings.ToLower(entry.SHA256), true
 }
 
 // catalogBuildMatches reports whether a catalog built against a game build
