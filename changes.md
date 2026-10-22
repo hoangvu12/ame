@@ -1,2 +1,2 @@
-- Fixed skins not working after the latest League update
-- Skins are now always downloaded ready to use instead of being made on your computer
+- Fixed skin blocking from WAD scan failures
+- Improved patcher log output for diagnostics

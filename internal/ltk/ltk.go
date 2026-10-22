@@ -569,7 +569,8 @@ func startHostMode(dir, overlay string, command func(string, ...string) *exec.Cm
 		display.Log(fmt.Sprintf("LTK host exited: %v", err))
 		close(h.done)
 	}()
-	_, err = fmt.Fprintf(stdin, "config loglevel 16\nconfig flags 0\nconfig prefix %s\\\n", strings.TrimRight(prefix, `/\`))
+	// dev: OPT_OUT_AH_V1 (4) + debug log level (32)
+	_, err = fmt.Fprintf(stdin, "config loglevel 32\nconfig flags 4\nconfig prefix %s\\\n", strings.TrimRight(prefix, `/\`))
 	if err == nil && mode != "" {
 		_, err = fmt.Fprintln(stdin, "start "+mode)
 	}
