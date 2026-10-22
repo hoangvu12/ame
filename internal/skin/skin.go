@@ -103,5 +103,6 @@ func Extract(archivePath, destDir string) error {
 		}
 	}
 
+	localizeVoiceWADs(destDir, localizationGameDir())
 	return nil
 }
