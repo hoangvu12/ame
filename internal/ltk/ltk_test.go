@@ -25,11 +25,11 @@ func TestHostChild(t *testing.T) {
 		step++
 		switch step {
 		case 1:
-			if line != "config loglevel 16" {
+			if line != "config loglevel 32" {
 				os.Exit(20)
 			}
 		case 2:
-			if line != "config flags 0" {
+			if line != "config flags 4" {
 				os.Exit(21)
 			}
 		case 3:
@@ -76,6 +76,15 @@ func TestHostChild(t *testing.T) {
 		}
 	}
 	os.Exit(0)
+}
+
+// TestMain keeps the host lifecycle tests offline: the delivery client would
+// otherwise reach the network on every fresh host start.
+func TestMain(m *testing.M) {
+	deliveryFetch = func(string) (string, string, error) {
+		return "", "", fmt.Errorf("delivery disabled in tests")
+	}
+	os.Exit(m.Run())
 }
 
 func TestHeldGameKeepsPreparedScanner(t *testing.T) {

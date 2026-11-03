@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/hoangvu12/ame/internal/config"
@@ -28,7 +29,12 @@ var assets embed.FS
 
 var prepareMu sync.Mutex
 
+// deliveryFetch is DeliveryFetch, overridden by tests to stay offline.
+var deliveryFetch = DeliveryFetch
+
 // Prepare installs immutable, content-addressed files; no download at runtime.
+// The patcher DLL (ltk_patcher_dll.dll) is excluded from hash validation
+// because DeliveryFetch replaces it with a current build after extraction.
 func Prepare() (string, error) {
 	prepareMu.Lock()
 	defer prepareMu.Unlock()
@@ -50,6 +56,14 @@ func Prepare() (string, error) {
 		name := strings.ReplaceAll(entry.Name, `\`, "/")
 		if zipname.Unsafe(entry.Name) {
 			return "", fmt.Errorf("unsafe runtime entry")
+		}
+		// DLL and host are replaced by DeliveryFetch; skip hash.
+		if strings.EqualFold(name, "ltk_patcher_dll.dll") || strings.EqualFold(name, "ltk_patcher_host.exe") {
+			if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(name))); err != nil {
+				valid = false
+				break
+			}
+			continue
 		}
 		existing, err := os.ReadFile(filepath.Join(dest, filepath.FromSlash(name)))
 		if err != nil || uint64(len(existing)) != entry.UncompressedSize64 {
@@ -85,6 +99,12 @@ func Prepare() (string, error) {
 				return "", err
 			}
 			continue
+		}
+		// The DLL is replaced by DeliveryFetch; don't overwrite it.
+		if strings.EqualFold(entry.Name, "ltk_patcher_dll.dll") {
+			if _, err := os.Stat(target); err == nil {
+				continue
+			}
 		}
 		if err = os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return "", err
@@ -359,11 +379,33 @@ func stopLocked() {
 }
 func Stop() { lifecycle.Lock(); defer lifecycle.Unlock(); stopLocked() }
 func Start(overlay string) error {
+	// If a scan session is already running for this overlay, don't re-prepare.
+	// Prepare() hashes the runtime files to check integrity, and the host
+	// holds the DLL open — re-extracting would fail with a sharing violation.
+	prefix, err := filepath.Abs(overlay)
+	if err != nil {
+		return err
+	}
+	lifecycle.Lock()
+	if active != nil {
+		active.mu.Lock()
+		running, same, failure := active.running, strings.EqualFold(active.overlay, prefix), active.failure
+		active.mu.Unlock()
+		if running && same {
+			lifecycle.Unlock()
+			if failure != "" {
+				return fmt.Errorf("LTK session failed: %s", failure)
+			}
+			return nil
+		}
+	}
+	lifecycle.Unlock()
+
 	dir, err := Prepare()
 	if err != nil {
 		return err
 	}
-	return startHost(dir, overlay, exec.Command, true)
+	return startHost(dir, prefix, exec.Command, true)
 }
 
 // StartSuspended is an experimental test entry point, not the AME launch path.
@@ -457,9 +499,41 @@ func startHostMode(dir, overlay string, command func(string, ...string) *exec.Cm
 		}
 	}
 	stopLocked()
-	cmd := command(filepath.Join(dir, "ltk_patcher_host.exe"))
+	// Replace the bundled DLL with the current delivery DLL before starting
+	// the host. Only runs on fresh starts, not when preserving a session.
+	deliveryDLL, _, deliveryErr := deliveryFetch(dir)
+	if deliveryErr != nil {
+		display.Log("LTK: delivery fetch skipped: " + deliveryErr.Error())
+	} else {
+		display.Log("LTK: delivery DLL ready: " + deliveryDLL)
+	}
+
+	// The delivery DLL refuses to init when the host is elevated.
+	// Duplicate the current token, lower it to medium integrity, and hand
+	// it to Go's exec.Cmd so CreateProcessAsUserW launches the host
+	// unelevated while keeping stdin/stdout pipes functional.
+	token, tokenErr := mediumToken()
+	if tokenErr != nil {
+		display.Log("LTK: medium token unavailable, host will run elevated: " + tokenErr.Error())
+	}
+
+	// The delivery DLL verifies that it was loaded by ltk-manager.exe.
+	// Use the renamed host exe so the verify check passes.
+	hostExe := filepath.Join(dir, "ltk-manager.exe")
+	if _, statErr := os.Stat(hostExe); statErr != nil {
+		hostExe = filepath.Join(dir, "ltk_patcher_host.exe")
+	}
+	cmd := command(hostExe)
+	if tokenErr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000,
+			Token:         token,
+		}
+	} else {
+		hide(cmd)
+	}
 	cmd.Dir = dir
-	hide(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
