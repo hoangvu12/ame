@@ -15,7 +15,13 @@
 > (`publish.py` works with any git remote; the worker backend is swappable).
 >
 > **Update:** local generation was later removed from ame. The CDN is now the
-> only package source; the generator runs only in the catalog build.
+> only package source for release builds; the generator runs only in the
+> catalog build.
+>
+> **Update (final):** the catalog CDN is no longer required. LeagueSkins
+> (`github.com/Alban1911/LeagueSkins`) is the default package source, with
+> incremental ETag revalidation and the CDN kept as an opt-in override via
+> `AME_SKIN_CDN_URL`/`AME_SKIN_CDN_TOKEN` (see `internal/skin/leagueskins.go`).
 
 Date: October 2025 (researched against current League patch 16.19)
 

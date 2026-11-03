@@ -42,9 +42,9 @@ go mod tidy
 go build -trimpath -ldflags="-s -w" -o dist/ame.exe ./cmd/ame
 ```
 
-Skin packages come from a remote catalog that release builds have built in.
-Set `AME_SKIN_CDN_URL` and `AME_SKIN_CDN_TOKEN` to point a source build at
-one; without them a source build cannot apply skins.
+Skin packages are downloaded from
+[LeagueSkins](https://github.com/Alban1911/LeagueSkins). Set
+`AME_SKIN_CDN_URL` and `AME_SKIN_CDN_TOKEN` to use ame's own skin CDN instead.
 
 ## Project structure
 

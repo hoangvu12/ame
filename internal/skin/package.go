@@ -64,6 +64,9 @@ func ArtifactKey(skinID string) string {
 		// revision with new bytes must invalidate cached overlays.
 		return skinID + "@" + m.Remote.Digest[:12]
 	}
+	if m.Source == "leagueskins" && m.LeagueSkins != nil && len(m.LeagueSkins.Digest) >= 12 {
+		return skinID + "@" + m.LeagueSkins.Digest[:12]
+	}
 	return skinID
 }
 

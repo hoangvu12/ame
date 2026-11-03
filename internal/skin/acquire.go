@@ -33,7 +33,7 @@ var acquireContext, stopAcquire = context.WithCancel(context.Background())
 func Shutdown() { stopAcquire() }
 
 // RemoveLocalGenerator deletes the skin generator bundles that versions with
-// on-device generation installed. Packages now come only from the CDN.
+// on-device generation installed. Packages are now only downloaded.
 func RemoveLocalGenerator() {
 	dir := filepath.Join(config.AmeDir, "generators")
 	if _, err := os.Stat(dir); err != nil {
@@ -121,6 +121,14 @@ func ensurePackage(ctx context.Context, r PackageRequest, gameDir string) (strin
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if !useCDN() {
+		path, err := leagueSkinsEnsurePackage(ctx, r)
+		if err != nil {
+			return "", fmt.Errorf("skin package unavailable for %s: %w", r.SkinID, err)
+		}
+		logSkin("using LeagueSkins package " + r.SkinID)
+		return path, nil
+	}
 	path, err := remoteEnsurePackage(ctx, r, gameDir)
 	if err != nil {
 		return "", fmt.Errorf("skin package unavailable for %s: %w", r.SkinID, err)
@@ -158,6 +166,13 @@ func GetValidCachedPath(championID, skinID, baseSkinID string) string {
 	r := normalizeRequest(PackageRequest{championID, skinID, baseSkinID})
 	if validRequest(r) != nil {
 		return ""
+	}
+	if !useCDN() {
+		path := leagueSkinsFreshPath(r)
+		if path != "" {
+			logSkin("using LeagueSkins package " + r.SkinID + " (cached)")
+		}
+		return path
 	}
 	gameDir := game.FindGameDir()
 	if gameDir == "" {

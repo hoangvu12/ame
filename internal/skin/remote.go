@@ -245,29 +245,8 @@ func fetchRemotePackage(ctx context.Context, cfg *cdnConfig, r PackageRequest, e
 		return "", fmt.Errorf("digest mismatch")
 	}
 
-	cache := skinDir(r.ChampionID, r.SkinID)
-	if err := os.MkdirAll(cache, 0755); err != nil {
-		return "", err
-	}
-	tmp, err := os.CreateTemp(cache, ".remote-*.fantome")
+	path, artifact, err := storePackage(r, data, "remote-"+strings.ToLower(entry.SHA256)+".fantome")
 	if err != nil {
-		return "", err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-	if err := validatePackage(tmpPath); err != nil {
-		return "", err
-	}
-	artifact := "remote-" + strings.ToLower(entry.SHA256) + ".fantome"
-	path := filepath.Join(cache, artifact)
-	if err := os.Rename(tmpPath, path); err != nil {
 		return "", err
 	}
 
@@ -281,6 +260,36 @@ func fetchRemotePackage(ctx context.Context, cfg *cdnConfig, r PackageRequest, e
 		return "", err
 	}
 	return path, nil
+}
+
+// storePackage validates downloaded package bytes and publishes them in the
+// skin's cache directory as artifact.
+func storePackage(r PackageRequest, data []byte, artifact string) (string, string, error) {
+	cache := skinDir(r.ChampionID, r.SkinID)
+	if err := os.MkdirAll(cache, 0755); err != nil {
+		return "", "", err
+	}
+	tmp, err := os.CreateTemp(cache, ".remote-*.fantome")
+	if err != nil {
+		return "", "", err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return "", "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", "", err
+	}
+	if err := validatePackage(tmpPath); err != nil {
+		return "", "", err
+	}
+	path := filepath.Join(cache, artifact)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return "", "", err
+	}
+	return path, artifact, nil
 }
 
 // remoteValidCachedPath is the validation used by GetValidCachedPath: the

@@ -17,12 +17,14 @@ import (
 
 const cacheMetadataFile = "cache.json"
 
-// cacheMetadata is the per-skin cache record. Only CDN packages are tracked;
-// records of locally generated packages from older versions are never used.
+// cacheMetadata is the per-skin cache record. Only CDN and LeagueSkins
+// packages are tracked; records of locally generated packages from older
+// versions are never used.
 type cacheMetadata struct {
-	Remote    *remoteMetadata `json:"remote,omitempty"`
-	Source    string          `json:"source"`
-	CheckedAt time.Time       `json:"checkedAt"`
+	Remote      *remoteMetadata      `json:"remote,omitempty"`
+	LeagueSkins *leagueSkinsMetadata `json:"leagueSkins,omitempty"`
+	Source      string               `json:"source"`
+	CheckedAt   time.Time            `json:"checkedAt"`
 }
 
 func skinDir(championID, skinID string) string {
