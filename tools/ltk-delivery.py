@@ -22,6 +22,12 @@ Rotation handling:
     no hardcoded version string survives a refresh.
   - 7z on PATH required for NSIS extraction during refresh.
 
+WARNING: the DLL this downloads (ltk_patcher-25 and later) refuses to overlay in a
+third-party host — "host verification failed, refusing overlay: [VRF00000008]",
+which is intentional (LeagueToolkit/ltk-manager#923). ame therefore ships the
+pinned runtime.zip pair and only uses this script to inspect what upstream
+ships. See docs/research/ltk-patcher-delivery.md.
+
 Requires: Python 3.8+, requests.
 """
 

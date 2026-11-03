@@ -78,15 +78,6 @@ func TestHostChild(t *testing.T) {
 	os.Exit(0)
 }
 
-// TestMain keeps the host lifecycle tests offline: the delivery client would
-// otherwise reach the network on every fresh host start.
-func TestMain(m *testing.M) {
-	deliveryFetch = func(string) (string, string, error) {
-		return "", "", fmt.Errorf("delivery disabled in tests")
-	}
-	os.Exit(m.Run())
-}
-
 func TestHeldGameKeepsPreparedScanner(t *testing.T) {
 	factory := func(_ string, _ ...string) *exec.Cmd {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestHostChild$")
