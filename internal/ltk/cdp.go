@@ -364,7 +364,7 @@ const managerShimJS = `(function(){
 const I=window.__TAURI_INTERNALS__;
 if(!I||typeof I.invoke!=="function")return "internals-missing";
 if(window.__AME_BRIDGE__)return "already";
-const bridge={attached:false,pid:null,failure:null};
+const bridge={attached:false,pid:null,failure:null,overlay:null};
 window.__AME_BRIDGE__=bridge;
 const real=I.invoke.bind(I);
 const healthy=id=>({modId:id,health:"healthy",fixable:0,counts:{fatals:0,errors:0,warnings:0,infos:0},checkedAt:new Date().toISOString(),basis:{build:null,manager:"",hashtables:null}});
@@ -391,7 +391,11 @@ const p=(ev&&ev.payload!==undefined)?ev.payload:ev;
 bridge.attached=true;
 bridge.pid=(p&&typeof p.pid==="number")?p.pid:null;
 });
-listen("patcher-game-exited",()=>{bridge.attached=false;bridge.pid=null;});
+listen("patcher-game-exited",()=>{bridge.attached=false;bridge.pid=null;bridge.overlay=null;});
+listen("patcher-game-overlay",ev=>{
+const p=(ev&&ev.payload!==undefined)?ev.payload:ev;
+bridge.overlay=(p&&typeof p.outcome==="string")?p.outcome:null;
+});
 listen("patcher-error",ev=>{
 const p=(ev&&ev.payload!==undefined)?ev.payload:ev;
 try{bridge.failure=(p&&typeof p==="object")?JSON.stringify(p):String(p);}catch(e){bridge.failure=String(p);}
@@ -425,6 +429,7 @@ type bridgeState struct {
 	Attached    bool            `json:"attached"`
 	PID         *uint64         `json:"pid"`
 	Failure     string          `json:"failure"`
+	Overlay     string          `json:"overlay"`
 	Status      *patcherStatus  `json:"status"`
 	StatusError json.RawMessage `json:"statusError"`
 }
@@ -435,7 +440,7 @@ const bridgeStateExpression = `(async()=>{
 const I=window.__TAURI_INTERNALS__;
 const b=window.__AME_BRIDGE__;
 const o={shim:!!b};
-if(b){o.attached=!!b.attached;o.pid=b.pid||null;o.failure=b.failure||null}
+if(b){o.attached=!!b.attached;o.pid=b.pid||null;o.failure=b.failure||null;o.overlay=b.overlay||null}
 if(!I||typeof I.invoke!=="function")return o;
 try{
 const v=await I.invoke("plugin:patcher|get_patcher_status",{});
@@ -499,18 +504,33 @@ func cdpHTTPGet(path string, timeout time.Duration) ([]byte, error) {
 }
 
 // cdpFindPage waits for the manager's WebView page to appear in the DevTools
-// target list.
+// target list. The webview briefly shows about:blank before the Tauri
+// document loads, and a bridge built there dies with the navigation, so the
+// Tauri page is preferred; a bare page is accepted only after waiting for it.
 func cdpFindPage(timeout time.Duration) (cdpPage, error) {
 	deadline := time.Now().Add(timeout)
+	tauriDeadline := time.Now().Add(5 * time.Second)
+	var fallback cdpPage
+	haveFallback := false
 	var lastErr error
 	for {
 		data, err := cdpHTTPGet("/json", 2*time.Second)
 		if err == nil {
 			var pages []cdpPage
 			if json.Unmarshal(data, &pages) == nil {
-				page, found := pickManagerPage(pages)
-				if found {
-					return page, nil
+				for _, page := range pages {
+					if page.Type != "page" || page.WS == "" || strings.Contains(page.URL, "devtools") {
+						continue
+					}
+					if strings.Contains(strings.ToLower(page.URL), "tauri") {
+						return page, nil
+					}
+					if !haveFallback {
+						fallback, haveFallback = page, true
+					}
+				}
+				if haveFallback && time.Now().After(tauriDeadline) {
+					return fallback, nil
 				}
 				lastErr = fmt.Errorf("no page target in %d targets", len(pages))
 			} else {
@@ -520,32 +540,13 @@ func cdpFindPage(timeout time.Duration) (cdpPage, error) {
 			lastErr = err
 		}
 		if time.Now().After(deadline) {
+			if haveFallback {
+				return fallback, nil
+			}
 			return cdpPage{}, fmt.Errorf("DevTools endpoint: %v", lastErr)
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-}
-
-// pickManagerPage selects the Tauri window's page target, never a DevTools
-// front-end page.
-func pickManagerPage(pages []cdpPage) (cdpPage, bool) {
-	var fallback cdpPage
-	haveFallback := false
-	for _, page := range pages {
-		if page.Type != "page" || page.WS == "" {
-			continue
-		}
-		if strings.Contains(page.URL, "devtools") {
-			continue
-		}
-		if strings.Contains(strings.ToLower(page.URL), "tauri") {
-			return page, true
-		}
-		if !haveFallback {
-			fallback, haveFallback = page, true
-		}
-	}
-	return fallback, haveFallback
 }
 
 // --- manager process helpers ---

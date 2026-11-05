@@ -45,10 +45,13 @@ func TestLiveStartSession(t *testing.T) {
 		t.Skipf("no League game directory at %s: %v", game, err)
 	}
 
+	// Champion select: the patcher session is armed before any game exists.
 	overlay := filepath.Join(config.AmeDir, "overlay")
-	if err := os.MkdirAll(overlay, 0755); err != nil {
-		t.Fatal(err)
+	release, err := BeginPreparation(overlay)
+	if err != nil {
+		t.Fatalf("BeginPreparation: %v", err)
 	}
+	defer release()
 	if err := Build(modsDir, overlay, game, modName); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -103,9 +106,19 @@ func TestLiveStartSession(t *testing.T) {
 	if err := Start(overlay); err != nil {
 		t.Fatalf("second Start: %v", err)
 	}
+	managerMu.Lock()
+	firstPID := 0
+	if manager != nil && manager.cmd != nil && manager.cmd.Process != nil {
+		firstPID = manager.cmd.Process.Pid
+	}
+	managerMu.Unlock()
+	if firstPID == 0 {
+		t.Fatal("no manager process after Start")
+	}
 
-	// A different skin package must stop the live patcher, replace the mod,
-	// and start a new session.
+	// A different skin package must swap the mod in place: the manager
+	// process and its patcher session keep running, because the session's
+	// start time is what lets the injected DLL pass its join check.
 	overlay2 := filepath.Join(config.AmeDir, "overlay2")
 	if err := os.MkdirAll(overlay2, 0755); err != nil {
 		t.Fatal(err)
@@ -124,6 +137,15 @@ func TestLiveStartSession(t *testing.T) {
 			t.Fatalf("second patcher session failed: %s", s.failure)
 		}
 		time.Sleep(500 * time.Millisecond)
+	}
+	managerMu.Lock()
+	secondPID := 0
+	if manager != nil && manager.cmd != nil && manager.cmd.Process != nil {
+		secondPID = manager.cmd.Process.Pid
+	}
+	managerMu.Unlock()
+	if secondPID != firstPID {
+		t.Fatalf("skin switch relaunched the manager (pid %d -> %d); the session timeline reset", firstPID, secondPID)
 	}
 	managerMu.Lock()
 	session = manager

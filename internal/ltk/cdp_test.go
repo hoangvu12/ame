@@ -237,26 +237,6 @@ func TestBridgeStateParsing(t *testing.T) {
 	}
 }
 
-func TestPickManagerPage(t *testing.T) {
-	pages := []cdpPage{
-		{Type: "page", URL: "devtools://devtools/bundled/inspector.html", WS: "ws://1"},
-		{Type: "iframe", URL: "http://tauri.localhost/", WS: "ws://2"},
-		{Type: "page", URL: "https://example.com", WS: "ws://3"},
-		{Type: "page", URL: "http://tauri.localhost/index.html", WS: "ws://4"},
-	}
-	page, ok := pickManagerPage(pages)
-	if !ok || page.WS != "ws://4" {
-		t.Fatalf("tauri page not preferred: %+v ok=%v", page, ok)
-	}
-	fallback, ok := pickManagerPage([]cdpPage{{Type: "page", URL: "https://example.com", WS: "ws://3"}})
-	if !ok || fallback.WS != "ws://3" {
-		t.Fatalf("fallback page not selected: %+v ok=%v", fallback, ok)
-	}
-	if _, ok := pickManagerPage([]cdpPage{{Type: "page", URL: "devtools://x", WS: "ws://1"}}); ok {
-		t.Fatal("devtools page accepted as the manager page")
-	}
-}
-
 func TestErrorText(t *testing.T) {
 	cases := map[string]string{
 		`{"code":"PATCHER","error":{"kind":"LEAGUE_ELEVATED"}}`: "PATCHER: LEAGUE_ELEVATED",

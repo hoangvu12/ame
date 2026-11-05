@@ -205,3 +205,14 @@ func TestArmSuspendedWaitsForPatching(t *testing.T) {
 		t.Fatalf("armed patcher did not release the game: %v", err)
 	}
 }
+
+func TestOverlayFailureMessage(t *testing.T) {
+	if overlayFailureMessage("Live") != "" || overlayFailureMessage("None") != "" || overlayFailureMessage("") != "" {
+		t.Fatal("non-failing overlay outcomes reported as failures")
+	}
+	for _, outcome := range []string{"TooLate", "EndOfLife", "Disabled", "HookFailed"} {
+		if overlayFailureMessage(outcome) == "" {
+			t.Fatalf("%s is not reported as a failure", outcome)
+		}
+	}
+}

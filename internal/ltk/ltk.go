@@ -514,7 +514,14 @@ func Start(overlay string) error {
 	return startSession(pkg)
 }
 
-// startSession swaps the manager's mod and starts the patcher.
+// startSession arms pkg as the manager's skin package.
+//
+// When a session is already live the mod is swapped in place: the manager
+// rebuilds its overlay in the background and the host process — whose
+// session start the injected DLL compares against the game's creation —
+// keeps running, so a game launched later in the session still passes the
+// DLL's join check. Restarting the patcher here would reset that timeline
+// and make every in-flight game join too late.
 func startSession(pkg string) error {
 	managerMu.Lock()
 	defer managerMu.Unlock()
@@ -522,10 +529,13 @@ func startSession(pkg string) error {
 	if err != nil {
 		return err
 	}
-	// The manager defers library edits while a session is live, so the
-	// previous session is stopped before the mod is swapped.
-	if err := stopPatcherSession(m); err != nil {
-		return err
+	if status, err := m.cdp.patcherStatus(); err == nil && status.Running {
+		if err := swapAmeMod(m, pkg); err != nil {
+			return err
+		}
+		m.cdp.clearBridgeFailure()
+		setSnapshot(func(s *managerSnapshot) { s.failure = "" })
+		return awaitOverlayRebuild(m)
 	}
 	if err := uninstallAmeMods(m); err != nil {
 		return err
@@ -546,21 +556,63 @@ func startSession(pkg string) error {
 	return awaitPatcherStart(m)
 }
 
-// stopPatcherSession stops a live patcher session and waits for it to end.
-func stopPatcherSession(m *managerSession) error {
-	if err := m.cdp.stopPatcher(); err != nil {
-		display.Log("LTK: patcher stop: " + err.Error())
+// swapAmeMod installs pkg as the library's only ame mod while the patcher
+// runs. The rebuild the edit triggers is deferred behind a running game and
+// applied when it ends.
+func swapAmeMod(m *managerSession, pkg string) error {
+	if m.modFile == pkg && m.modID != "" {
+		return nil
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	if err := uninstallAmeMods(m); err != nil {
+		return err
+	}
+	modID, err := m.cdp.installMod(pkg)
+	if err != nil {
+		return fmt.Errorf("LTK install: %w", err)
+	}
+	m.modID, m.modFile = modID, pkg
+	if err := m.cdp.toggleMod(modID, true); err != nil {
+		return fmt.Errorf("LTK enable: %w", err)
+	}
+	return nil
+}
+
+// awaitOverlayRebuild waits until the background rebuild a mid-session mod
+// swap triggers has finished: the session thread picks the edit up by dipping
+// the phase to "building" and returns to scanning ("patching") when the new
+// overlay is in place. A rebuild fast enough to be missed, or one deferred
+// behind a running game, leaves the phase at "patching" throughout.
+func awaitOverlayRebuild(m *managerSession) error {
+	buildingDeadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
+	seenBuilding := false
 	for {
 		status, err := m.cdp.patcherStatus()
-		if err == nil && !status.Running {
-			return nil
+		if err == nil {
+			switch status.Phase {
+			case "building":
+				seenBuilding = true
+			case "patching":
+				if seenBuilding || time.Now().After(buildingDeadline) {
+					return nil
+				}
+			case "idle":
+				if failure := currentSnapshot().failure; failure != "" {
+					return fmt.Errorf("LTK patcher start: %s", failure)
+				}
+				return fmt.Errorf("LTK patcher stopped while rebuilding the overlay")
+			}
+		} else {
+			display.Log("LTK: patcher status: " + err.Error())
+		}
+		if failure := currentSnapshot().failure; failure != "" {
+			return fmt.Errorf("LTK session failed: %s", failure)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("LTK patcher did not stop: %v", err)
+			display.Log("LTK: overlay rebuild still running; the skin applies when it finishes")
+			return nil
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
 	}
 }
 
@@ -730,6 +782,23 @@ func killLaunchedManager(cmd *exec.Cmd) {
 	go func() { _ = cmd.Wait() }()
 }
 
+// overlayFailureMessage translates the DLL's verdict about the overlay of
+// an attached game into a failure. "Live" means the overlay went out;
+// "None" means the DLL said nothing, which also happens mid-attach.
+func overlayFailureMessage(outcome string) string {
+	switch outcome {
+	case "TooLate":
+		return "the game started before the patcher session; start a fresh match after selecting the skin"
+	case "EndOfLife":
+		return "the patcher DLL reached end of life; update LTK Manager's patcher"
+	case "Disabled":
+		return "the overlay failed the DLL's verification and was disabled"
+	case "HookFailed":
+		return "the DLL could not install its overlay hook"
+	}
+	return ""
+}
+
 // pollManager keeps the session snapshot current: phase and running state
 // from the manager's status command, attachment and failures from the event
 // bridge. The loop ends when the session is torn down, the manager dies, or
@@ -768,6 +837,11 @@ func pollManager(m *managerSession) {
 		failure := state.Failure
 		if failure != "" {
 			failure = errorText(json.RawMessage(failure))
+		}
+		if overlay := overlayFailureMessage(state.Overlay); overlay != "" && state.Attached {
+			// The game is attached but the DLL stayed inert: the skin the user
+			// armed for this match did not apply, and that must be visible.
+			failure = overlay
 		}
 		setSnapshot(func(s *managerSnapshot) {
 			*s = managerSnapshot{
