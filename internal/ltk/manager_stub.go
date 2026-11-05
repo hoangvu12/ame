@@ -115,9 +115,10 @@ func main() {
 
 	startErr := hostCmd.Start()
 
-	// Terminate the suspended decoy — it is no longer needed once the
-	// host is created (or failed). Close both handles.
-	syscall.TerminateProcess(syscall.Handle(pi.Process), 0)
+	// Close our handles to the suspended manager. The suspended process
+	// stays alive so the DLL can inspect its parent during init. It
+	// consumes negligible resources (no code ever executes) and is
+	// cleaned up by the OS when ame exits.
 	syscall.CloseHandle(syscall.Handle(pi.Process))
 	syscall.CloseHandle(syscall.Handle(pi.Thread))
 
