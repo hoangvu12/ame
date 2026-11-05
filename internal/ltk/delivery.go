@@ -307,27 +307,11 @@ func DeliveryFetch(dstDir string) (string, string, error) {
 	}
 
 	// The signed ltk-manager.exe from the installer is needed so the launcher
-	// can spoof the parent process for VRF00000009. Failures are non-fatal;
-	// the launcher falls back to launching the host directly.
-	if err := deliveryEnsureRealManager(dstDir); err != nil {
-		display.Log("LTK: signed manager fetch skipped: " + err.Error())
-	}
-
 	return dllPath, manifest.Release.Version, nil
 }
 
 // hostReleaseFile records the LTK Manager release the delivered host came from.
 const hostReleaseFile = "ltk-patcher-host.release"
-
-// managerReleaseFile records the LTK Manager release the signed manager came from.
-const managerReleaseFile = "ltk-manager.release"
-
-// managerExeName is the on-disk name of the signed ltk-manager.exe extracted from
-// the installer. The suffix avoids a clash with the Go stub (which is also
-// compiled as ltk-manager.exe). The parent override uses this file's path, and
-// WinVerifyTrust verifies the file on disk — the image name is irrelevant for
-// VRF00000009.
-const managerExeName = "ltk-manager-signed.exe"
 
 // deliveryEnsureHost replaces ltk_patcher_host.exe with the host from the
 // newest LTK Manager release. Nothing is downloaded when the delivered host
@@ -384,32 +368,6 @@ func ltkLatestSetup() (string, string, error) {
 		}
 	}
 	return "", "", fmt.Errorf("no setup.exe in %s", release.TagName)
-}
-
-// deliveryEnsureRealManager extracts the signed ltk-manager.exe from the latest
-// LTK Manager NSIS installer and writes it as ltk-manager-signed.exe in dstDir.
-// The file is cached with a release marker to avoid re-downloading the same
-// installer. Failures are returned so callers can fall back to direct host launch.
-func deliveryEnsureRealManager(dstDir string) error {
-	tag, setupURL, err := ltkLatestSetup()
-	if err != nil {
-		return err
-	}
-	managerPath := filepath.Join(dstDir, managerExeName)
-	if marked, err := os.ReadFile(filepath.Join(dstDir, managerReleaseFile)); err == nil {
-		if _, statErr := os.Stat(managerPath); statErr == nil && strings.TrimSpace(string(marked)) == tag {
-			return nil
-		}
-	}
-
-	data, err := ltkFileFromInstaller(setupURL, "ltk-manager.exe")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(managerPath, data, 0644); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dstDir, managerReleaseFile), []byte(tag), 0644)
 }
 
 // ltkHostFromInstaller extracts ltk_patcher_host.exe from an NSIS installer.

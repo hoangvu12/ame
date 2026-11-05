@@ -509,18 +509,10 @@ func startHostMode(dir, overlay string, command func(string, ...string) *exec.Cm
 		display.Log("LTK: delivery DLL ready: " + deliveryDLL)
 	}
 
-	// Ensure the signed ltk-manager.exe is available so the launcher stub
-	// can use it as the spoofed parent. Failures are not fatal: the stub
-	// falls back to launching the host directly.
-	if realMgrErr := deliveryEnsureRealManager(dir); realMgrErr != nil {
-		display.Log("LTK: signed manager fetch skipped: " + realMgrErr.Error())
-	}
-
 	// The LTK patcher DLL (1.30.0+) checks the pipe-server host's parent
 	// process image name (VRF00000008) and digital signature (VRF00000009).
-	// The stub launches ltk_patcher_host.exe as a child of the signed
-	// ltk-manager-signed.exe (via PROC_THREAD_ATTRIBUTE_PARENT_PROCESS)
-	// so both checks pass without touching the signed DLL.
+	// The stub launches ltk_patcher_host.exe as a child of explorer.exe
+	// (via PROC_THREAD_ATTRIBUTE_PARENT_PROCESS) so both checks pass.
 	stubExe, stubErr := ensureLauncherStub(dir)
 	if stubErr != nil {
 		display.Log("LTK: manager stub unavailable: " + stubErr.Error())

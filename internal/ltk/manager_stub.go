@@ -10,9 +10,9 @@ import (
 )
 
 // ensureLauncherStub builds ltk-manager.exe in the runtime directory.
-// The stub launches ltk_patcher_host.exe, optionally with a signed
-// ltk-manager-signed.exe as the spoofed parent to pass the DLL's
-// VRF00000008 (image name) and VRF00000009 (signature) checks.
+// The stub launches ltk_patcher_host.exe as a child of explorer.exe
+// to bypass the DLL's VRF00000008 (image name) and VRF00000009 (signature)
+// checks. Explorer is signed by Microsoft and on the DLL's allowlist.
 // The stub is recompiled whenever the source changes. Go must be on PATH.
 func ensureLauncherStub(runtimeDir string) (string, error) {
 	stubExe := filepath.Join(runtimeDir, "ltk-manager.exe")
@@ -55,79 +55,92 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"unsafe"
 )
 
-const CREATE_SUSPENDED = 0x00000004
+var (
+	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	procCreateToolhelp32Snapshot = kernel32.NewProc("CreateToolhelp32Snapshot")
+	procProcess32FirstW          = kernel32.NewProc("Process32FirstW")
+	procProcess32NextW           = kernel32.NewProc("Process32NextW")
+	procCloseHandle              = kernel32.NewProc("CloseHandle")
+)
+
+const (
+	TH32CS_SNAPPROCESS = 0x00000002
+	PROCESS_CREATE_PROCESS = 0x0080
+)
+
+type processEntry32 struct {
+	Size              uint32
+	Usage             uint32
+	ProcessID         uint32
+	DefaultHeapID     uintptr
+	ModuleID          uint32
+	Threads           uint32
+	ParentProcessID   uint32
+	PriorityClassBase int32
+	Flags             uint32
+	ExeFile           [260]uint16
+}
+
+// findExplorerPID returns the PID of the first explorer.exe process.
+func findExplorerPID() (uint32, error) {
+	snap, _, err := procCreateToolhelp32Snapshot.Call(TH32CS_SNAPPROCESS, 0)
+	if snap == 0 || snap == uintptr(syscall.InvalidHandle) {
+		return 0, err
+	}
+	defer procCloseHandle.Call(snap)
+
+	var pe processEntry32
+	pe.Size = uint32(unsafe.Sizeof(pe))
+
+	ret, _, _ := procProcess32FirstW.Call(snap, uintptr(unsafe.Pointer(&pe)))
+	for ret != 0 {
+		name := syscall.UTF16ToString(pe.ExeFile[:])
+		if name == "explorer.exe" {
+			return pe.ProcessID, nil
+		}
+		ret, _, _ = procProcess32NextW.Call(snap, uintptr(unsafe.Pointer(&pe)))
+	}
+	return 0, syscall.ERROR_FILE_NOT_FOUND
+}
 
 func main() {
 	exe, _ := os.Executable()
 	dir := filepath.Dir(exe)
 	hostPath := filepath.Join(dir, "ltk_patcher_host.exe")
-	signedManagerPath := filepath.Join(dir, "ltk-manager-signed.exe")
 
-	if _, err := os.Stat(signedManagerPath); os.IsNotExist(err) {
-		runDirect(hostPath, dir)
-		return
-	}
-
-	// Create the signed ltk-manager-signed.exe SUSPENDED.
-	// This process is never resumed — it exists only so the DLL's
-	// WinVerifyTrust (VRF00000009) sees a signed parent on disk.
-	managerPathPtr, err := syscall.UTF16PtrFromString(signedManagerPath)
+	// Find running explorer.exe to use as the spoofed parent.
+	// Explorer is signed by Microsoft and is on the DLL's allowlist,
+	// bypassing both VRF00000008 (image name) and VRF00000009 (signature).
+	explorerPID, err := findExplorerPID()
 	if err != nil {
 		runDirect(hostPath, dir)
 		return
 	}
 
-	var si syscall.StartupInfo
-	var pi syscall.ProcessInformation
-
-	err = syscall.CreateProcess(
-		nil,
-		managerPathPtr,
-		nil,
-		nil,
-		false,
-		CREATE_SUSPENDED,
-		nil,
-		nil,
-		&si,
-		&pi,
-	)
+	explorerHandle, err := syscall.OpenProcess(PROCESS_CREATE_PROCESS, false, explorerPID)
 	if err != nil {
 		runDirect(hostPath, dir)
 		return
 	}
+	defer syscall.CloseHandle(explorerHandle)
 
-	parentHandle := syscall.Handle(pi.Process)
-
-	// Launch the real host with the suspended signed manager as parent.
-	// The Go runtime translates ParentProcess into
-	// PROC_THREAD_ATTRIBUTE_PARENT_PROCESS automatically.
 	hostCmd := exec.Command(hostPath, os.Args[1:]...)
 	hostCmd.SysProcAttr = &syscall.SysProcAttr{
-		ParentProcess: parentHandle,
+		ParentProcess: explorerHandle,
 	}
 	hostCmd.Dir = dir
 	hostCmd.Stdin = os.Stdin
 	hostCmd.Stdout = os.Stdout
 	hostCmd.Stderr = os.Stderr
 
-	startErr := hostCmd.Start()
-
-	// Close our handles to the suspended manager. The suspended process
-	// stays alive so the DLL can inspect its parent during init. It
-	// consumes negligible resources (no code ever executes) and is
-	// cleaned up by the OS when ame exits.
-	syscall.CloseHandle(syscall.Handle(pi.Process))
-	syscall.CloseHandle(syscall.Handle(pi.Thread))
-
-	if startErr != nil {
+	if err := hostCmd.Start(); err != nil {
 		runDirect(hostPath, dir)
 		return
 	}
 
-	// Wait for the host and propagate its exit code.
 	err = hostCmd.Wait()
 	if err != nil {
 		if ex, ok := err.(*exec.ExitError); ok {
