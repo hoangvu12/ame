@@ -1,21 +1,31 @@
 package ltk
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // ensureLauncherStub builds ltk-manager.exe in the runtime directory.
 // The stub launches ltk_patcher_host.exe, optionally with a signed
 // ltk-manager-signed.exe as the spoofed parent to pass the DLL's
 // VRF00000008 (image name) and VRF00000009 (signature) checks.
-// The stub is cached after first build. Go must be on PATH.
+// The stub is recompiled whenever the source changes. Go must be on PATH.
 func ensureLauncherStub(runtimeDir string) (string, error) {
 	stubExe := filepath.Join(runtimeDir, "ltk-manager.exe")
-	if _, err := os.Stat(stubExe); err == nil {
-		return stubExe, nil
+
+	// Hash the current stub source. If the compiled exe was built from a
+	// different source, rebuild it. This prevents stale stubs from running
+	// after manager_stub.go is updated.
+	srcHash := fmt.Sprintf("%x", sha256.Sum256([]byte(managerStubSrc)))
+	hashFile := filepath.Join(runtimeDir, "ltk-manager-stub.hash")
+	if existing, err := os.ReadFile(hashFile); err == nil {
+		if _, statErr := os.Stat(stubExe); statErr == nil && strings.TrimSpace(string(existing)) == srcHash {
+			return stubExe, nil
+		}
 	}
 
 	srcDir := filepath.Join(runtimeDir, "ltk-manager-stub")
@@ -34,6 +44,7 @@ func ensureLauncherStub(runtimeDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("build ltk-manager stub: %v\n%s", err, out)
 	}
+	os.WriteFile(hashFile, []byte(srcHash), 0644)
 	return stubExe, nil
 }
 
