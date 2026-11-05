@@ -466,7 +466,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 			}
 		}
 
-		display.Log(fmt.Sprintf("Apply: building overlay with mods: %s", modName))
+		display.Log(fmt.Sprintf("Apply: building skin package with mods: %s", modName))
 		teammateSkinCount = strings.Count(modName, "/")
 		if hasCustomMods {
 			teammateSkinCount -= len(customModNames)
@@ -658,7 +658,7 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 		}
 	}
 
-	display.Log(fmt.Sprintf("Prefetch: building overlay with mods: %s", modName))
+	display.Log(fmt.Sprintf("Prefetch: building skin package with mods: %s", modName))
 
 	success, exitCode := modtools.RunMkOverlay(config.ModsDir, config.OverlayDir, gameDir, modName)
 	if !success {
