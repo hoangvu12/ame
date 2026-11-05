@@ -33,9 +33,6 @@ var assets embed.FS
 
 var prepareMu sync.Mutex
 
-// deliveryFetch is DeliveryFetch, overridden by tests to stay offline.
-var deliveryFetch = DeliveryFetch
-
 // ameModName is the library name every skin package ame installs carries.
 // ame uninstalls exactly the mods holding this name before installing a new
 // one, so leftovers from a crashed run cannot stack in the manager's library.
@@ -47,8 +44,10 @@ var gameDir string
 
 // Prepare installs immutable, content-addressed files; no download at runtime.
 // The patcher DLL and host are excluded from hash validation and never
-// overwritten: DeliveryFetch replaces both with a current, matched pair after
-// extraction (the bundled copies are the offline fallback).
+// overwritten: a runtime directory written by an older ame may hold the pair
+// its delivery service installed (the bundled copies are the offline
+// fallback). The manager runtime ame launches is delivered separately, into
+// the shared manager cache (see delivery.go).
 func Prepare() (string, error) {
 	prepareMu.Lock()
 	defer prepareMu.Unlock()
@@ -71,7 +70,7 @@ func Prepare() (string, error) {
 		if zipname.Unsafe(entry.Name) {
 			return "", fmt.Errorf("unsafe runtime entry")
 		}
-		// DLL and host are replaced by DeliveryFetch; skip hash.
+		// Legacy delivered pairs may sit beside the bundle; skip their hash.
 		if strings.EqualFold(name, "ltk_patcher_dll.dll") || strings.EqualFold(name, "ltk_patcher_host.exe") {
 			if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(name))); err != nil {
 				valid = false
@@ -114,7 +113,7 @@ func Prepare() (string, error) {
 			}
 			continue
 		}
-		// The DLL and host are replaced by DeliveryFetch; don't overwrite them.
+		// Legacy delivered pairs may sit beside the bundle; never overwrite them.
 		if strings.EqualFold(entry.Name, "ltk_patcher_dll.dll") || strings.EqualFold(entry.Name, "ltk_patcher_host.exe") {
 			if _, err := os.Stat(target); err == nil {
 				continue
@@ -506,21 +505,20 @@ func Start(overlay string) error {
 			return nil
 		}
 	}
-	dir, err := Prepare()
-	if err != nil {
-		return err
-	}
 	if _, err := os.Stat(pkg); err != nil {
 		return fmt.Errorf("LTK skin package for %s is missing (build the overlay first): %w", prefix, err)
 	}
-	return startSession(dir, pkg)
+	if _, err := Prepare(); err != nil {
+		return err
+	}
+	return startSession(pkg)
 }
 
 // startSession swaps the manager's mod and starts the patcher.
-func startSession(dir, pkg string) error {
+func startSession(pkg string) error {
 	managerMu.Lock()
 	defer managerMu.Unlock()
-	m, err := ensureManagerLocked(dir)
+	m, err := ensureManagerLocked()
 	if err != nil {
 		return err
 	}
@@ -598,9 +596,9 @@ func awaitPatcherStart(m *managerSession) error {
 			if status.Phase != "" && status.Phase != "idle" {
 				setSnapshot(func(s *managerSnapshot) {
 					s.alive = true
-				s.running = status.Running
-				s.phase = status.Phase
-			})
+					s.running = status.Running
+					s.phase = status.Phase
+				})
 				return nil
 			}
 		} else {
@@ -656,7 +654,7 @@ func killManagerTree(cmd *exec.Cmd) {
 
 // ensureManagerLocked returns a live manager session, launching the manager
 // when needed. The caller holds managerMu.
-func ensureManagerLocked(dir string) (*managerSession, error) {
+func ensureManagerLocked() (*managerSession, error) {
 	if m := manager; m != nil && m.alive() {
 		if _, err := m.cdp.patcherStatus(); err == nil {
 			return m, nil
@@ -664,17 +662,17 @@ func ensureManagerLocked(dir string) (*managerSession, error) {
 		display.Log("LTK: manager session lost its DevTools connection; relaunching")
 	}
 	stopLocked()
-	// Keep the delivered runtime pair next to the manager: it launches the
-	// host exe as its bundled injector and delivers the DLL itself.
-	if dll, _, err := deliveryFetch(dir); err != nil {
-		display.Log("LTK: delivery fetch skipped: " + err.Error())
-	} else {
-		display.Log("LTK: delivery DLL ready: " + dll)
-	}
-	if err := ensureSignedManager(dir); err != nil {
-		return nil, err
-	}
+	// Terminate any running manager before touching its files: the
+	// single-instance plugin would otherwise focus the old window, and the
+	// delivered pair cannot be replaced while it runs.
 	killExistingManagers()
+	// The manager runtime is delivered to the shared cache, one download for
+	// the manager and its bundled injector. The manager delivers the patcher
+	// DLL itself.
+	exe, err := managerFetch()
+	if err != nil {
+		return nil, fmt.Errorf("LTK manager runtime: %w", err)
+	}
 	if managerPortInUse() {
 		if err := waitForPortFree(3 * time.Second); err != nil {
 			return nil, fmt.Errorf("LTK cannot use DevTools port %d: %w", cdpPort, err)
@@ -683,7 +681,7 @@ func ensureManagerLocked(dir string) (*managerSession, error) {
 	if err := configureManagerSettings(gameDir); err != nil {
 		display.Log("LTK: manager settings: " + err.Error())
 	}
-	cmd, err := launchManager(filepath.Join(dir, managerExeName))
+	cmd, err := launchManager(exe)
 	if err != nil {
 		return nil, fmt.Errorf("LTK manager launch: %w", err)
 	}

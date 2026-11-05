@@ -22,9 +22,9 @@ func TestLiveStartSession(t *testing.T) {
 	old := config.AmeDir
 	config.AmeDir = t.TempDir()
 	defer func() { config.AmeDir = old }()
-	deliveryStub := deliveryFetch
-	deliveryFetch = DeliveryFetch
-	defer func() { deliveryFetch = deliveryStub }()
+	fetchStub := managerFetch
+	managerFetch = ManagerFetch
+	defer func() { managerFetch = fetchStub }()
 
 	modsDir := os.Getenv("AME_LIVE_MODS")
 	if modsDir == "" {

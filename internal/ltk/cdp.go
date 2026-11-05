@@ -38,9 +38,6 @@ const (
 	cdpStatusTimeout    = 10 * time.Second
 )
 
-// managerExeName is the image name of the signed manager binary.
-const managerExeName = "ltk-manager.exe"
-
 // --- CDP client ---
 
 // cdpClient is a WebSocket connection to the manager page's DevTools

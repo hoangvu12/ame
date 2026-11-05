@@ -6,7 +6,17 @@ import (
 	"testing"
 )
 
+// stubGameWindow keeps publication tests deterministic while the League
+// client may be open on the test machine.
+func stubGameWindow(t *testing.T, exists bool) {
+	t.Helper()
+	previous := gameWindowExists
+	gameWindowExists = func() bool { return exists }
+	t.Cleanup(func() { gameWindowExists = previous })
+}
+
 func TestOverlayPublicationAndRollback(t *testing.T) {
+	stubGameWindow(t, false)
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "commit", true: "rollback"}[fail], func(t *testing.T) {
 			root := t.TempDir()
@@ -46,6 +56,7 @@ func TestOverlayPublicationAndRollback(t *testing.T) {
 }
 
 func TestOverlayPublicationWithoutPackage(t *testing.T) {
+	stubGameWindow(t, false)
 	root := t.TempDir()
 	overlay, staged := filepath.Join(root, "overlay"), filepath.Join(root, "staged")
 	os.Mkdir(overlay, 0755)
@@ -59,5 +70,22 @@ func TestOverlayPublicationWithoutPackage(t *testing.T) {
 	}
 	if _, err := os.Stat(pkgTo); !os.IsNotExist(err) {
 		t.Fatalf("package from the previous overlay survived: %v", err)
+	}
+}
+
+func TestOverlayPublicationRefusedDuringGame(t *testing.T) {
+	stubGameWindow(t, true)
+	root := t.TempDir()
+	overlay, staged := filepath.Join(root, "overlay"), filepath.Join(root, "staged")
+	os.Mkdir(overlay, 0755)
+	os.WriteFile(filepath.Join(overlay, "old.wad"), []byte("old"), 0600)
+	os.Mkdir(staged, 0755)
+	os.WriteFile(filepath.Join(staged, "new.wad"), []byte("new"), 0600)
+	if err := publishOverlay(staged, overlay, "", overlay+".fantome"); err == nil {
+		t.Fatal("publication accepted while a game window exists")
+	}
+	got, err := os.ReadFile(filepath.Join(overlay, "old.wad"))
+	if err != nil || string(got) != "old" {
+		t.Fatalf("overlay for the running match was replaced: %q %v", got, err)
 	}
 }

@@ -20,26 +20,9 @@ func TestLiveManagerSession(t *testing.T) {
 	old := config.AmeDir
 	config.AmeDir = t.TempDir()
 	defer func() { config.AmeDir = old }()
-	deliveryStub := deliveryFetch
-	deliveryFetch = DeliveryFetch
-	defer func() { deliveryFetch = deliveryStub }()
-
-	dir, err := Prepare()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The bundled runtime does not carry the manager exe; a previous delivery
-	// may have left one under the shared runtime directory.
-	if _, err := os.Stat(filepath.Join(dir, managerExeName)); err != nil {
-		for _, runtimeDir := range runtimeDirs(t) {
-			if data, err := os.ReadFile(filepath.Join(runtimeDir, "ltk-manager-signed.exe")); err == nil {
-				os.WriteFile(filepath.Join(dir, managerExeName), data, 0644)
-			}
-		}
-	}
-	if err := ensureSignedManager(dir); err != nil {
-		t.Skipf("no LTK Manager exe available: %v", err)
-	}
+	fetchStub := managerFetch
+	managerFetch = ManagerFetch
+	defer func() { managerFetch = fetchStub }()
 
 	// Pack a real skin mod: the importer mounts packed WADs, so a synthetic
 	// archive cannot be installed.
@@ -66,7 +49,7 @@ func TestLiveManagerSession(t *testing.T) {
 	}
 
 	managerMu.Lock()
-	m, err := ensureManagerLocked(dir)
+	m, err := ensureManagerLocked()
 	managerMu.Unlock()
 	defer Stop()
 	if err != nil {
@@ -131,20 +114,4 @@ func TestLiveManagerSession(t *testing.T) {
 	if err := m.cdp.uninstallMod(modID); err != nil {
 		t.Fatalf("uninstall_mod: %v", err)
 	}
-}
-
-func runtimeDirs(t *testing.T) []string {
-	t.Helper()
-	base := filepath.Join(os.Getenv("LOCALAPPDATA"), "ame", "runtimes")
-	entries, err := os.ReadDir(base)
-	if err != nil {
-		return nil
-	}
-	var dirs []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			dirs = append(dirs, filepath.Join(base, entry.Name()))
-		}
-	}
-	return dirs
 }

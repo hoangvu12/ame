@@ -31,11 +31,7 @@ func prewarmManager() error {
 			return nil
 		}
 	}
-	dir, err := Prepare()
-	if err != nil {
-		return err
-	}
-	_, err = ensureManagerLocked(dir)
+	_, err := ensureManagerLocked()
 	return err
 }
 

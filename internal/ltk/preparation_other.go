@@ -2,4 +2,4 @@
 
 package ltk
 
-func gameWindowExists() bool { return false }
+var gameWindowExists = func() bool { return false }

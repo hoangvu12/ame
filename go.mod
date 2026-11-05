@@ -6,6 +6,7 @@ require (
 	github.com/energye/systray v1.0.2
 	github.com/gorilla/websocket v1.5.1
 	github.com/klauspost/compress v1.17.11
+	github.com/ulikunitz/xz v0.5.12
 	golang.org/x/sys v0.15.0
 )
 

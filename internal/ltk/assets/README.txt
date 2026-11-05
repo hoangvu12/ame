@@ -4,15 +4,19 @@ signature-pinned), our ame-ltk-overlay.exe helper, license/notice files and
 the helper's source. A plain `go build` embeds it; no toolchain beyond Go
 is required.
 
-The bundled host and DLL are the offline fallback. On a fresh manager start,
-internal/ltk/delivery.go registers with LeagueToolkit's delivery service and
-replaces both files with the current signed pair (DLL from the service, host
-and ltk-manager.exe from the newest LTK Manager release installer; needs 7z
-on PATH). Delivery failures are logged and the bundled files are used
-instead, so Prepare() deliberately skips hash validation for those two files
-and never overwrites a delivered pair. ltk-manager.exe itself is never
-bundled: ame launches the copy DeliveryFetch extracted from the installer
-and drives it over the WebView2 DevTools protocol (internal/ltk/cdp.go).
+The bundled host and DLL pair is the offline fallback of the old
+architecture; the manager runtime ame actually launches never comes from
+this zip. On a fresh manager start, internal/ltk/delivery.go downloads the
+newest LTK Manager release from GitHub and extracts the signed
+ltk-manager.exe plus its bundled ltk_patcher_host.exe into the shared
+%LOCALAPPDATA%\ame\manager cache with a pure-Go NSIS reader (internal/
+ltk/nsis.go) — no 7-Zip on PATH is required, and nothing is re-downloaded
+while the release tag matches. The patcher DLL itself is delivered by the
+manager, from LeagueToolkit's delivery service, when its patcher starts.
+
+Prepare() deliberately skips hash validation for the bundled host and DLL
+and never overwrites them: a runtime directory written by an older ame may
+hold the pair its delivery service installed.
 
 The manager runs hidden with --shell-relaunched (so it stays ame's child and
 keeps ame's environment) and unelevated (see LTK ADR-0067 and ADR-0074): the

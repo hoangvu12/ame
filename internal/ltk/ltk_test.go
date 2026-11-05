@@ -13,11 +13,11 @@ import (
 	"github.com/hoangvu12/ame/internal/config"
 )
 
-// TestMain keeps the manager tests offline: the delivery client would
-// otherwise reach the network on every fresh manager start.
+// TestMain keeps the manager tests offline: the release client would
+// otherwise reach GitHub on every fresh manager start.
 func TestMain(m *testing.M) {
-	deliveryFetch = func(string) (string, string, error) {
-		return "", "", fmt.Errorf("delivery disabled in tests")
+	managerFetch = func() (string, error) {
+		return "", fmt.Errorf("delivery disabled in tests")
 	}
 	os.Exit(m.Run())
 }
