@@ -2,6 +2,7 @@ package ltk
 
 import (
 	"fmt"
+	"os/exec"
 	"syscall"
 	"unsafe"
 
@@ -9,23 +10,38 @@ import (
 )
 
 var (
-	modadvapi32                        = windows.NewLazySystemDLL("advapi32.dll")
-	modkernel32                        = windows.NewLazySystemDLL("kernel32.dll")
-	procOpenProcessToken               = modadvapi32.NewProc("OpenProcessToken")
-	procDuplicateTokenEx               = modadvapi32.NewProc("DuplicateTokenEx")
-	procSetTokenInformation            = modadvapi32.NewProc("SetTokenInformation")
-	procGetCurrentProcess              = modkernel32.NewProc("GetCurrentProcess")
+	modadvapi32             = windows.NewLazySystemDLL("advapi32.dll")
+	modkernel32             = windows.NewLazySystemDLL("kernel32.dll")
+	procOpenProcessToken    = modadvapi32.NewProc("OpenProcessToken")
+	procDuplicateTokenEx    = modadvapi32.NewProc("DuplicateTokenEx")
+	procSetTokenInformation = modadvapi32.NewProc("SetTokenInformation")
+	procGetCurrentProcess   = modkernel32.NewProc("GetCurrentProcess")
 )
 
 const (
-	TOKEN_DUPLICATE      = 0x0002
-	TOKEN_QUERY          = 0x0008
-	TOKEN_ADJUST_DEFAULT = 0x0080
-	TOKEN_ASSIGN_PRIMARY = 0x0001
-	TokenPrimary         = 1
+	TOKEN_DUPLICATE       = 0x0002
+	TOKEN_QUERY           = 0x0008
+	TOKEN_ADJUST_DEFAULT  = 0x0080
+	TOKEN_ASSIGN_PRIMARY  = 0x0001
+	TokenPrimary          = 1
 	SecurityImpersonation = 2
-	TokenIntegrityLevel  = 25
+	TokenIntegrityLevel   = 25
 )
+
+// applyManagerLaunch keeps the LTK Manager hidden and unelevated. The
+// patcher refuses elevated sessions (ADR-0067/0074), so the manager runs
+// with a medium-integrity token whenever one is available.
+func applyManagerLaunch(cmd *exec.Cmd) {
+	if token, err := mediumToken(); err == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000,
+			Token:         token,
+		}
+		return
+	}
+	hide(cmd)
+}
 
 // mediumToken duplicates the current process token and lowers it to medium
 // integrity. Returns a primary token that Go's exec.Cmd can use via
@@ -58,8 +74,8 @@ func mediumToken() (syscall.Token, error) {
 	// this same contiguous buffer.
 	const seGroupIntegrity = 0x20
 	sidData := []byte{
-		0x01,                   // Revision
-		0x01,                   // SubAuthorityCount
+		0x01,                               // Revision
+		0x01,                               // SubAuthorityCount
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x10, // Authority
 		0x00, 0x20, 0x00, 0x00, // 8192 (SECURITY_MANDATORY_MEDIUM_RID)
 	}

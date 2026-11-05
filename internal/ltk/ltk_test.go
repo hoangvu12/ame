@@ -2,84 +2,19 @@ package ltk
 
 import (
 	"archive/zip"
-	"bufio"
 	"fmt"
-	"github.com/hoangvu12/ame/internal/config"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoangvu12/ame/internal/config"
 )
 
-func TestHostChild(t *testing.T) {
-	mode := os.Getenv("AME_LTK_TEST_CHILD")
-	if mode == "" {
-		return
-	}
-	scanner := bufio.NewScanner(os.Stdin)
-	step := 0
-	for scanner.Scan() {
-		line := scanner.Text()
-		step++
-		switch step {
-		case 1:
-			if line != "config loglevel 32" {
-				os.Exit(20)
-			}
-		case 2:
-			if line != "config flags 4" {
-				os.Exit(21)
-			}
-		case 3:
-			if !strings.HasPrefix(line, "config prefix ") || !strings.HasSuffix(line, `\`) {
-				os.Exit(22)
-			}
-		case 4:
-			if line != "start scan" {
-				os.Exit(23)
-			}
-		}
-		if line == "start scan" {
-			switch mode {
-			case "fail":
-				fmt.Println("error 0 test failure")
-			case "exit":
-				os.Exit(24)
-			case "scan", "detach":
-				fmt.Println("status 0 injecting scanning for game")
-			case "late":
-				fmt.Println("status 0 injecting scanning for game")
-				fmt.Println("status 0 injected dll attached")
-				fmt.Println("dll 0 1 2 INFO ltk_patcher_dll::entry: joined too late, not overlaying")
-			default:
-				fmt.Println("status 0 injecting scanning for game")
-				fmt.Println("status 0 injected dll attached")
-			}
-		}
-		if line == "attach" {
-			fmt.Println("1.000000000s INFO ltk_patcher_host::worker: game found; hook installed tid=1 pid=424242")
-			fmt.Println("status 1 injecting game found")
-			fmt.Println("status 1 injected dll attached")
-			fmt.Println("status 1 waiting awaiting game exit")
-		}
-		if line == "detach" {
-			fmt.Println("status 2 injecting scanning for game")
-			fmt.Println("status 2 exited dll detached")
-		}
-		if line == "stop" {
-			os.Exit(0)
-		}
-		if line == "probe" {
-			fmt.Fprintln(os.Stderr, "game found; hook installed tid=1 pid=424242")
-		}
-	}
-	os.Exit(0)
-}
-
-// TestMain keeps the host lifecycle tests offline: the delivery client would
-// otherwise reach the network on every fresh host start.
+// TestMain keeps the manager tests offline: the delivery client would
+// otherwise reach the network on every fresh manager start.
 func TestMain(m *testing.M) {
 	deliveryFetch = func(string) (string, string, error) {
 		return "", "", fmt.Errorf("delivery disabled in tests")
@@ -87,84 +22,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestHeldGameKeepsPreparedScanner(t *testing.T) {
-	factory := func(_ string, _ ...string) *exec.Cmd {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestHostChild$")
-		cmd.Env = append(os.Environ(), "AME_LTK_TEST_CHILD=scan")
-		return cmd
-	}
-	if err := startHost(t.TempDir(), t.TempDir(), factory, true); err != nil {
-		t.Fatal(err)
-	}
-	defer Stop()
-	original := active
-	if err := ArmSuspended(123); err != nil {
-		t.Fatal(err)
-	}
-	if active != original || !WaitingForGame() {
-		t.Fatal("handoff replaced the prepared scanner before the game could initialize its GUI thread")
-	}
-}
-
-func TestRepeatedStartPreservesScanSession(t *testing.T) {
-	factory := func(_ string, _ ...string) *exec.Cmd {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestHostChild$")
-		cmd.Env = append(os.Environ(), "AME_LTK_TEST_CHILD=scan")
-		return cmd
-	}
-	dir, overlay := t.TempDir(), t.TempDir()
-	if err := startHost(dir, overlay, factory, true); err != nil {
-		t.Fatal(err)
-	}
-	defer Stop()
-	original := active
-	// A changed skin still uses the same overlay prefix. Starting a new host
-	// here changes its scan timestamp, potentially to AFTER game creation.
-	if err := startHost(dir, overlay, factory, true); err != nil {
-		t.Fatal(err)
-	}
-	if active != original {
-		t.Fatal("skin update reset the scan session")
-	}
-}
-func TestHostLifecycle(t *testing.T) {
-	for _, mode := range []string{"ready", "fail", "exit"} {
-		t.Run(mode, func(t *testing.T) {
-			factory := func(_ string, _ ...string) *exec.Cmd {
-				cmd := exec.Command(os.Args[0], "-test.run=^TestHostChild$")
-				cmd.Env = append(os.Environ(), "AME_LTK_TEST_CHILD="+mode)
-				return cmd
-			}
-			err := startHost(t.TempDir(), t.TempDir(), factory, true)
-			if mode != "ready" {
-				if err == nil {
-					Stop()
-					t.Fatal("startup failure ignored")
-				}
-				if Running() {
-					t.Fatal("failed host retained")
-				}
-				return
-			}
-			defer Stop()
-			if err != nil {
-				t.Fatal(err)
-			}
-			deadline := time.Now().Add(time.Second)
-			for !Hooked() && time.Now().Before(deadline) {
-				time.Sleep(time.Millisecond)
-			}
-			if !Running() || !Hooked() {
-				t.Fatal("missing attached state")
-			}
-			Stop()
-			Stop()
-			if Running() || Hooked() {
-				t.Fatal("stale stopped state")
-			}
-		})
-	}
-}
 func TestPackMod(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "WAD"), 0755)
@@ -183,88 +40,168 @@ func TestPackMod(t *testing.T) {
 		t.Fatal("wrong extracted mod contents")
 	}
 }
-func TestSignedHostConfiguration(t *testing.T) {
-	if os.Getenv("AME_TEST_LTK") != "1" {
-		t.Skip("opt-in signed host config-only test")
+
+func TestMergeFantomes(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "first")
+	second := filepath.Join(root, "second")
+	for _, mod := range []struct {
+		dir, wad, content string
+	}{
+		{first, "First.wad.client", "one"},
+		{second, "Second.wad.client", "two"},
+		{second, "First.wad.client", "shadowed"},
+	} {
+		os.MkdirAll(filepath.Join(mod.dir, "WAD"), 0755)
+		os.WriteFile(filepath.Join(mod.dir, "WAD", mod.wad), []byte(mod.content), 0600)
+		os.MkdirAll(filepath.Join(mod.dir, "META"), 0755)
+		os.WriteFile(filepath.Join(mod.dir, "META", "info.json"), []byte(`{"Name":"source"}`), 0600)
 	}
-	old := config.AmeDir
-	config.AmeDir = t.TempDir()
-	defer func() { config.AmeDir = old }()
-	dir, err := Prepare()
+	scratch := t.TempDir()
+	packs := make([]string, 2)
+	for i, dir := range []string{first, second} {
+		packs[i] = filepath.Join(scratch, fmt.Sprintf("%d.fantome", i))
+		if err := packMod(dir, packs[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	merged := filepath.Join(scratch, "merged.fantome")
+	if err := mergeFantomes(packs, merged); err != nil {
+		t.Fatal(err)
+	}
+	z, err := zip.OpenReader(merged)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = startHost(dir, t.TempDir(), exec.Command, false); err != nil {
-		t.Fatal(err)
+	defer z.Close()
+	entries := map[string]string{}
+	for _, entry := range z.File {
+		rc, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries[entry.Name] = string(data)
 	}
-	defer Stop()
-	if !Running() || Hooked() {
-		t.Fatal("config-only host must not attach")
+	// Earlier mods win: the shadowed WAD keeps the first mod's content.
+	if entries["WAD/First.wad.client"] != "one" {
+		t.Fatalf("first mod did not win the merge: %q", entries["WAD/First.wad.client"])
 	}
-}
-
-func TestScanningAndLateAttachment(t *testing.T) {
-	for _, mode := range []string{"scan", "late"} {
-		t.Run(mode, func(t *testing.T) {
-			factory := func(_ string, _ ...string) *exec.Cmd {
-				cmd := exec.Command(os.Args[0], "-test.run=^TestHostChild$")
-				cmd.Env = append(os.Environ(), "AME_LTK_TEST_CHILD="+mode)
-				return cmd
-			}
-			if err := startHost(t.TempDir(), t.TempDir(), factory, true); err != nil {
-				t.Fatal(err)
-			}
-			defer Stop()
-			if mode == "scan" {
-				if !WaitingForGame() || Hooked() {
-					t.Fatal("scanner not available for champion-select replacement")
-				}
-			} else {
-				deadline := time.Now().Add(time.Second)
-				for Failure() == "" && time.Now().Before(deadline) {
-					time.Sleep(time.Millisecond)
-				}
-				if Failure() == "" || Hooked() || WaitingForGame() {
-					t.Fatal("late attachment treated as successful")
-				}
-			}
-		})
+	if entries["WAD/Second.wad.client"] != "two" {
+		t.Fatalf("second mod content missing: %q", entries["WAD/Second.wad.client"])
+	}
+	info := entries["META/info.json"]
+	if !strings.Contains(info, ameModName) {
+		t.Fatalf("merged package does not carry ame's library name: %q", info)
+	}
+	if strings.Contains(info, "source") {
+		t.Fatalf("source metadata leaked into the merged package: %q", info)
 	}
 }
 
-func TestWaitForHookDoesNotAcceptScanning(t *testing.T) {
-	factory := func(_ string, _ ...string) *exec.Cmd {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestHostChild$")
-		cmd.Env = append(os.Environ(), "AME_LTK_TEST_CHILD=scan")
-		return cmd
-	}
-	if err := startHost(t.TempDir(), t.TempDir(), factory, true); err != nil {
+func TestStartRequiresSkinPackage(t *testing.T) {
+	old := config.AmeDir
+	config.AmeDir = t.TempDir()
+	defer func() { config.AmeDir = old }()
+	overlay := filepath.Join(config.AmeDir, "overlay")
+	if _, err := Prepare(); err != nil {
 		t.Fatal(err)
 	}
-	defer Stop()
-	if err := WaitForHook(123, nil, 30*time.Millisecond); err == nil {
-		t.Fatal("scanning alone must not release a suspended game")
+	err := Start(overlay)
+	if err == nil {
+		Stop()
+		t.Fatal("Start accepted an overlay without a built skin package")
 	}
-	active.recordHook("1.287102100s INFO ltk_patcher_host::worker: game found; hook installed tid=45908 pid=456")
-	if err := WaitForHook(123, nil, 30*time.Millisecond); err == nil {
+	if !strings.Contains(err.Error(), "skin package") {
+		t.Fatalf("missing-package error is unclear: %v", err)
+	}
+}
+
+func TestStatusAccessors(t *testing.T) {
+	resetSnapshot := func() {
+		setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{} })
+	}
+	resetSnapshot()
+	defer resetSnapshot()
+
+	if Running() || Hooked() || WaitingForGame() || Failure() != "" {
+		t.Fatal("empty snapshot reports activity")
+	}
+
+	setSnapshot(func(s *managerSnapshot) {
+		s.alive = true
+		s.running = true
+		s.phase = "patching"
+	})
+	if !Running() || !WaitingForGame() || Hooked() {
+		t.Fatal("scanning session not reported as waiting for a game")
+	}
+
+	setSnapshot(func(s *managerSnapshot) { s.attached = true; s.pid = 4242 })
+	if !Hooked() || WaitingForGame() {
+		t.Fatal("attached session not reported as hooked")
+	}
+	if err := WaitForHook(4242, nil, time.Second); err != nil {
+		t.Fatalf("attach wait failed: %v", err)
+	}
+	if err := WaitForHook(1111, nil, 50*time.Millisecond); err == nil {
 		t.Fatal("wrong game's hook accepted")
 	}
-	active.recordHook("1.287102100s INFO ltk_patcher_host::worker: game found; hook installed tid=45908 pid=123")
-	if err := WaitForHook(123, nil, time.Second); err != nil {
-		t.Fatal(err)
-	}
-	if WaitingForGame() {
-		t.Fatal("installed hook must prevent selection replacement")
-	}
+	// A closed cancel channel only aborts a wait that has not attached yet.
+	setSnapshot(func(s *managerSnapshot) { s.attached = false; s.pid = 0 })
 	cancel := make(chan struct{})
 	close(cancel)
-	if err := WaitForHook(456, cancel, time.Second); err == nil {
+	if err := WaitForHook(0, cancel, time.Second); err == nil {
 		t.Fatal("cancel ignored")
 	}
-	active.mu.Lock()
-	active.failure = "overlay verification failed"
-	active.mu.Unlock()
-	if err := WaitForHook(123, nil, time.Second); err == nil {
-		t.Fatal("failed overlay treated as ready")
+
+	setSnapshot(func(s *managerSnapshot) { s.failure = "overlay failed" })
+	if Hooked() || WaitingForGame() {
+		t.Fatal("failed session reported as usable")
+	}
+	if Failure() == "" {
+		t.Fatal("failure not reported")
+	}
+}
+
+func TestArmSuspendedWaitsForPatching(t *testing.T) {
+	old := armSuspendTimeout
+	armSuspendTimeout = 150 * time.Millisecond
+	defer func() { armSuspendTimeout = old }()
+	reset := func() {
+		setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{} })
+	}
+	reset()
+	defer reset()
+
+	setSnapshot(func(s *managerSnapshot) {
+		s.alive = true
+		s.running = true
+		s.phase = "building"
+	})
+	if err := ArmSuspended(123); err == nil {
+		t.Fatal("overlay build released the game early")
+	}
+
+	setSnapshot(func(s *managerSnapshot) {
+		s.alive = true
+		s.running = false
+		s.phase = "idle"
+	})
+	if err := ArmSuspended(123); err == nil {
+		t.Fatal("stopped patcher released the game")
+	}
+
+	setSnapshot(func(s *managerSnapshot) {
+		s.alive = true
+		s.running = true
+		s.phase = "patching"
+	})
+	if err := ArmSuspended(123); err != nil {
+		t.Fatalf("armed patcher did not release the game: %v", err)
 	}
 }

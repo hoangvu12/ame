@@ -56,7 +56,9 @@ type deliveryChallenge struct {
 	Challenge  string `json:"challenge"`
 	Difficulty uint32 `json:"difficulty"`
 }
-type deliveryRegistered struct{ Token string `json:"token"` }
+type deliveryRegistered struct {
+	Token string `json:"token"`
+}
 type deliveryEnvelope struct {
 	Manifest  string `json:"manifest"`
 	Signature string `json:"signature"`
@@ -306,7 +308,13 @@ func DeliveryFetch(dstDir string) (string, string, error) {
 		display.Log("LTK: host exe fetch skipped: " + err.Error())
 	}
 
-	// The signed ltk-manager.exe from the installer is needed so the launcher
+	// The signed ltk-manager.exe drives the patcher as ame's background
+	// helper. Failures are not fatal to the DLL delivery, but Start refuses
+	// to launch a manager that was never delivered.
+	if err := deliveryEnsureManager(dstDir); err != nil {
+		display.Log("LTK: manager exe fetch skipped: " + err.Error())
+	}
+
 	return dllPath, manifest.Release.Version, nil
 }
 
@@ -374,6 +382,48 @@ func ltkLatestSetup() (string, string, error) {
 // Requires 7z on PATH.
 func ltkHostFromInstaller(setupURL string) ([]byte, error) {
 	return ltkFileFromInstaller(setupURL, "ltk_patcher_host.exe")
+}
+
+// managerReleaseFile records the LTK Manager release the delivered exe came from.
+const managerReleaseFile = "ltk-manager.release"
+
+// deliveryEnsureManager places the signed ltk-manager.exe of the newest LTK
+// Manager release in the runtime directory. Nothing is downloaded when the
+// delivered exe already came from that release.
+func deliveryEnsureManager(dstDir string) error {
+	tag, setupURL, err := ltkLatestSetup()
+	if err != nil {
+		return err
+	}
+	exePath := filepath.Join(dstDir, managerExeName)
+	if marked, err := os.ReadFile(filepath.Join(dstDir, managerReleaseFile)); err == nil {
+		if _, statErr := os.Stat(exePath); statErr == nil && strings.TrimSpace(string(marked)) == tag {
+			return nil
+		}
+	}
+
+	data, err := ltkFileFromInstaller(setupURL, managerExeName)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(exePath, data, 0644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dstDir, managerReleaseFile), []byte(tag), 0644)
+}
+
+// ensureSignedManager verifies the runtime directory holds the signed LTK
+// Manager executable ame drives over the DevTools protocol.
+func ensureSignedManager(dir string) error {
+	exePath := filepath.Join(dir, managerExeName)
+	info, err := os.Stat(exePath)
+	if err != nil {
+		return fmt.Errorf("LTK Manager exe missing from %s (ame must reach the delivery service once): %w", dir, err)
+	}
+	if info.Size() < 1024*1024 {
+		return fmt.Errorf("LTK Manager exe at %s looks truncated (%d bytes)", exePath, info.Size())
+	}
+	return nil
 }
 
 // ltkFileFromInstaller extracts a named file from an NSIS installer via 7z.

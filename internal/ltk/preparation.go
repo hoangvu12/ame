@@ -3,88 +3,48 @@ package ltk
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
-	"sync"
 
 	"github.com/hoangvu12/ame/internal/display"
 )
 
-// BeginPreparation establishes the scan session before expensive generation.
-// Pause only our owned host while its stable overlay prefix is being updated.
-// Restarting the host would reset the session start, and the session must
-// span generation so a game created meanwhile is still covered by it.
+// BeginPreparation prewarms the LTK Manager during champion select so the
+// first skin application does not pay the manager's WebView startup cost.
+// The returned release function is kept for the preparation flow; there is
+// no scanner to pause anymore — the manager owns the injection host and
+// never reads ame's overlay directory, so the overlay can be swapped freely.
 func BeginPreparation(overlay string) (func() error, error) {
 	if err := os.MkdirAll(overlay, 0755); err != nil {
 		return nil, err
 	}
-	if err := Start(overlay); err != nil {
+	if err := prewarmManager(); err != nil {
 		return nil, err
 	}
-	return pausePreparedScanner()
+	return func() error { return nil }, nil
 }
 
-func pausePreparedScanner() (func() error, error) {
-	lifecycle.Lock()
-	defer lifecycle.Unlock()
-	h := active
-	if h == nil {
-		return nil, fmt.Errorf("LTK scanner is not running")
+// prewarmManager ensures a manager session exists without starting a patcher.
+func prewarmManager() error {
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	if m := manager; m != nil && m.alive() {
+		if _, err := m.cdp.patcherStatus(); err == nil {
+			return nil
+		}
 	}
-	h.mu.Lock()
-	ready := h.running && h.scanning && h.hookPID == 0 && h.failure == ""
-	h.mu.Unlock()
-	if !ready || h.resumeScanner != nil {
-		return nil, fmt.Errorf("LTK attachment has started or preparation is already active")
-	}
-	resume, err := pauseOwnedScanner(h.cmd.Process)
+	dir, err := Prepare()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	h.resumeScanner = resume
-	display.Log(fmt.Sprintf("LTK: paused owned scanner pid=%d for preparation; preserving session start", h.cmd.Process.Pid))
-	var once sync.Once
-	var releaseErr error
-	return func() error {
-		once.Do(func() {
-			lifecycle.Lock()
-			defer lifecycle.Unlock()
-			if active != h || h.resumeScanner == nil {
-				releaseErr = fmt.Errorf("LTK preparation session was stopped")
-				return
-			}
-			releaseErr = h.resumeScanner()
-			h.resumeScanner = nil
-			if releaseErr != nil {
-				stopLocked()
-				return
-			}
-			display.Log(fmt.Sprintf("LTK: resumed original scanner pid=%d after preparation", h.cmd.Process.Pid))
-		})
-		return releaseErr
-	}, nil
+	_, err = ensureManagerLocked(dir)
+	return err
 }
 
-func publishOverlay(staged, overlay string, owner *host) error {
-	lifecycle.Lock()
-	defer lifecycle.Unlock()
-	if active != owner {
-		return fmt.Errorf("LTK preparation session changed or was cancelled; keeping previous overlay")
-	}
-	if active != nil {
-		prefix, err := filepath.Abs(overlay)
-		if err != nil {
-			return err
-		}
-		if !strings.EqualFold(prefix, active.overlay) {
-			return fmt.Errorf("overlay does not belong to the preparation session")
-		}
-		active.mu.Lock()
-		ready := active.running && active.scanning && active.hookPID == 0 && active.failure == ""
-		active.mu.Unlock()
-		if !ready || active.resumeScanner == nil || gameWindowExists() {
-			return fmt.Errorf("game attachment may have started; keeping the previous overlay for this match")
-		}
+// publishOverlay swaps the staged overlay into place, together with the
+// staged skin package, and never leaves a mix of old and new behind. A game
+// window refuses publication: the armed overlay for that match is kept.
+func publishOverlay(staged, overlay, pkgFrom, pkgTo string) error {
+	if gameWindowExists() {
+		return fmt.Errorf("a game window already exists; keeping the previous overlay for this match")
 	}
 	backup := staged + "-previous"
 	hadPrevious := false
@@ -103,6 +63,18 @@ func publishOverlay(staged, overlay string, owner *host) error {
 			}
 		}
 		return err
+	}
+	// The skin package follows the overlay it was built from. Without a new
+	// package the previous one is removed: Start must never install a
+	// package that does not match the published overlay.
+	var pkgErr error
+	if pkgFrom != "" {
+		pkgErr = os.Rename(pkgFrom, pkgTo)
+	} else {
+		pkgErr = os.Remove(pkgTo)
+	}
+	if pkgErr != nil && !os.IsNotExist(pkgErr) {
+		display.Log("LTK: skin package publish: " + pkgErr.Error())
 	}
 	if hadPrevious {
 		if err := os.RemoveAll(backup); err != nil {

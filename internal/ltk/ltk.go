@@ -1,13 +1,18 @@
-// Package ltk owns the bundled signed host and package overlay builder.
+// Package ltk owns the bundled runtime, the skin package/overlay builder and
+// the LTK Manager session that patches the game.
+//
+// The manager runs as a hidden background helper (see cdp.go) and is driven
+// through the same Tauri IPC commands its own UI uses: ame installs the
+// built skin package into its library, enables it, and starts the patcher.
 package ltk
 
 import (
 	"archive/zip"
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/hoangvu12/ame/internal/config"
@@ -31,6 +35,15 @@ var prepareMu sync.Mutex
 
 // deliveryFetch is DeliveryFetch, overridden by tests to stay offline.
 var deliveryFetch = DeliveryFetch
+
+// ameModName is the library name every skin package ame installs carries.
+// ame uninstalls exactly the mods holding this name before installing a new
+// one, so leftovers from a crashed run cannot stack in the manager's library.
+const ameModName = "ame skin set"
+
+// gameDir is the game directory the last Build ran against; the manager's
+// league path is configured from it. Guarded by managerMu.
+var gameDir string
 
 // Prepare installs immutable, content-addressed files; no download at runtime.
 // The patcher DLL and host are excluded from hash validation and never
@@ -189,10 +202,81 @@ func packMod(dir, path string) error {
 	return file.Close()
 }
 
+// mergeFantomes combines the per-mod archives Build packed into the single
+// package ame installs into the manager's library. Entries of earlier mods
+// win — the same priority the overlay builder gives them — and the sources'
+// metadata is replaced by ame's own, so the package carries a stable library
+// name that identifies it on later runs.
+func mergeFantomes(sources []string, dest string) error {
+	file, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	archive := zip.NewWriter(file)
+	written := make(map[string]bool)
+	for _, source := range sources {
+		input, err := zip.OpenReader(source)
+		if err != nil {
+			return err
+		}
+		for _, entry := range input.File {
+			if entry.FileInfo().IsDir() {
+				continue
+			}
+			name := strings.ReplaceAll(entry.Name, `\`, "/")
+			if strings.HasPrefix(strings.ToLower(name), "meta/") {
+				continue
+			}
+			if written[name] {
+				continue
+			}
+			if !entry.FileInfo().Mode().IsRegular() {
+				return fmt.Errorf("unsupported mod entry: %s", name)
+			}
+			reader, err := entry.Open()
+			if err != nil {
+				input.Close()
+				return err
+			}
+			header := &zip.FileHeader{Name: name, Method: zip.Store, Modified: entry.Modified}
+			writer, err := archive.CreateHeader(header)
+			if err != nil {
+				reader.Close()
+				input.Close()
+				return err
+			}
+			_, err = io.Copy(writer, reader)
+			reader.Close()
+			if err != nil {
+				input.Close()
+				return err
+			}
+			written[name] = true
+		}
+		input.Close()
+	}
+	info, err := archive.CreateHeader(&zip.FileHeader{Name: "META/info.json", Method: zip.Store})
+	if err != nil {
+		return err
+	}
+	metadata := fmt.Sprintf(`{"Name":%q,"Author":"ame","Version":"1.0.0","Description":"Skins selected in ame"}`+"\n", ameModName)
+	if _, err = io.WriteString(info, metadata); err != nil {
+		return err
+	}
+	if err = archive.Close(); err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+// Build packs the selected mods, builds the extracted overlay, and stages the
+// merged skin package installed into the manager's library by Start. The
+// package is published beside the overlay, atomically with it.
 func Build(modsDir, overlay, game, names string) error {
-	lifecycle.Lock()
-	owner := active
-	lifecycle.Unlock()
+	managerMu.Lock()
+	gameDir = game
+	managerMu.Unlock()
 	dir, err := Prepare()
 	if err != nil {
 		return err
@@ -212,7 +296,10 @@ func Build(modsDir, overlay, game, names string) error {
 		return err
 	}
 	defer os.RemoveAll(staged)
+	packagePath := staged + ".pkg"
+	defer os.Remove(packagePath)
 	args := []string{game, staged, filepath.Join(scratch, "state")}
+	var packages []string
 	for i, name := range strings.Split(names, "/") {
 		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `\:`) {
 			return fmt.Errorf("invalid mod name")
@@ -222,6 +309,7 @@ func Build(modsDir, overlay, game, names string) error {
 			return err
 		}
 		args = append(args, path)
+		packages = append(packages, path)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -235,439 +323,467 @@ func Build(modsDir, overlay, game, names string) error {
 	if err != nil {
 		return fmt.Errorf("LTK overlay: %w", err)
 	}
-	return publishOverlay(staged, overlay, owner)
-}
-
-type host struct {
-	cmd             *exec.Cmd
-	stdin           io.WriteCloser
-	done            chan struct{}
-	ready           chan error
-	mu              sync.Mutex
-	running, hooked bool
-	scanning        bool
-	failure         string
-	hookPID         uint32
-	releaseHooks    func()
-	overlay         string
-	resumeScanner   func() error
-}
-
-var lifecycle sync.Mutex
-var active *host
-
-// hostStatus is one consistent snapshot of the active host's state.
-type hostStatus struct {
-	running, hooked, scanning bool
-	failure                   string
-	hookPID                   uint32
-}
-
-// status samples the active host under both locks. All read-style
-// accessors (Running, Hooked, WaitingForGame, Failure) go through it so
-// they cannot disagree about lock order or field defaults.
-func status() hostStatus {
-	lifecycle.Lock()
-	defer lifecycle.Unlock()
-	if active == nil {
-		return hostStatus{}
+	if len(packages) > 0 {
+		if err := mergeFantomes(packages, packagePath); err != nil {
+			return fmt.Errorf("LTK skin package: %w", err)
+		}
 	}
-	active.mu.Lock()
-	defer active.mu.Unlock()
-	return hostStatus{
-		running:  active.running,
-		hooked:   active.hooked,
-		scanning: active.scanning,
-		failure:  active.failure,
-		hookPID:  active.hookPID,
-	}
+	return publishOverlay(staged, overlay, packagePath, overlay+".fantome")
 }
 
-func Running() bool { return status().running }
+// --- manager session ---
+
+// managerSession is one LTK Manager process driven over the DevTools
+// protocol. The manager stays resident across skin switches.
+type managerSession struct {
+	cmd     *exec.Cmd
+	cdp     *cdpClient
+	modID   string // library id of the installed skin package
+	modFile string // the fantome file installed as modID
+	stop    chan struct{}
+	exited  chan struct{}
+}
+
+// alive reports whether the session has neither been torn down nor died.
+func (m *managerSession) alive() bool {
+	select {
+	case <-m.exited:
+		return false
+	default:
+	}
+	select {
+	case <-m.stop:
+		return false
+	default:
+	}
+	return true
+}
+
+// managerMu guards the manager session, its installed mod, and gameDir.
+var (
+	managerMu sync.Mutex
+	manager   *managerSession
+)
+
+// managerSnapshot is the polled view of the manager and its patcher. It is
+// written by pollManager and read by the status accessors without taking
+// managerMu, so status queries never block on IPC round-trips.
+type managerSnapshot struct {
+	alive    bool
+	running  bool   // the manager's patcher session runs
+	phase    string // idle | building | patching
+	attached bool   // the injected DLL is in a game
+	pid      uint64
+	failure  string
+}
+
+var (
+	snapshotMu sync.Mutex
+	snapshot   managerSnapshot
+)
+
+func currentSnapshot() managerSnapshot {
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
+	return snapshot
+}
+
+func setSnapshot(update func(*managerSnapshot)) {
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
+	update(&snapshot)
+}
+
+func Running() bool {
+	s := currentSnapshot()
+	return s.alive && s.running
+}
 
 func Hooked() bool {
-	s := status()
-	return s.running && s.hooked && s.failure == ""
+	s := currentSnapshot()
+	return s.alive && s.running && s.attached && s.failure == ""
 }
 
-// WaitingForGame permits replacing an armed overlay only before attachment starts.
+// WaitingForGame reports whether the patcher is scanning without a game
+// attached, so the armed skin package can still be replaced.
 func WaitingForGame() bool {
-	s := status()
-	return s.running && s.scanning && s.hookPID == 0 && s.failure == ""
+	s := currentSnapshot()
+	return s.alive && s.running && !s.attached && s.failure == ""
 }
 
-func Failure() string { return status().failure }
+func Failure() string { return currentSnapshot().failure }
 
-// WaitForHook waits for SetWindowsHookEx installation, not DLL execution: a
-// suspended game's window thread cannot execute the DLL until it is resumed.
+// WaitForHook waits until the manager's injected DLL attaches to a game. A
+// pid of 0 or a game the event did not identify accepts any game.
 func WaitForHook(pid uint32, cancel <-chan struct{}, timeout time.Duration) error {
-	lifecycle.Lock()
-	h := active
-	lifecycle.Unlock()
-	if h == nil {
-		return fmt.Errorf("LTK host is not running")
+	if manager == nil && !currentSnapshot().alive {
+		return fmt.Errorf("LTK manager is not running")
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	tick := time.NewTicker(10 * time.Millisecond)
+	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		h.mu.Lock()
-		ready, failure, running := h.hookPID == pid, h.failure, h.running
-		h.mu.Unlock()
-		if failure != "" {
-			return fmt.Errorf("LTK hook failed: %s", failure)
+		s := currentSnapshot()
+		if s.failure != "" {
+			return fmt.Errorf("LTK session failed: %s", s.failure)
 		}
-		if !running {
-			return fmt.Errorf("LTK host stopped before hook installation")
+		if !s.alive {
+			return fmt.Errorf("LTK manager stopped before the patcher attached")
 		}
-		if ready {
+		if s.running && s.attached && (pid == 0 || s.pid == 0 || s.pid == uint64(pid)) {
 			return nil
 		}
 		select {
 		case <-cancel:
 			return fmt.Errorf("LTK hook wait cancelled")
-		case <-h.done:
-			return fmt.Errorf("LTK host exited before hook installation")
 		case <-timer.C:
-			return fmt.Errorf("LTK hook not installed for PID %d before release deadline", pid)
+			return fmt.Errorf("LTK patcher did not attach to PID %d before the deadline", pid)
 		case <-tick.C:
 		}
 	}
 }
 
-func (h *host) recordHook(line string) {
-	if !strings.Contains(line, "game found; hook installed") {
-		return
+// armSuspendTimeout bounds how long ArmSuspended holds a suspended game.
+var armSuspendTimeout = 25 * time.Second
+
+// ArmSuspended blocks until the manager's patcher has built its overlay and
+// is scanning for a game. The held game is released only once the host is
+// armed, so its window cannot appear before the hook is installed.
+func ArmSuspended(pid uint32) error {
+	if manager == nil && !currentSnapshot().alive {
+		return fmt.Errorf("LTK manager is not running")
 	}
-	for _, field := range strings.Fields(line) {
-		if strings.HasPrefix(field, "pid=") {
-			pid, err := strconv.ParseUint(strings.TrimPrefix(field, "pid="), 10, 32)
-			if err == nil {
-				h.mu.Lock()
-				h.hookPID = uint32(pid)
-				h.scanning = false
-				h.mu.Unlock()
-			}
+	start := time.Now()
+	timer := time.NewTimer(armSuspendTimeout)
+	defer timer.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		s := currentSnapshot()
+		if s.failure != "" {
+			return fmt.Errorf("LTK session failed: %s", s.failure)
+		}
+		if !s.alive {
+			return fmt.Errorf("LTK manager stopped before the patcher was ready")
+		}
+		if s.phase == "patching" {
+			return nil
+		}
+		// The poll can lag a start by a few hundred milliseconds, so an idle
+		// phase is only fatal once the session had time to appear.
+		if !s.running && s.phase != "building" && time.Since(start) > 2*time.Second {
+			return fmt.Errorf("LTK patcher stopped before the game was released")
+		}
+		select {
+		case <-timer.C:
+			return fmt.Errorf("LTK patcher did not finish building before the game was released")
+		case <-tick.C:
 		}
 	}
+}
+
+// Start installs the skin package built for overlay into the LTK Manager's
+// library and starts its patcher. The manager process stays resident for
+// later skin switches.
+func Start(overlay string) error {
+	prefix, err := filepath.Abs(overlay)
+	if err != nil {
+		return err
+	}
+	pkg := prefix + ".fantome"
+	managerMu.Lock()
+	m := manager
+	same := m != nil && m.alive() && m.modFile == pkg
+	managerMu.Unlock()
+	if same {
+		s := currentSnapshot()
+		if s.failure != "" {
+			return fmt.Errorf("LTK session failed: %s", s.failure)
+		}
+		if s.running {
+			display.Log("LTK: preserving manager session for the armed skin package")
+			return nil
+		}
+	}
+	dir, err := Prepare()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(pkg); err != nil {
+		return fmt.Errorf("LTK skin package for %s is missing (build the overlay first): %w", prefix, err)
+	}
+	return startSession(dir, pkg)
+}
+
+// startSession swaps the manager's mod and starts the patcher.
+func startSession(dir, pkg string) error {
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	m, err := ensureManagerLocked(dir)
+	if err != nil {
+		return err
+	}
+	// The manager defers library edits while a session is live, so the
+	// previous session is stopped before the mod is swapped.
+	if err := stopPatcherSession(m); err != nil {
+		return err
+	}
+	if err := uninstallAmeMods(m); err != nil {
+		return err
+	}
+	modID, err := m.cdp.installMod(pkg)
+	if err != nil {
+		return fmt.Errorf("LTK install: %w", err)
+	}
+	m.modID, m.modFile = modID, pkg
+	if err := m.cdp.toggleMod(modID, true); err != nil {
+		return fmt.Errorf("LTK enable: %w", err)
+	}
+	m.cdp.clearBridgeFailure()
+	setSnapshot(func(s *managerSnapshot) { s.failure = "" })
+	if err := m.cdp.startPatcher(); err != nil {
+		return fmt.Errorf("LTK patcher start: %w", err)
+	}
+	return awaitPatcherStart(m)
+}
+
+// stopPatcherSession stops a live patcher session and waits for it to end.
+func stopPatcherSession(m *managerSession) error {
+	if err := m.cdp.stopPatcher(); err != nil {
+		display.Log("LTK: patcher stop: " + err.Error())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		status, err := m.cdp.patcherStatus()
+		if err == nil && !status.Running {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("LTK patcher did not stop: %v", err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// uninstallAmeMods removes every skin package ame owns from the manager's
+// library: the one this session installed and any leftovers from earlier
+// runs, which outlive the manager process.
+func uninstallAmeMods(m *managerSession) error {
+	mods, err := m.cdp.installedMods()
+	if err != nil {
+		return fmt.Errorf("LTK library read: %w", err)
+	}
+	for _, mod := range mods {
+		if !isAmeMod(mod, m.modID) {
+			continue
+		}
+		if err := m.cdp.uninstallMod(mod.ID); err != nil {
+			display.Log(fmt.Sprintf("LTK: uninstall of stale skin package %s failed: %v", mod.ID, err))
+		}
+	}
+	m.modID = ""
+	return nil
+}
+
+// awaitPatcherStart waits until the manager's session thread reports a phase
+// beyond idle; the overlay build itself continues in the background. The
+// session state is published to the snapshot directly so callers observe a
+// running session the moment Start returns, without waiting for the poll.
+func awaitPatcherStart(m *managerSession) error {
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		status, err := m.cdp.patcherStatus()
+		if err == nil {
+			if status.Phase != "" && status.Phase != "idle" {
+				setSnapshot(func(s *managerSnapshot) {
+					s.alive = true
+				s.running = status.Running
+				s.phase = status.Phase
+			})
+				return nil
+			}
+		} else {
+			display.Log("LTK: patcher status: " + err.Error())
+		}
+		if failure := currentSnapshot().failure; failure != "" {
+			return fmt.Errorf("LTK patcher start: %s", failure)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("LTK patcher did not enter its build phase")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// Stop tears the manager session down: the patcher is stopped, then the
+// manager process is terminated. The installed mod stays in the library; the
+// next run uninstalls it before installing a new package.
+func Stop() {
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	stopLocked()
 }
 
 func stopLocked() {
-	if active == nil {
+	m := manager
+	if m == nil {
 		return
 	}
-	h := active
-	active = nil
-	if h.resumeScanner != nil {
-		if err := h.resumeScanner(); err != nil {
-			display.Log("LTK: scanner resume during stop: " + err.Error())
+	manager = nil
+	close(m.stop)
+	// Stop the patcher first so the injected host detaches cleanly, then
+	// terminate the manager and its WebView2 children.
+	if err := m.cdp.stopPatcher(); err != nil {
+		display.Log("LTK: patcher stop during shutdown: " + err.Error())
+	}
+	killManagerTree(m.cmd)
+	m.cdp.close()
+	setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{} })
+}
+
+// killManagerTree terminates the manager process and its WebView2 children.
+func killManagerTree(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	kill := exec.Command("taskkill", "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
+	hide(kill)
+	if err := kill.Run(); err != nil {
+		_ = cmd.Process.Kill()
+	}
+}
+
+// ensureManagerLocked returns a live manager session, launching the manager
+// when needed. The caller holds managerMu.
+func ensureManagerLocked(dir string) (*managerSession, error) {
+	if m := manager; m != nil && m.alive() {
+		if _, err := m.cdp.patcherStatus(); err == nil {
+			return m, nil
 		}
-		h.resumeScanner = nil
-	}
-	if h.releaseHooks != nil {
-		h.releaseHooks()
-		h.releaseHooks = nil
-	}
-	fmt.Fprintln(h.stdin, "stop")
-	h.stdin.Close()
-	select {
-	case <-h.done:
-	case <-time.After(3 * time.Second):
-		h.cmd.Process.Kill()
-		<-h.done
-	}
-}
-func Stop() { lifecycle.Lock(); defer lifecycle.Unlock(); stopLocked() }
-func Start(overlay string) error {
-	// If a scan session is already running for this overlay, don't re-prepare.
-	// Prepare() hashes the runtime files to check integrity, and the host
-	// holds the DLL open — re-extracting would fail with a sharing violation.
-	prefix, err := filepath.Abs(overlay)
-	if err != nil {
-		return err
-	}
-	lifecycle.Lock()
-	if active != nil {
-		active.mu.Lock()
-		running, same, failure := active.running, strings.EqualFold(active.overlay, prefix), active.failure
-		active.mu.Unlock()
-		if running && same {
-			lifecycle.Unlock()
-			if failure != "" {
-				return fmt.Errorf("LTK session failed: %s", failure)
-			}
-			return nil
-		}
-	}
-	lifecycle.Unlock()
-
-	dir, err := Prepare()
-	if err != nil {
-		return err
-	}
-	return startHost(dir, prefix, exec.Command, true)
-}
-
-// StartSuspended is an experimental test entry point, not the AME launch path.
-// It requires initialized target GUI state and can block on a frozen target.
-func StartSuspended(overlay string, pid uint32) error {
-	dir, err := Prepare()
-	if err != nil {
-		return err
-	}
-	if err = startHostMode(dir, overlay, exec.Command, "passive"); err != nil {
-		return err
-	}
-	lifecycle.Lock()
-	defer lifecycle.Unlock()
-	if active == nil {
-		return fmt.Errorf("passive host stopped before early hook")
-	}
-	release, err := installProcessHooks(dir, pid)
-	if err != nil {
-		stopLocked()
-		return err
-	}
-	active.releaseHooks = release
-	active.mu.Lock()
-	active.hookPID = pid
-	active.mu.Unlock()
-	display.Log(fmt.Sprintf("LTK: early thread hooks installed for held PID %d; awaiting resume", pid))
-	return nil
-}
-
-// ArmSuspended checks that the prepared host can continue after resume. A held
-// process may not have initialized user32, so installing a hook on its oldest
-// thread is not safe. Keep the scanner alive to discover the actual window.
-func ArmSuspended(pid uint32) error {
-	lifecycle.Lock()
-	defer lifecycle.Unlock()
-	h := active
-	if h == nil {
-		return fmt.Errorf("LTK host is not running")
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.failure != "" {
-		return fmt.Errorf("LTK already failed: %s", h.failure)
-	}
-	if !h.running {
-		return fmt.Errorf("LTK host stopped before game release")
-	}
-	if h.hookPID == pid {
-		return nil
-	}
-	if h.hookPID != 0 || h.hooked || !h.scanning {
-		return fmt.Errorf("LTK host is not scanning for held PID %d", pid)
-	}
-	display.Log(fmt.Sprintf("LTK: prepared scanner retained for PID %d; window discovery requires game resume", pid))
-	return nil
-}
-
-func startHost(dir, overlay string, command func(string, ...string) *exec.Cmd, scan bool) error {
-	mode := ""
-	if scan {
-		mode = "scan"
-	}
-	return startHostMode(dir, overlay, command, mode)
-}
-
-func startHostMode(dir, overlay string, command func(string, ...string) *exec.Cmd, mode string) error {
-	lifecycle.Lock()
-	defer lifecycle.Unlock()
-	prefix, err := filepath.Abs(overlay)
-	if err != nil {
-		return err
-	}
-	if strings.ContainsAny(prefix, "\r\n") {
-		return fmt.Errorf("invalid overlay path")
-	}
-	if mode == "scan" && active != nil {
-		active.mu.Lock()
-		running, failure := active.running, active.failure
-		same := strings.EqualFold(active.overlay, prefix)
-		active.mu.Unlock()
-		if running {
-			if failure != "" {
-				return fmt.Errorf("LTK session failed: %s", failure)
-			}
-			if !same {
-				return fmt.Errorf("cannot change an active LTK session's overlay prefix")
-			}
-			display.Log(fmt.Sprintf("LTK: preserving scan session pid=%d", active.cmd.Process.Pid))
-			return nil
-		}
+		display.Log("LTK: manager session lost its DevTools connection; relaunching")
 	}
 	stopLocked()
-	// Replace the bundled DLL with the current delivery DLL before starting
-	// the host. Only runs on fresh starts, not when preserving a session.
-	deliveryDLL, _, deliveryErr := deliveryFetch(dir)
-	if deliveryErr != nil {
-		display.Log("LTK: delivery fetch skipped: " + deliveryErr.Error())
+	// Keep the delivered runtime pair next to the manager: it launches the
+	// host exe as its bundled injector and delivers the DLL itself.
+	if dll, _, err := deliveryFetch(dir); err != nil {
+		display.Log("LTK: delivery fetch skipped: " + err.Error())
 	} else {
-		display.Log("LTK: delivery DLL ready: " + deliveryDLL)
+		display.Log("LTK: delivery DLL ready: " + dll)
 	}
-
-	// The LTK patcher DLL (1.30.0+) checks the pipe-server host's parent
-	// process image name (VRF00000008) and digital signature (VRF00000009).
-	// The stub launches ltk_patcher_host.exe as a child of explorer.exe
-	// (via PROC_THREAD_ATTRIBUTE_PARENT_PROCESS) so both checks pass.
-	stubExe, stubErr := ensureLauncherStub(dir)
-	if stubErr != nil {
-		display.Log("LTK: manager stub unavailable: " + stubErr.Error())
+	if err := ensureSignedManager(dir); err != nil {
+		return nil, err
 	}
-
-	// The DLL also requires the host to run unelevated (ADR-0067/0074).
-	token, tokenErr := mediumToken()
-	if tokenErr != nil {
-		display.Log("LTK: medium token unavailable, host will run elevated: " + tokenErr.Error())
-	}
-
-	var cmd *exec.Cmd
-	if stubErr == nil {
-		cmd = command(stubExe)
-	} else {
-		// Fallback: launch host directly (host verification will likely fail)
-		cmd = command(filepath.Join(dir, "ltk_patcher_host.exe"))
-	}
-	if tokenErr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			HideWindow:    true,
-			CreationFlags: 0x08000000,
-			Token:         token,
-		}
-	} else {
-		hide(cmd)
-	}
-	cmd.Dir = dir
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		stdin.Close()
-		return err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		stdin.Close()
-		return err
-	}
-	if err = cmd.Start(); err != nil {
-		stdin.Close()
-		return err
-	}
-	h := &host{cmd: cmd, stdin: stdin, done: make(chan struct{}), ready: make(chan error, 1), running: true, overlay: prefix}
-	active = h
-	var readers sync.WaitGroup
-	readers.Add(2)
-	read := func(stream io.Reader) {
-		defer readers.Done()
-		scanner := bufio.NewScanner(stream)
-		scanner.Buffer(make([]byte, 4096), 256*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			h.recordHook(line)
-			display.Log("LTK: " + line)
-			if strings.Contains(line, "joined too late, not overlaying") || (strings.HasPrefix(line, "dll ") && strings.Contains(line, " ERROR ")) {
-				h.mu.Lock()
-				h.failure = line
-				h.hooked = false
-				h.scanning = false
-				h.mu.Unlock()
-			}
-			fields := strings.Fields(line)
-			if len(fields) >= 3 && fields[0] == "status" {
-				h.mu.Lock()
-				if fields[2] == "injecting" && strings.Contains(line, "scanning for game") {
-					// The worker is scanning for a game, so no game is attached:
-					// release any hook retained from a finished match so the
-					// scanner can be paused for the next preparation.
-					h.scanning = true
-					h.hooked = false
-					h.hookPID = 0
-				} else {
-					h.scanning = false
-				}
-				switch fields[2] {
-				case "injected", "waiting":
-					h.hooked = true
-				case "injecting", "idle", "failed":
-					h.hooked = false
-					if fields[2] == "failed" {
-						h.failure = line
-					}
-				case "exited":
-					// The attached game left. The worker announces its return to
-					// scanning before the dll detach completes, so mirror that
-					// state here instead of keeping the finished match's hook.
-					h.hooked = false
-					h.hookPID = 0
-					h.scanning = true
-				}
-				h.mu.Unlock()
-				if fields[2] == "injecting" {
-					select {
-					case h.ready <- nil:
-					default:
-					}
-				}
-				if fields[2] == "failed" {
-					select {
-					case h.ready <- fmt.Errorf("%s", line):
-					default:
-					}
-				}
-			}
-			if mode == "" && strings.HasPrefix(line, "ok ") && strings.HasSuffix(line, "config prefix set") {
-				select {
-				case h.ready <- nil:
-				default:
-				}
-			}
-			if strings.HasPrefix(line, "error ") {
-				select {
-				case h.ready <- fmt.Errorf("%s", line):
-				default:
-				}
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			display.Log("LTK output: " + err.Error())
+	killExistingManagers()
+	if managerPortInUse() {
+		if err := waitForPortFree(3 * time.Second); err != nil {
+			return nil, fmt.Errorf("LTK cannot use DevTools port %d: %w", cdpPort, err)
 		}
 	}
-	go read(stdout)
-	go read(stderr)
+	if err := configureManagerSettings(gameDir); err != nil {
+		display.Log("LTK: manager settings: " + err.Error())
+	}
+	cmd, err := launchManager(filepath.Join(dir, managerExeName))
+	if err != nil {
+		return nil, fmt.Errorf("LTK manager launch: %w", err)
+	}
+	page, err := cdpFindPage(cdpHandshakeTimeout)
+	if err != nil {
+		killLaunchedManager(cmd)
+		return nil, fmt.Errorf("LTK manager WebView: %w", err)
+	}
+	c, err := cdpDial(page.WS)
+	if err != nil {
+		killLaunchedManager(cmd)
+		return nil, fmt.Errorf("LTK manager connect: %w", err)
+	}
+	if err := c.waitReady(cdpReadyTimeout); err != nil {
+		c.close()
+		killLaunchedManager(cmd)
+		return nil, fmt.Errorf("LTK manager page: %w", err)
+	}
+	result, err := c.injectShim()
+	if err != nil || (result != "installed" && result != "already") {
+		c.close()
+		killLaunchedManager(cmd)
+		if err != nil {
+			return nil, fmt.Errorf("LTK manager bridge: %w", err)
+		}
+		return nil, fmt.Errorf("LTK manager bridge: %s", result)
+	}
+	m := &managerSession{
+		cmd:    cmd,
+		cdp:    c,
+		stop:   make(chan struct{}),
+		exited: make(chan struct{}),
+	}
+	manager = m
 	go func() {
-		readers.Wait()
-		err := cmd.Wait()
-		h.mu.Lock()
-		h.running = false
-		h.hooked = false
-		h.mu.Unlock()
-		display.Log(fmt.Sprintf("LTK host exited: %v", err))
-		close(h.done)
+		_ = cmd.Wait()
+		close(m.exited)
 	}()
-	// dev: OPT_OUT_AH_V1 (4) + debug log level (32)
-	_, err = fmt.Fprintf(stdin, "config loglevel 32\nconfig flags 28\nconfig prefix %s\\\n", strings.TrimRight(prefix, `/\`))
-	if err == nil && mode != "" {
-		_, err = fmt.Fprintln(stdin, "start "+mode)
-	}
-	if err == nil {
+	go pollManager(m)
+	display.Log(fmt.Sprintf("LTK: manager ready pid=%d page=%s", cmd.Process.Pid, page.URL))
+	return m, nil
+}
+
+func killLaunchedManager(cmd *exec.Cmd) {
+	killManagerTree(cmd)
+	go func() { _ = cmd.Wait() }()
+}
+
+// pollManager keeps the session snapshot current: phase and running state
+// from the manager's status command, attachment and failures from the event
+// bridge. The loop ends when the session is torn down, the manager dies, or
+// the DevTools connection breaks.
+func pollManager(m *managerSession) {
+	tick := time.NewTicker(300 * time.Millisecond)
+	defer tick.Stop()
+	failures := 0
+	for {
 		select {
-		case err = <-h.ready:
-		case <-h.done:
-			err = fmt.Errorf("LTK host exited during startup")
-		case <-time.After(5 * time.Second):
-			err = fmt.Errorf("LTK host startup timeout")
+		case <-m.stop:
+			return
+		case <-m.exited:
+			setSnapshot(func(s *managerSnapshot) { s.alive = false })
+			display.Log("LTK: manager process exited")
+			return
+		case <-tick.C:
 		}
+		state, err := m.cdp.bridgeState()
+		if err != nil {
+			failures++
+			if failures >= 5 {
+				setSnapshot(func(s *managerSnapshot) { s.alive = false })
+				display.Log("LTK: manager connection lost: " + err.Error())
+				return
+			}
+			continue
+		}
+		failures = 0
+		if !state.Shim {
+			// The page reloaded and dropped the bridge; re-install it.
+			if _, err := m.cdp.injectShim(); err != nil {
+				display.Log("LTK: bridge re-injection: " + err.Error())
+			}
+		}
+		failure := state.Failure
+		if failure != "" {
+			failure = errorText(json.RawMessage(failure))
+		}
+		setSnapshot(func(s *managerSnapshot) {
+			*s = managerSnapshot{
+				alive:    true,
+				attached: state.Attached,
+				failure:  failure,
+			}
+			if state.Status != nil {
+				s.running = state.Status.Running
+				s.phase = state.Status.Phase
+			}
+			if state.PID != nil {
+				s.pid = *state.PID
+			}
+		})
 	}
-	if err != nil {
-		stopLocked()
-	} else if mode == "scan" {
-		display.Log(fmt.Sprintf("LTK: scan session established pid=%d; preserve this session through preparation", h.cmd.Process.Pid))
-	}
-	return err
 }
