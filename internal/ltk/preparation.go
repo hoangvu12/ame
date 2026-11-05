@@ -3,8 +3,6 @@ package ltk
 import (
 	"fmt"
 	"os"
-
-	"github.com/hoangvu12/ame/internal/display"
 )
 
 // BeginPreparation arms the patcher during champion select: the LTK Manager
@@ -53,47 +51,15 @@ func armPatcher() error {
 	return awaitPatcherStart(m)
 }
 
-// publishOverlay swaps the staged overlay into place, together with the
-// staged skin package, and never leaves a mix of old and new behind. A game
-// window refuses publication: the armed overlay for that match is kept.
-func publishOverlay(staged, overlay, pkgFrom, pkgTo string) error {
+// publishPackage swaps the staged skin package into place atomically: the
+// previous package stays intact until the new one is complete (an aborted
+// build's staged file is simply overwritten next time), and a game window
+// refuses publication: the armed package for that match is kept. The
+// extracted overlay ame used to build beside the package is gone — the
+// manager builds its own overlay from the installed package.
+func publishPackage(staged, pkg string) error {
 	if gameWindowExists() {
-		return fmt.Errorf("a game window already exists; keeping the previous overlay for this match")
+		return fmt.Errorf("a game window already exists; keeping the previous skin package for this match")
 	}
-	backup := staged + "-previous"
-	hadPrevious := false
-	if _, err := os.Stat(overlay); err == nil {
-		if err = os.Rename(overlay, backup); err != nil {
-			return err
-		}
-		hadPrevious = true
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	if err := os.Rename(staged, overlay); err != nil {
-		if hadPrevious {
-			if restoreErr := os.Rename(backup, overlay); restoreErr != nil {
-				return fmt.Errorf("publish failed: %v; restore failed: %w (previous overlay at %s)", err, restoreErr, backup)
-			}
-		}
-		return err
-	}
-	// The skin package follows the overlay it was built from. Without a new
-	// package the previous one is removed: Start must never install a
-	// package that does not match the published overlay.
-	var pkgErr error
-	if pkgFrom != "" {
-		pkgErr = os.Rename(pkgFrom, pkgTo)
-	} else {
-		pkgErr = os.Remove(pkgTo)
-	}
-	if pkgErr != nil && !os.IsNotExist(pkgErr) {
-		display.Log("LTK: skin package publish: " + pkgErr.Error())
-	}
-	if hadPrevious {
-		if err := os.RemoveAll(backup); err != nil {
-			display.Log("LTK: old overlay cleanup: " + err.Error())
-		}
-	}
-	return nil
+	return os.Rename(staged, pkg)
 }

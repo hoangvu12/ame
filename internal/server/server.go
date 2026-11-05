@@ -280,7 +280,7 @@ func handleUninstall(conn *websocket.Conn) {
 	os.RemoveAll(config.ToolsDir)
 	os.RemoveAll(config.SkinsDir)
 	custommods.CleanModsDir()
-	os.RemoveAll(config.OverlayDir)
+	removeOverlayState(config.OverlayDir)
 	os.RemoveAll(config.CustomModsDir)
 
 	// Schedule deletion of ame directory after process exits.
@@ -421,8 +421,9 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	prebuilt := prebuiltModKey == skin.OverlayKey(currentModKey)
 	if prebuilt {
-		overlayOK := overlayExists(config.OverlayDir)
-		if !overlayOK {
+		// The prebuilt overlay is the published skin package: the manager
+		// builds its own overlay from it when Start installs it.
+		if !skinPackageReady(config.OverlayDir + ".fantome") {
 			prebuilt = false
 		}
 	}
@@ -433,19 +434,10 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		teammateSkinCount = strings.Count(currentModKey, ",")
 	} else {
 		prebuiltModKey = ""
-		custommods.CleanModsDir()
-		os.MkdirAll(config.ModsDir, os.ModePerm)
-
-		// Extract skin if not default
-		if hasSkin {
-			modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
-			os.MkdirAll(modSubDir, os.ModePerm)
-
-			if err := skin.Extract(zipPath, modSubDir); err != nil {
-				overlayBuildMu.Unlock()
-				sendStatus(conn, "error", "Failed to extract skin archive")
-				return
-			}
+		if err := refreshModsDir(config.ModsDir, skinID, zipPath); err != nil {
+			overlayBuildMu.Unlock()
+			sendStatus(conn, "error", "Failed to extract skin archive")
+			return
 		}
 
 		// Download and extract teammate skins if room party is active
@@ -638,17 +630,9 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	lastModKey = ""
 	stateMu.Unlock()
 
-	custommods.CleanModsDir()
-	os.MkdirAll(config.ModsDir, os.ModePerm)
-
-	// Extract skin if not default
-	if hasSkin {
-		modSubDir := filepath.Join(config.ModsDir, fmt.Sprintf("skin_%s", skinID))
-		os.MkdirAll(modSubDir, os.ModePerm)
-
-		if err := skin.Extract(zipPath, modSubDir); err != nil {
-			return
-		}
+	if err := refreshModsDir(config.ModsDir, skinID, zipPath); err != nil {
+		display.Log("Prefetch: skin extraction failed: " + err.Error())
+		return
 	}
 
 	// Download and extract teammate skins if room party is active
@@ -720,7 +704,7 @@ func HandleCleanup() {
 	}
 	activeSuspenderMu.Unlock()
 	modtools.KillModTools()
-	os.RemoveAll(config.OverlayDir)
+	removeOverlayState(config.OverlayDir)
 
 	overlayBuildMu.Lock()
 	prebuiltModKey = ""
@@ -1465,22 +1449,67 @@ func StartServer(port int) error {
 	return srv.Serve(ln)
 }
 
-// The runtime writes nested .wad.client files.
-func overlayExists(root string) bool {
-	found := false
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+// skinPackageReady reports whether the published skin package for an overlay
+// prefix exists and holds content. The manager's patcher installs this
+// package; the extracted overlay it used to sit beside is no longer built.
+func skinPackageReady(pkg string) bool {
+	info, err := os.Stat(pkg)
+	return err == nil && info.Mode().IsRegular() && info.Size() > 0
+}
+
+// removeOverlayState removes the published overlay artifacts: the legacy
+// overlay directory, the skin package, and any package a failed build left
+// staged.
+func removeOverlayState(overlay string) {
+	os.RemoveAll(overlay)
+	os.Remove(overlay + ".fantome")
+	os.Remove(overlay + ".fantome.new")
+}
+
+// refreshModsDir prunes mod directories the current selection no longer uses
+// and refreshes the own skin's mod directory only when its package bytes
+// changed, so re-applying the same selection costs no re-extraction and no
+// voice-bank relocalization. Teammate mods are refreshed (also digest-gated)
+// by DownloadTeammateSkins right after this runs.
+func refreshModsDir(modsDir, skinID, zipPath string) error {
+	keep := map[string]bool{}
+	hasSkin := skinID != "" && skinID != "0"
+	if hasSkin {
+		keep[fmt.Sprintf("skin_%s", skinID)] = true
+	}
+	if roomState.IsActive() {
+		for _, tm := range roomState.GetTeammates() {
+			if tm.SkinInfo.SkinID != "" && tm.SkinInfo.SkinID != "0" {
+				keep[fmt.Sprintf("skin_%s", tm.SkinInfo.SkinID)] = true
+			}
 		}
-		if info.IsDir() {
-			return nil
+	}
+	for _, mod := range config.GetEnabledCustomMods() {
+		keep["custom_"+mod.ID] = true
+	}
+	entries, err := os.ReadDir(modsDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, entry := range entries {
+		if keep[entry.Name()] {
+			continue
 		}
-		if strings.HasSuffix(strings.ToLower(info.Name()), ".wad.client") {
-			found = true
+		entryPath := filepath.Join(modsDir, entry.Name())
+		// Junctions (custom mods) unlink without touching their target.
+		if entry.Type()&os.ModeSymlink != 0 {
+			_ = os.Remove(entryPath)
+		} else {
+			_ = os.RemoveAll(entryPath)
 		}
+	}
+	if !hasSkin {
 		return nil
-	})
-	return found
+	}
+	if err := os.MkdirAll(modsDir, os.ModePerm); err != nil {
+		return err
+	}
+	return skin.ExtractPackage(zipPath, filepath.Join(modsDir, fmt.Sprintf("skin_%s", skinID)))
 }
 
 // beginPreparationSuspend guards both prefetch and apply, with identical release paths.

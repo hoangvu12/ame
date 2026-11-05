@@ -2,6 +2,7 @@ package ltk
 
 import (
 	"archive/zip"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -214,5 +215,89 @@ func TestOverlayFailureMessage(t *testing.T) {
 		if overlayFailureMessage(outcome) == "" {
 			t.Fatalf("%s is not reported as a failure", outcome)
 		}
+	}
+}
+
+// Build produces only the skin package the manager installs: no extracted
+// overlay is written (the manager builds its own), and a second Build
+// replaces the package in place.
+func TestBuildProducesSkinPackageOnly(t *testing.T) {
+	old := config.AmeDir
+	config.AmeDir = t.TempDir()
+	defer func() { config.AmeDir = old }()
+	root := config.AmeDir
+	modsDir := filepath.Join(root, "mods")
+	overlay := filepath.Join(root, "overlay")
+	modDir := filepath.Join(modsDir, "skin_1060", "WAD")
+	if err := os.MkdirAll(modDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modDir, "Annie.wad.client"), []byte("wad"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Build(modsDir, overlay, `C:\Riot Games\League of Legends\Game`, "skin_1060"); err != nil {
+		t.Fatal(err)
+	}
+	pkg := overlay + ".fantome"
+	data, err := os.ReadFile(pkg)
+	if err != nil {
+		t.Fatalf("skin package not published: %v", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("published package is not a zip: %v", err)
+	}
+	var sawWAD, sawMeta bool
+	for _, entry := range reader.File {
+		switch entry.Name {
+		case "WAD/Annie.wad.client":
+			sawWAD = true
+		case "META/info.json":
+			sawMeta = true
+		}
+	}
+	if !sawWAD || !sawMeta {
+		t.Fatalf("package contents incomplete: wad=%v meta=%v", sawWAD, sawMeta)
+	}
+	if _, err := os.Stat(overlay); !os.IsNotExist(err) {
+		t.Fatalf("extracted overlay published: %v", err)
+	}
+	if _, err := os.Stat(overlay + ".fantome.new"); !os.IsNotExist(err) {
+		t.Fatalf("staged package survived publication: %v", err)
+	}
+
+	// A rebuild replaces the package and still writes no overlay.
+	if err := os.WriteFile(filepath.Join(modDir, "Annie.wad.client"), []byte("wad2"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Build(modsDir, overlay, `C:\Riot Games\League of Legends\Game`, "skin_1060"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := zip.OpenReader(pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer entries.Close()
+	var replaced bool
+	for _, entry := range entries.File {
+		if entry.Name != "WAD/Annie.wad.client" {
+			continue
+		}
+		body, err := entry.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(body)
+		body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		replaced = string(content) == "wad2"
+	}
+	if !replaced {
+		t.Fatal("second build did not replace the package contents")
+	}
+	if _, err := os.Stat(overlay); !os.IsNotExist(err) {
+		t.Fatalf("extracted overlay published on rebuild: %v", err)
 	}
 }

@@ -1,15 +1,16 @@
-// Package ltk owns the bundled runtime, the skin package/overlay builder and
-// the LTK Manager session that patches the game.
+// Package ltk owns the bundled runtime, the skin package builder and the
+// LTK Manager session that patches the game.
 //
 // The manager runs as a hidden background helper (see cdp.go) and is driven
 // through the same Tauri IPC commands its own UI uses: ame installs the
 // built skin package into its library, enables it, and starts the patcher.
+// The manager builds its own overlay from the installed package, so ame
+// builds only the package — no extracted overlay, no WAD work.
 package ltk
 
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/json"
@@ -269,15 +270,19 @@ func mergeFantomes(sources []string, dest string) error {
 	return file.Close()
 }
 
-// Build packs the selected mods, builds the extracted overlay, and stages the
-// merged skin package installed into the manager's library by Start. The
-// package is published beside the overlay, atomically with it.
+// Build packs the selected mods and merges them into the skin package
+// Start installs into the LTK Manager's library. The manager builds its own
+// overlay from the package when it is installed, so ame performs no WAD work
+// here: the previous ame-side overlay build (~12s per apply) produced an
+// extracted overlay nothing consumed. The package is staged under a
+// temporary name and published atomically, so a failed build leaves the
+// previous complete package available to the armed runtime.
 func Build(modsDir, overlay, game, names string) error {
+	started := time.Now()
 	managerMu.Lock()
 	gameDir = game
 	managerMu.Unlock()
-	dir, err := Prepare()
-	if err != nil {
+	if _, err := Prepare(); err != nil {
 		return err
 	}
 	scratch, err := os.MkdirTemp("", "ame-ltk-build-")
@@ -285,19 +290,10 @@ func Build(modsDir, overlay, game, names string) error {
 		return err
 	}
 	defer os.RemoveAll(scratch)
-	// Build away from the live prefix. A failed build must leave the previous
-	// complete overlay available to the preserved scanner.
 	if err := os.MkdirAll(filepath.Dir(overlay), 0755); err != nil {
 		return err
 	}
-	staged, err := os.MkdirTemp(filepath.Dir(overlay), ".ame-overlay-stage-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(staged)
-	packagePath := staged + ".pkg"
-	defer os.Remove(packagePath)
-	args := []string{game, staged, filepath.Join(scratch, "state")}
+	staged := overlay + ".fantome.new"
 	var packages []string
 	for i, name := range strings.Split(names, "/") {
 		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `\:`) {
@@ -307,27 +303,17 @@ func Build(modsDir, overlay, game, names string) error {
 		if err = packMod(filepath.Join(modsDir, name), path); err != nil {
 			return err
 		}
-		args = append(args, path)
 		packages = append(packages, path)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(dir, "ame-ltk-overlay.exe"), args...)
-	hide(cmd)
-	output, err := cmd.CombinedOutput()
-	if len(output) > 8192 {
-		output = output[len(output)-8192:]
+	if err := mergeFantomes(packages, staged); err != nil {
+		os.Remove(staged)
+		return fmt.Errorf("LTK skin package: %w", err)
 	}
-	display.Log("LTK build: " + string(output))
-	if err != nil {
-		return fmt.Errorf("LTK overlay: %w", err)
+	if err := publishPackage(staged, overlay+".fantome"); err != nil {
+		return err
 	}
-	if len(packages) > 0 {
-		if err := mergeFantomes(packages, packagePath); err != nil {
-			return fmt.Errorf("LTK skin package: %w", err)
-		}
-	}
-	return publishOverlay(staged, overlay, packagePath, overlay+".fantome")
+	display.Log(fmt.Sprintf("LTK build: merged %d mod(s) into the skin package in %s", len(packages), time.Since(started).Round(time.Millisecond)))
+	return nil
 }
 
 // --- manager session ---

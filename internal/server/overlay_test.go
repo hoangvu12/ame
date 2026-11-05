@@ -6,21 +6,24 @@ import (
 	"testing"
 )
 
-func TestOverlayExists(t *testing.T) {
+func TestSkinPackageReady(t *testing.T) {
 	root := t.TempDir()
-	if overlayExists(root) {
-		t.Fatal("empty overlay accepted")
+	pkg := filepath.Join(root, "overlay.fantome")
+	if skinPackageReady(pkg) {
+		t.Fatal("missing package accepted")
 	}
-	path := filepath.Join(root, "DATA", "FINAL", "Champions", "Ashe.wad.client")
-	os.MkdirAll(filepath.Dir(path), 0755)
-	os.WriteFile(path, []byte("wad"), 0600)
-	if !overlayExists(root) {
-		t.Fatal("prebuilt overlay rejected")
+	os.WriteFile(pkg, []byte("package"), 0600)
+	if !skinPackageReady(pkg) {
+		t.Fatal("published package rejected")
 	}
-	// Root-level .wad files alone are not a runtime overlay.
-	root2 := t.TempDir()
-	os.WriteFile(filepath.Join(root2, "Ashe.wad"), []byte("wad"), 0600)
-	if overlayExists(root2) {
-		t.Fatal("root-level .wad accepted as an overlay")
+	os.Remove(pkg)
+	os.Mkdir(pkg, 0755)
+	if skinPackageReady(pkg) {
+		t.Fatal("directory accepted as a package")
+	}
+	os.Remove(pkg)
+	os.WriteFile(pkg, nil, 0600)
+	if skinPackageReady(pkg) {
+		t.Fatal("empty package accepted")
 	}
 }
