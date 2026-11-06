@@ -13,6 +13,19 @@ let wsReconnectTimer = null;
 // Pending apply promise — resolved/rejected by incoming status messages
 let applyResolve = null;
 let applyReject = null;
+let applyTimer = null;
+const APPLY_TIMEOUT_MS = 120000;
+
+function settleApply(error, active) {
+  const resolve = applyResolve;
+  const reject = applyReject;
+  clearTimeout(applyTimer);
+  applyTimer = null;
+  applyResolve = null;
+  applyReject = null;
+  if (error) reject?.(error);
+  else resolve?.(active);
+}
 
 // Overlay tracking
 let lastApplyPayload = null;
@@ -221,6 +234,7 @@ export function wsConnect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   try {
     ws = new WebSocket(WS_URL);
+    const socket = ws;
     ws.onopen = () => {
       logger.log('WebSocket connected');
       setConnected(true);
@@ -231,6 +245,7 @@ export function wsConnect() {
       ws.send(JSON.stringify({ type: 'getCustomMods' }));
     };
     ws.onmessage = (e) => {
+      if (socket !== ws || socket.readyState !== WebSocket.OPEN) return;
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'state') {
@@ -333,19 +348,13 @@ export function wsConnect() {
             setServerReady(false);
             toastError(msg.message);
             if (applyReject) {
-              applyReject(new Error(msg.message));
-              applyResolve = null;
-              applyReject = null;
+              settleApply(new Error(msg.message));
             }
           } else if ((msg.status === 'ready' || msg.status === 'noop') && applyResolve) {
-            applyResolve(msg.status === 'ready');
-            applyResolve = null;
-            applyReject = null;
+            settleApply(null, msg.status === 'ready');
           } else if (msg.status === 'error') {
             if (applyReject) {
-              applyReject(new Error(msg.message));
-              applyResolve = null;
-              applyReject = null;
+              settleApply(new Error(msg.message));
             } else {
               toastError(msg.message);
             }
@@ -356,6 +365,8 @@ export function wsConnect() {
       }
     };
     ws.onclose = () => {
+      if (socket !== ws) return;
+      settleApply(new Error('Connection closed during apply'));
       setConnected(false);
       wsScheduleReconnect();
     };
@@ -481,7 +492,7 @@ export function wsSendUnstuck() {
  * If an apply is already in-flight, skip (let the existing one finish).
  */
 export function wsSendApply(obj) {
-  if (applyResolve) {
+  if (applyResolve || !ws || ws.readyState !== WebSocket.OPEN) {
     return false;
   }
 
@@ -495,7 +506,16 @@ export function wsSendApply(obj) {
     applyReject = reject;
   });
 
-  promise.then((active) => { overlayActive = active; });
+  promise.then((active) => { overlayActive = active; }, () => {});
+
+  const socket = ws;
+  applyTimer = setTimeout(() => {
+    settleApply(new Error('Apply request timed out'));
+    // Status replies have no request IDs. Retire this connection before a
+    // retry so a late reply cannot complete the next apply. Never replay it:
+    // the game may already have launched while the response was missing.
+    socket.close();
+  }, APPLY_TIMEOUT_MS);
 
   toastPromise(promise, {
     loading: t('toast.apply.loading'),
@@ -503,7 +523,12 @@ export function wsSendApply(obj) {
     error: t('toast.apply.error'),
   });
 
-  wsSend(obj);
+  try {
+    wsSend(obj);
+  } catch (err) {
+    settleApply(err);
+    return false;
+  }
   logger.log(`apply sent champion=${obj.championId} skin=${obj.skinId}`);
   return true;
 }
