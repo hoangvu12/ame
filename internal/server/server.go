@@ -1432,6 +1432,7 @@ func newMux() *http.ServeMux {
 	mux.HandleFunc("/form-icon/", formicons.ServeFormIcon)
 	mux.HandleFunc("/proxy-image", httpproxy.ServeImageProxy)
 	mux.HandleFunc("/show", showHandler)
+	mux.HandleFunc("/diagnostics.zip", handleDiagnosticsDownload)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {

@@ -51,6 +51,19 @@ func TestDiagnosticZIPPrivacyAndBounds(t *testing.T) {
 	}
 }
 
+func TestDiagnosticDownloadRoute(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	w := httptest.NewRecorder()
+	newMux().ServeHTTP(w, httptest.NewRequest("GET", "http://localhost:18765/diagnostics.zip", nil))
+	if w.Code != 200 || w.Header().Get("Content-Type") != "application/zip" {
+		t.Fatalf("diagnostics route: code=%d type=%q", w.Code, w.Header().Get("Content-Type"))
+	}
+	if _, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len())); err != nil {
+		t.Fatalf("route returned invalid ZIP: %v", err)
+	}
+}
+
 func TestDiagnosticZIPMissing(t *testing.T) {
 	data, err := buildDiagnosticZIP("", "", "v1")
 	if err != nil {
