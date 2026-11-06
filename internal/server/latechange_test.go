@@ -30,6 +30,7 @@ func TestMain(m *testing.M) {
 	probeMatchTiming = func() matchTiming { return matchTiming{stage: stageUnknown, detail: "no client in tests"} }
 	startRuntime = func(string) error { panic("test reached the manager hand-off") }
 	stopRuntime = func() { panic("test reached the runtime stop") }
+	disarmRuntime = func() { panic("test reached the runtime disarm") }
 	// Triggers schedule real timers; a late one must find nothing to reach.
 	prepareMaps = func(string) error { return nil }
 	runtimeRunning = func() bool { return false }
@@ -51,22 +52,24 @@ func TestMain(m *testing.M) {
 }
 
 type lateStubs struct {
-	probes int
-	stops  int
+	probes  int
+	stops   int
+	disarms int
 }
 
 func stubLateChange(t *testing.T, running bool, state ltk.Prepared, timing matchTiming, budget time.Duration) *lateStubs {
 	t.Helper()
 	stubs := &lateStubs{}
-	oldRunning, oldState, oldBudget, oldProbe, oldStop := gameRunning, preparedState, rebuildBudget, probeMatchTiming, stopRuntime
+	oldRunning, oldState, oldBudget, oldProbe, oldStop, oldDisarm := gameRunning, preparedState, rebuildBudget, probeMatchTiming, stopRuntime, disarmRuntime
 	gameRunning = func() bool { return running }
 	preparedState = func() ltk.Prepared { return state }
 	rebuildBudget = func() time.Duration { return budget }
 	probeMatchTiming = func() matchTiming { stubs.probes++; return timing }
 	stopRuntime = func() { stubs.stops++ }
+	disarmRuntime = func() { stubs.disarms++ }
 	setPreparedChampion("")
 	t.Cleanup(func() {
-		gameRunning, preparedState, rebuildBudget, probeMatchTiming, stopRuntime = oldRunning, oldState, oldBudget, oldProbe, oldStop
+		gameRunning, preparedState, rebuildBudget, probeMatchTiming, stopRuntime, disarmRuntime = oldRunning, oldState, oldBudget, oldProbe, oldStop, oldDisarm
 		setPreparedChampion("")
 	})
 	return stubs
@@ -236,22 +239,25 @@ func TestCleanupRequestNeverStopsTheRuntimeDuringAMatch(t *testing.T) {
 	stubs := stubLateChange(t, true, ltk.Prepared{Armed: true}, matchTiming{}, 15*time.Second)
 	conn, peer := loopbackClient(t)
 	handleCleanupRequest(conn)
-	if stubs.stops != 0 {
+	if stubs.stops != 0 || stubs.disarms != 0 {
 		t.Fatal("cleanup stopped the runtime while League ran")
 	}
 	if msg := readStatus(t, peer); msg.Status != "cleanupDeclined" {
 		t.Fatalf("status=%+v", msg)
 	}
+	// After the match the patcher is disarmed; the manager stays for the
+	// map preparation and the next selection.
 	gameRunning = func() bool { return false }
 	handleCleanupRequest(conn)
-	if stubs.stops != 1 {
-		t.Fatalf("cleanup after the match did not stop the runtime: %d", stubs.stops)
+	if stubs.disarms != 1 || stubs.stops != 0 {
+		t.Fatalf("cleanup after the match: disarms=%d stops=%d, want 1 and 0", stubs.disarms, stubs.stops)
 	}
-	// Uninstall, the stuck-game button and shutdown stay unconditional.
+	// Uninstall, the stuck-game button and shutdown stop everything,
+	// unconditionally.
 	gameRunning = func() bool { return true }
 	HandleCleanup()
-	if stubs.stops != 2 {
-		t.Fatal("explicit cleanup was blocked")
+	if stubs.stops != 1 || stubs.disarms != 1 {
+		t.Fatalf("explicit cleanup: stops=%d disarms=%d, want 1 and 1", stubs.stops, stubs.disarms)
 	}
 }
 
@@ -261,13 +267,13 @@ func TestPrefetchDisarmNeverStopsTheRuntimeDuringAMatch(t *testing.T) {
 	patcherWaiting = func() bool { return true }
 	t.Cleanup(func() { patcherWaiting = previous })
 	handlePrefetch(nil, "104", "0", "", "", "", "", selectionRevision.Load())
-	if stubs.stops != 0 {
+	if stubs.stops != 0 || stubs.disarms != 0 {
 		t.Fatal("an empty selection stopped the runtime while League ran")
 	}
 	gameRunning = func() bool { return false }
 	handlePrefetch(nil, "104", "0", "", "", "", "", selectionRevision.Load())
-	if stubs.stops != 1 {
-		t.Fatal("an empty selection before the match did not disarm the previous one")
+	if stubs.disarms != 1 || stubs.stops != 0 {
+		t.Fatalf("an empty selection before the match: disarms=%d stops=%d, want a disarm that keeps the manager", stubs.disarms, stubs.stops)
 	}
 }
 

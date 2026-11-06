@@ -13,6 +13,13 @@ func KillModTools() {
 	ltk.Stop()
 }
 
+// Disarm stops the patcher between games but keeps the manager running.
+func Disarm() {
+	if err := ltk.Disarm(); err != nil {
+		display.Log("LTK: disarm: " + err.Error())
+	}
+}
+
 // RunMkOverlay builds the overlay for the given mods.
 func RunMkOverlay(modsDir, overlayDir, gameDir, modName string) (bool, int) {
 	if err := ltk.Build(modsDir, overlayDir, gameDir, modName); err != nil {

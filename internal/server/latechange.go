@@ -34,6 +34,7 @@ var (
 	patcherWaiting = ltk.WaitingForGame
 	startRuntime   = modtools.RunOverlay
 	stopRuntime    = modtools.KillModTools
+	disarmRuntime  = modtools.Disarm
 )
 
 type launchStage int
@@ -245,8 +246,10 @@ func reportOverlayVerdict(pid uint64, verdict string) {
 // runs, the patcher serves that match: stopping it now cannot remove skins
 // from the game, and the plugin also asks after transient phases (a client
 // that closes during the game and comes back, a phase that briefly reads
-// "None"), so the request is declined instead. Uninstall, the stuck-game
-// button and shutting ame down still clean up unconditionally.
+// "None"), so the request is declined instead. Otherwise the patcher is
+// disarmed and the manager kept, so the map copies can be prepared before
+// the next champion select. Uninstall, the stuck-game button and shutting
+// ame down still stop everything unconditionally.
 func handleCleanupRequest(conn *websocket.Conn) {
 	if gameRunning() {
 		display.Log("LTK: cleanup request ignored while League is running; the patcher keeps serving this match")
@@ -256,6 +259,6 @@ func handleCleanupRequest(conn *websocket.Conn) {
 		sendStatus(conn, "cleanupDeclined", "Skins cannot change during a match. Changes apply next match.")
 		return
 	}
-	HandleCleanup()
+	resetSelection(disarmRuntime)
 	scheduleMapPrep("after game", mapPrepPostGame)
 }

@@ -609,10 +609,10 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 
 	// Nothing to prefetch: disarm a previous selection before a game starts.
 	// Never while League runs: stopping the patcher cannot take skins out of
-	// a match that loaded them.
+	// a match that loaded them. The manager stays for the next selection.
 	if !hasSkin && !hasCustomMods && !hasTeammateSkins {
 		if patcherWaiting() && !gameRunning() {
-			stopRuntime()
+			disarmRuntime()
 			stateMu.Lock()
 			lastModKey = ""
 			stateMu.Unlock()
@@ -769,11 +769,18 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	display.Log(fmt.Sprintf("Skin ready (prebuilt key: %s)", prebuiltModKey))
 }
 
-// HandleCleanup stops the skin runtime and forgets the prepared selection.
-// It is unconditional: uninstall, the stuck-game button and shutting ame
-// down call it directly. The plugin's cleanup message goes through
-// handleCleanupRequest, which declines while League runs.
+// HandleCleanup stops the skin runtime, manager included, and forgets the
+// prepared selection. It is unconditional: uninstall, the stuck-game button
+// and shutting ame down call it directly. The plugin's cleanup message goes
+// through handleCleanupRequest, which declines while League runs and only
+// disarms the patcher.
 func HandleCleanup() {
+	resetSelection(stopRuntime)
+}
+
+// resetSelection runs stop (a full stop or a disarm) and forgets the
+// prepared selection.
+func resetSelection(stop func()) {
 	skinPreparationMu.Lock()
 	defer skinPreparationMu.Unlock()
 	if preparationInvalid.Swap(false) {
@@ -782,7 +789,7 @@ func HandleCleanup() {
 		stateMu.Unlock()
 		prebuiltModKey = ""
 	}
-	stopRuntime()
+	stop()
 	removeOverlayState(config.OverlayDir)
 
 	overlayBuildMu.Lock()

@@ -149,6 +149,7 @@ func PrepareMaps(reason string) error {
 		mapPrepRunning = false
 		close(done)
 		mapPrepMu.Unlock()
+		scheduleIdleStop()
 	}()
 
 	skip := func(why string) error {

@@ -873,6 +873,105 @@ func stopLocked() {
 	snapshotMu.Unlock()
 }
 
+// disarmStopTimeout bounds the wait for the patcher to report itself
+// stopped after Disarm asked it to stop.
+var disarmStopTimeout = 5 * time.Second
+
+// Disarm stops the patcher, so no later game is hooked with the set it held,
+// but keeps the manager: its process, DevTools connection and the installed
+// package bookkeeping survive, so the next arm is one library edit and a
+// patcher start, and a preparation can build the map copies in between.
+// Never while League runs: the patcher serves that match. A patcher that
+// will not stop gets the full Stop.
+func Disarm() error {
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	if gameProcessRunning() {
+		return ErrGameRunning
+	}
+	m := manager
+	if m == nil || !m.alive() {
+		return nil
+	}
+	if err := stopPatcherLocked(m); err != nil {
+		display.Log("LTK: patcher stop failed, stopping the manager: " + err.Error())
+		stopLocked()
+		return err
+	}
+	snapshotMu.Lock()
+	snapshot.running, snapshot.phase, snapshot.pending = false, "idle", false
+	rebuild, armedAt = nil, time.Time{}
+	snapshotMu.Unlock()
+	display.Log("LTK: patcher stopped; the manager stays ready for the next skin set")
+	scheduleIdleStop()
+	return nil
+}
+
+// stopPatcherLocked stops the patcher and waits until the manager reports
+// it stopped, so the next arm finds an idle patcher.
+func stopPatcherLocked(m *managerSession) error {
+	if err := m.cdp.stopPatcher(); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(disarmStopTimeout)
+	for {
+		status, err := m.cdp.patcherStatus()
+		if err == nil && !status.Running {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("the patcher still runs %s after the stop", disarmStopTimeout)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// managerIdleTimeout: a manager with nothing armed and no preparation
+// running is shut down after this long. The next use relaunches it.
+var managerIdleTimeout = 30 * time.Minute
+
+var (
+	idleStopMu    sync.Mutex
+	idleStopTimer *time.Timer
+)
+
+// scheduleIdleStop (re)starts the idle countdown.
+func scheduleIdleStop() {
+	idleStopMu.Lock()
+	defer idleStopMu.Unlock()
+	if idleStopTimer != nil {
+		idleStopTimer.Stop()
+	}
+	idleStopTimer = time.AfterFunc(managerIdleTimeout, stopIfIdle)
+}
+
+// stopIfIdle shuts the manager down unless something uses it. An armed
+// patcher restarts the countdown when it is disarmed.
+func stopIfIdle() {
+	if MapPrepRunning() {
+		scheduleIdleStop()
+		return
+	}
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	m := manager
+	if m == nil {
+		return
+	}
+	if gameProcessRunning() {
+		scheduleIdleStop()
+		return
+	}
+	if status, err := m.cdp.patcherStatus(); err == nil && status.Running {
+		return
+	}
+	display.Log(fmt.Sprintf("LTK: stopping the idle manager (nothing armed for %s)", managerIdleTimeout))
+	stopLocked()
+}
+
 // killManagerTree terminates the manager process and its WebView2 children.
 func killManagerTree(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
