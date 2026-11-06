@@ -189,6 +189,73 @@ test('visible forced base does not discard the unowned payload', async () => {
   assert.equal(applied[0].skinId, 1001);
 });
 
+// A teammate change after champion select used to go out as an apply: LTK
+// Manager then rebuilt while League launched, and a rebuild that ends after
+// League's process exists costs the match every skin.
+test('room-party retrigger after champion select sends nothing', async () => {
+  const skins = [{ id: 1002, name: 'Owned' }];
+  const applied = [];
+  const sent = [];
+  let inFlight = false;
+  let overlayActive = false;
+  const autoApply = await loadAutoApply({
+    './api': {
+      loadChampionSkins: async () => skins,
+      getChampionSkins: () => skins,
+      getMyChampionId: async () => 1,
+      getChampionName: async () => 'Champion',
+      fetchJson: async () => null,
+      forceDefaultSkin: async () => true,
+      selectSkin: async () => true,
+      cancelPendingSkinSelections: () => {},
+    },
+    './skin': {
+      readCurrentSkin: () => 'Owned',
+      findSkinByName: (list, name) => list.find((skin) => skin.name === name) || null,
+      isDefaultSkin: () => false,
+    },
+    './websocket': {
+      wsSend: (payload) => { sent.push(payload); return true; },
+      wsSendApply: (payload) => { applied.push(payload); return true; },
+      isApplyInFlight: () => inFlight,
+      isOverlayActive: () => overlayActive,
+      hasEnabledCustomMods: () => false,
+      hasRoomPartySkins: () => true,
+    },
+    './ui': { setButtonState: () => {} },
+    './constants': { PREFETCH_DEBOUNCE_MS: 0, OWNED_SELECTION_DELAY_MS: 0 },
+    './roomParty': { notifySkinChange: () => {} },
+    './historicSkin': { recordHistoricSkin: () => {} },
+    './i18n': { t: (key) => key },
+    './logger': { createLogger: () => ({ log: () => {} }) },
+  });
+
+  autoApply.setChampSelectActive(true);
+  autoApply.checkAutoApply(1, true);
+  assert.equal(sent.length, 1);
+
+  // During champion select a retrigger still reaches ame, which decides
+  // whether there is time left for the rebuild.
+  autoApply.retriggerPrefetch();
+  assert.equal(sent.length, 2);
+
+  autoApply.setChampSelectActive(false);
+  overlayActive = true;
+  autoApply.retriggerPrefetch();
+  assert.equal(sent.length, 2);
+  assert.deepEqual(applied, []);
+
+  // A retry scheduled while an apply was in flight must not fire late either.
+  autoApply.setChampSelectActive(true);
+  inFlight = true;
+  autoApply.retriggerPrefetch();
+  autoApply.setChampSelectActive(false);
+  inFlight = false;
+  await new Promise((resolve) => setTimeout(resolve, 2100));
+  assert.equal(sent.length, 2);
+  assert.deepEqual(applied, []);
+});
+
 test('owned skin still applies teammate room-party skins', async () => {
   const skins = [{ id: 1002, name: 'Owned' }];
   const applied = [];

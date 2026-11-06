@@ -8,6 +8,8 @@ async function setup() {
   const timers = new Map();
   const sockets = [];
   const promises = [];
+  const toasts = [];
+  const notices = [];
   let id = 0;
   class Socket {
     static OPEN = 1;
@@ -25,7 +27,11 @@ async function setup() {
   });
   const mocks = {
     './constants': { WS_URL: 'ws://test', WS_RECONNECT_BASE_MS: 1000, WS_RECONNECT_MAX_MS: 5000, WS_RECONNECT_JITTER_MS: 0 },
-    './toast': { toastError() {}, toastPromise(p) { promises.push(p); p.catch(() => {}); } },
+    './toast': {
+      toastError() {},
+      toastSuccess(message) { notices.push(message); },
+      toastPromise(p, opts) { promises.push(p); toasts.push(opts); p.catch(() => {}); },
+    },
     './dom': { el() {} },
     './i18n': { t: (key) => key },
     './logger': { createLogger: () => ({ log() {}, error() {} }) },
@@ -43,7 +49,7 @@ async function setup() {
     assert.ok(entry, `timer ${delay} exists`);
     timers.delete(entry[0]); entry[1].fn();
   };
-  return { api, sockets, promises, timers, fire };
+  return { api, sockets, promises, toasts, notices, timers, fire };
 }
 const payload = { type: 'apply', championId: 1, skinId: 1001 };
 
@@ -94,6 +100,31 @@ for (const status of ['ready', 'noop', 'error', 'starting']) {
     assert.equal(timers.size, 0);
   });
 }
+
+// "kept": the change came too late for this match and ame kept the skins it
+// had prepared. Not a failure, and not a claim that the change applied.
+test('kept settles apply as success and says the change waits for the next match', async () => {
+  const { api, sockets, promises, toasts, timers } = await setup();
+  api.wsSendApply(payload);
+  sockets[0].status('kept');
+  assert.equal(await promises[0], true);
+  assert.equal(api.isApplyInFlight(), false);
+  assert.equal(api.isOverlayActive(), true);
+  assert.equal(timers.size, 0);
+  assert.equal(toasts[0].success(), 'toast.apply.kept');
+
+  api.wsSendApply(payload);
+  sockets[0].status('ready');
+  await promises[1];
+  assert.equal(toasts[1].success(), 'toast.apply.success');
+});
+
+test('kept without a pending apply shows a rate-limited notice', async () => {
+  const { sockets, notices } = await setup();
+  sockets[0].status('kept');
+  sockets[0].status('kept');
+  assert.deepEqual(notices, ['toast.apply.kept']);
+});
 
 test('send exception rejects and clears timer, allowing a later explicit retry', async () => {
   const { api, sockets, promises, timers } = await setup();

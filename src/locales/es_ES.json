@@ -21,7 +21,8 @@
     "apply": {
       "loading": "Aplicando skin...",
       "success": "¡Skin aplicada!",
-      "error": "Error al aplicar la skin"
+      "error": "Error al aplicar la skin",
+      "kept": "Se mantienen las skins preparadas. Los cambios tan tardíos se aplicarán en la próxima partida."
     },
     "unstuck": {
       "loading": "Liberando juego...",

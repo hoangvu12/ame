@@ -1,5 +1,5 @@
 import { WS_URL, WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, WS_RECONNECT_JITTER_MS } from './constants';
-import { toastError, toastPromise } from './toast';
+import { toastError, toastPromise, toastSuccess } from './toast';
 import { el } from './dom';
 import { t } from './i18n';
 import { createLogger } from './logger';
@@ -14,7 +14,21 @@ let wsReconnectTimer = null;
 let applyResolve = null;
 let applyReject = null;
 let applyTimer = null;
+let applyOutcome = null;
 const APPLY_TIMEOUT_MS = 120000;
+
+// ame answers "kept" when a change came too late for the coming match: the
+// skins it already prepared stay, and the change applies next match.
+// Room-party updates can repeat that, so the notice is rate-limited.
+const KEPT_NOTICE_INTERVAL_MS = 30000;
+let lastKeptNotice = 0;
+
+function notifyKept() {
+  const now = Date.now();
+  if (now - lastKeptNotice < KEPT_NOTICE_INTERVAL_MS) return;
+  lastKeptNotice = now;
+  toastSuccess(t('toast.apply.kept'));
+}
 
 function settleApply(error, active) {
   const resolve = applyResolve;
@@ -23,6 +37,7 @@ function settleApply(error, active) {
   applyTimer = null;
   applyResolve = null;
   applyReject = null;
+  applyOutcome = null;
   if (error) reject?.(error);
   else resolve?.(active);
 }
@@ -352,6 +367,14 @@ export function wsConnect() {
             }
           } else if ((msg.status === 'ready' || msg.status === 'noop') && applyResolve) {
             settleApply(null, msg.status === 'ready');
+          } else if (msg.status === 'kept') {
+            // Not a failure: the prepared skins stay active for this match.
+            if (applyResolve) {
+              if (applyOutcome) applyOutcome.kept = true;
+              settleApply(null, true);
+            } else {
+              notifyKept();
+            }
           } else if (msg.status === 'error') {
             if (applyReject) {
               settleApply(new Error(msg.message));
@@ -501,10 +524,12 @@ export function wsSendApply(obj) {
     championName: obj.championName || null, skinName: obj.skinName || null, chromaName: obj.chromaName || null,
   };
 
+  const outcome = { kept: false };
   const promise = new Promise((resolve, reject) => {
     applyResolve = resolve;
     applyReject = reject;
   });
+  applyOutcome = outcome;
 
   promise.then((active) => { overlayActive = active; }, () => {});
 
@@ -517,9 +542,10 @@ export function wsSendApply(obj) {
     socket.close();
   }, APPLY_TIMEOUT_MS);
 
+  // The toast resolves its text when the apply settles.
   toastPromise(promise, {
     loading: t('toast.apply.loading'),
-    success: t('toast.apply.success'),
+    success: () => (outcome.kept ? t('toast.apply.kept') : t('toast.apply.success')),
     error: t('toast.apply.error'),
   });
 

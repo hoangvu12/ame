@@ -21,7 +21,8 @@
     "apply": {
       "loading": "Applying skin...",
       "success": "Skin applied!",
-      "error": "Failed to apply skin"
+      "error": "Failed to apply skin",
+      "kept": "Keeping your prepared skins. Changes this late apply next match."
     },
     "unstuck": {
       "loading": "Releasing game...",

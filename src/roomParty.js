@@ -142,12 +142,16 @@ export function notifySkinChange(championId, skinId, baseSkinId, championName, s
   });
 }
 
-export function flushPendingRetrigger() {
+// Champion select ended with a teammate change still in its debounce. Sending
+// it now would make LTK Manager rebuild seconds before League starts, and a
+// rebuild that ends after League's process exists costs the match every skin
+// (the patcher DLL refuses the game as "joined too late"). The change waits
+// for the next match instead.
+export function discardPendingRetrigger() {
   if (retriggerDebounceTimer) {
     clearTimeout(retriggerDebounceTimer);
     retriggerDebounceTimer = null;
-    logger.log(` flushPendingRetrigger: flushing debounced retrigger`);
-    retriggerPrefetch();
+    logger.log(` discardPendingRetrigger: teammate change arrived too late for this match`);
   }
 }
 

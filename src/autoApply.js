@@ -253,6 +253,15 @@ export function lockRetrigger() {
 export function retriggerPrefetch() {
   if (retriggerTimer) { clearTimeout(retriggerTimer); retriggerTimer = null; }
 
+  // After champion select a changed set could only reach LTK Manager seconds
+  // before League starts; a rebuild that ends after the game's process exists
+  // costs the match every skin. Teammate changes from here on wait for the
+  // next match (ame keeps the set prepared during champion select).
+  if (!champSelectActive) {
+    logger.log(` retriggerPrefetch: champion select is over; change applies next match`);
+    return;
+  }
+
   if (!lastPrefetchPayload) {
     if (!lastTrackedSkinOwned || !hasRoomPartySkins()) {
       logger.log(` retriggerPrefetch: no saved payload, skipping`);
@@ -264,13 +273,11 @@ export function retriggerPrefetch() {
     };
   }
 
-  // Staleness check: only applies during champ select where the DOM is live.
-  if (champSelectActive) {
-    const currentSkin = readCurrentSkin();
-    if (!lastPrefetchPayload.partyOnly && currentSkin && lastPrefetchPayload.skinName !== currentSkin) {
-      logger.log(` retriggerPrefetch: stale payload (${lastPrefetchPayload.skinName} != ${currentSkin}), skipping`);
-      return;
-    }
+  // Staleness check: the champ select DOM is live.
+  const currentSkin = readCurrentSkin();
+  if (!lastPrefetchPayload.partyOnly && currentSkin && lastPrefetchPayload.skinName !== currentSkin) {
+    logger.log(` retriggerPrefetch: stale payload (${lastPrefetchPayload.skinName} != ${currentSkin}), skipping`);
+    return;
   }
 
   if (isApplyInFlight()) {
@@ -287,9 +294,9 @@ export function retriggerPrefetch() {
   }
   retriggerRetries = 0;
 
-  // During champ select: send prefetch (just build, don't start overlay).
-  // After champ select: send apply (rebuild + restart overlay).
-  if (champSelectActive && !isOverlayActive()) {
+  // Send a prefetch, or an apply once an apply already succeeded; ame
+  // decides whether champion select has time left for the rebuild.
+  if (!isOverlayActive()) {
     logger.log(` retriggerPrefetch: re-sending prefetch for ${lastPrefetchPayload.skinId} (${lastPrefetchPayload.skinName})`);
     wsSend(lastPrefetchPayload);
   } else {

@@ -21,7 +21,8 @@
     "apply": {
       "loading": "Đang áp dụng trang phục...",
       "success": "Đã áp dụng trang phục!",
-      "error": "Áp dụng trang phục thất bại"
+      "error": "Áp dụng trang phục thất bại",
+      "kept": "Giữ trang phục đã chuẩn bị. Thay đổi muộn như vậy sẽ áp dụng từ trận sau."
     },
     "unstuck": {
       "loading": "Đang giải phóng game...",

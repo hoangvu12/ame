@@ -13,7 +13,7 @@ import { ensureBenchSwap, cleanupBenchSwap, loadBenchSwapSetting } from './bench
 import { loadAutoSelectSetting, handleChampSelectSession, resetAutoSelect } from './autoSelect';
 import { setLastChampionId, setAppliedSkinName, setOwnedSkinIds, resetOwnedSkins, getOwnedSkinChampionId, isOwnedSkin, getPendingForceDefault, setPendingForceDefault } from './state';
 import { readCurrentSkin, findSkinByName } from './skin';
-import { joinRoom, leaveRoom, loadRoomPartySetting, flushPendingRetrigger } from './roomParty';
+import { joinRoom, leaveRoom, loadRoomPartySetting, discardPendingRetrigger } from './roomParty';
 import { triggerRandomSkin, resetRandomSkin } from './randomSkin';
 import { updateSelfSplash, resetSplashState } from './splash';
 import { markHistoricSkin, clearHistoricMarkers } from './historicSkin';
@@ -257,10 +257,10 @@ export async function init(context) {
       leaveRoom();
       joinRoom();
     } else if (!inChampSelect && wasInChampSelect) {
-      logger.log('Champ select ended, flushing retrigger + forceApply');
+      logger.log('Champ select ended, dropping late retrigger + forceApply');
       setChampSelectActive(false);
       stopObserving();
-      flushPendingRetrigger();
+      discardPendingRetrigger();
       (isConnected() && isServerReady() ? forceApplyIfNeeded() : Promise.resolve()).finally(() => {
         logger.log('forceApplyIfNeeded settled');
         resetAutoApply(true);
