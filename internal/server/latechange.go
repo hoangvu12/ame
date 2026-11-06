@@ -35,6 +35,7 @@ var (
 	startRuntime   = modtools.RunOverlay
 	stopRuntime    = modtools.KillModTools
 	disarmRuntime  = modtools.Disarm
+	mapsPreparing  = ltk.MapPrepRunning
 )
 
 type launchStage int
@@ -124,6 +125,9 @@ type changeContext struct {
 	pendingFor  time.Duration
 	budget      time.Duration // this PC's measured edit-to-scan time
 	timing      matchTiming
+	// mapsPreparing: the map copies are still being written, so a change
+	// waits for them (and the budget is the one without ready maps).
+	mapsPreparing bool
 }
 
 func roundSeconds(d time.Duration) time.Duration { return d.Round(time.Second) }
@@ -131,6 +135,14 @@ func roundSeconds(d time.Duration) time.Duration { return d.Round(time.Second) }
 // decideChange decides whether a new skin set may replace what the manager
 // holds for the coming match.
 func decideChange(c changeContext) (changeVerdict, string) {
+	verdict, reason := decideChangeTiming(c)
+	if verdict == changeKept && c.mapsPreparing {
+		reason += ", maps still preparing"
+	}
+	return verdict, reason
+}
+
+func decideChangeTiming(c changeContext) (changeVerdict, string) {
 	if c.gameRunning {
 		switch {
 		case c.armed:
@@ -201,6 +213,7 @@ func lateChange(championID string) (changeVerdict, string) {
 	if !c.gameRunning && (c.armed || c.pending) {
 		c.budget = rebuildBudget()
 		c.timing = probeMatchTiming()
+		c.mapsPreparing = mapsPreparing()
 	}
 	return decideChange(c)
 }

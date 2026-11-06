@@ -1,6 +1,7 @@
 package ltk
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -173,8 +174,73 @@ func TestRebuildBudget(t *testing.T) {
 		{"contended fast disk", rebuildHistory{Heavy: []rebuildSample{sample(4777, true), sample(33056, true)}}, 33056*time.Millisecond*3/2 + 5*time.Second},
 	}
 	for _, c := range cases {
-		if got := rebuildBudgetFrom(c.history); got != c.want {
+		if got := rebuildBudgetFrom(c.history, false); got != c.want {
 			t.Fatalf("%s: budget=%s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// With the map copies prepared, no change copies a map: the budget comes
+// from the rebuilds measured with the maps ready, not from old full copies.
+func TestRebuildBudgetWithMapsReady(t *testing.T) {
+	sample := func(ms int64, heavy, ready bool) rebuildSample {
+		return rebuildSample{Ms: ms, Heavy: heavy, MapsReady: ready}
+	}
+	friend := rebuildHistory{
+		Recent: []rebuildSample{sample(2212, false, false), sample(98724, true, false)},
+		Heavy:  []rebuildSample{sample(98724, true, false)},
+	}
+	cases := []struct {
+		name    string
+		history rebuildHistory
+		want    time.Duration
+	}{
+		{"unmeasured PC", rebuildHistory{}, readyRebuildBudget},
+		{"only old full copies", rebuildHistory{Recent: []rebuildSample{sample(98724, true, false)}, Heavy: []rebuildSample{sample(98724, true, false)}}, readyRebuildBudget},
+		// No ready sample yet: the champion-only rebuilds stand in.
+		{"champion rebuilds", friend, minRebuildBudget},
+		{"slow ready rebuild", rebuildHistory{Recent: []rebuildSample{sample(2212, false, false), sample(12000, false, true)}}, 12*time.Second*3/2 + 5*time.Second},
+		{"fast ready rebuilds", rebuildHistory{Recent: append(append([]rebuildSample{}, friend.Recent...), sample(1400, false, true)), Heavy: friend.Heavy}, minRebuildBudget},
+	}
+	for _, c := range cases {
+		if got := rebuildBudgetFrom(c.history, true); got != c.want {
+			t.Fatalf("%s: budget=%s, want %s", c.name, got, c.want)
+		}
+	}
+	// Maps not ready: the formula is unchanged and keeps the full copies.
+	if got, want := rebuildBudgetFrom(friend, false), 98724*time.Millisecond*3/2+5*time.Second; got != want {
+		t.Fatalf("maps not ready: budget=%s, want %s", got, want)
+	}
+}
+
+// A ready map copy is rewritten in place, which changes its time like a
+// full copy does: only a write to a map that was not ready is heavy.
+func TestObservedRebuildClassifiesPreparedMaps(t *testing.T) {
+	for _, ready := range []bool{false, true} {
+		isolateManagerState(t)
+		isolateRebuildHistory(t)
+		previous := mapsReadyNow
+		mapsReadyNow = func() bool { return ready }
+		prefix := t.TempDir()
+		edit := time.Now().Add(-10 * time.Second)
+		path := filepath.Join(prefix, "DATA", "FINAL", "Maps", "Shipping", "Map11.wad.client")
+		writeSized(t, path, 1, edit.Add(time.Second))
+		var status patcherStatus
+		if err := json.Unmarshal([]byte(`{"running":true,"phase":"building","session":{"overlayPrefix":`+jsLiteral(prefix)+`}}`), &status); err != nil {
+			t.Fatal(err)
+		}
+		beginRebuild(edit, "patching")
+		mapsReadyNow = previous
+		observeRebuild(status, edit.Add(time.Second))
+		status.Phase = "patching"
+		if !observeRebuild(status, edit.Add(2*time.Second)) {
+			t.Fatal("the rebuild did not complete")
+		}
+		rebuildMu.Lock()
+		got := rebuilds.Recent[len(rebuilds.Recent)-1]
+		rebuildMu.Unlock()
+		if got.MapsReady != ready || got.Heavy == ready {
+			t.Fatalf("maps ready=%v: sample=%+v", ready, got)
 		}
 	}
 }
@@ -183,7 +249,7 @@ func TestRecordRebuildPersistsAndBounds(t *testing.T) {
 	isolateRebuildHistory(t)
 	at := clock(t, "18:35:10.208")
 	for i := 0; i < rebuildSampleLimit+3; i++ {
-		recordRebuild(time.Duration(i+1)*time.Second, i == 0, at)
+		recordRebuild(time.Duration(i+1)*time.Second, i == 0, false, at)
 	}
 	// A new run reads the history back from disk.
 	rebuildMu.Lock()

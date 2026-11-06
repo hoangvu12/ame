@@ -34,6 +34,7 @@ func TestMain(m *testing.M) {
 	// Triggers schedule real timers; a late one must find nothing to reach.
 	prepareMaps = func(string) error { return nil }
 	runtimeRunning = func() bool { return false }
+	mapsPreparing = func() bool { return false }
 	dir, err := os.MkdirTemp("", "ame-server-test-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -154,6 +155,20 @@ func TestDecideChange(t *testing.T) {
 		if got != changeAllowed && reason == "" {
 			t.Fatalf("%s: blocked without a reason", c.name)
 		}
+	}
+}
+
+// A change kept while the map copies are still being written says so: the
+// change waits for them, and later ones get the ready-maps budget.
+func TestKeptChangeMentionsMapPreparation(t *testing.T) {
+	c := changeContext{armed: true, budget: 60 * time.Second, timing: finalization(20 * time.Second), mapsPreparing: true}
+	verdict, reason := decideChange(c)
+	if verdict != changeKept || !strings.HasSuffix(reason, "maps still preparing") {
+		t.Fatalf("verdict=%d reason=%q", verdict, reason)
+	}
+	c.timing = finalization(100 * time.Second)
+	if verdict, reason := decideChange(c); verdict != changeAllowed || reason != "" {
+		t.Fatalf("enough time: verdict=%d reason=%q", verdict, reason)
 	}
 }
 

@@ -436,11 +436,13 @@ var (
 // beginRebuild fences readiness from the moment ame edits the library (or
 // starts the patcher) until the scan runs with the edit.
 func beginRebuild(at time.Time, phase string) {
+	ready := mapsReadyNow() // file checks, kept out of snapshotMu
 	snapshotMu.Lock()
 	defer snapshotMu.Unlock()
 	snapshot.pending = true
 	snapshot.observed = time.Time{}
 	rebuild = newRebuildTracker(at, phase)
+	rebuild.mapsReady = ready
 }
 
 // observeRebuild folds a status read into the pending edit and reports
@@ -466,11 +468,15 @@ func observeRebuild(status patcherStatus, now time.Time) bool {
 	armedAt = r.armedAt
 	snapshotMu.Unlock()
 	if d := r.duration(); d > 0 {
-		heavy := rewroteMapWAD(status.prefix(), r.editAt, r.armedAt)
-		recordRebuild(d, heavy, now)
+		wroteMap := rewroteMapWAD(status.prefix(), r.editAt, r.armedAt)
+		heavy := wroteMap && !r.mapsReady
+		recordRebuild(d, heavy, r.mapsReady, now)
 		kind := "champion WADs only"
-		if heavy {
-			kind = "map WADs rewritten"
+		switch {
+		case heavy:
+			kind = "map WADs copied"
+		case wroteMap:
+			kind = "prepared map WADs updated in place"
 		}
 		display.Log(fmt.Sprintf("LTK: skin set reached the patcher scan %s after the edit (%s); rebuild budget now %s", d.Round(100*time.Millisecond), kind, RebuildBudget().Round(time.Second)))
 	} else {

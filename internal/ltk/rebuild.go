@@ -32,6 +32,7 @@ type rebuildTracker struct {
 	quietSince time.Time // start of the current stretch without a build
 	armedAt    time.Time // the scan ran with the edit from here on
 	measured   bool      // armedAt follows an observed build
+	mapsReady  bool      // the map copies were prepared before the edit
 }
 
 func newRebuildTracker(editAt time.Time, phaseAtEdit string) *rebuildTracker {
@@ -98,20 +99,30 @@ func (r *rebuildTracker) duration() time.Duration {
 
 // The budget is how long this PC needs from a library edit until the scan
 // runs again. Map WADs dominate it: an override routed into Map11/12/30
-// rewrites a multi-gigabyte file, measured at 4-7s on an NVMe drive and
-// 45-98s on a slow disk. A PC that has never been seen rebuilding a map WAD
+// copies a multi-gigabyte file, measured at 4-7s on an NVMe drive and
+// 45-98s on a slow disk. A PC that has never been seen copying a map WAD
 // keeps the unproven floor, so quick champion-only rebuilds cannot talk the
 // budget down before a heavy one was measured.
+//
+// With the map copies prepared (mapprep.go), a change that touches a map
+// only rewrites the end of its copy, so the copying cannot happen and the
+// budget comes from the rebuilds measured with the maps ready.
 const (
 	minRebuildBudget      = 15 * time.Second
 	unprovenRebuildBudget = 60 * time.Second
-	rebuildSampleLimit    = 8
+	// readyRebuildBudget: maps ready, but no rebuild measured yet that
+	// did not copy one.
+	readyRebuildBudget = 20 * time.Second
+	rebuildSampleLimit = 8
 )
 
 type rebuildSample struct {
 	At    time.Time `json:"at"`
 	Ms    int64     `json:"ms"`
-	Heavy bool      `json:"heavy"`
+	Heavy bool      `json:"heavy"` // a map WAD was copied in full
+	// MapsReady: the map copies were prepared before the edit, so a map
+	// WAD written by it was rewritten in place.
+	MapsReady bool `json:"mapsReady,omitempty"`
 }
 
 type rebuildHistory struct {
@@ -148,14 +159,14 @@ func appendSample(samples []rebuildSample, sample rebuildSample) []rebuildSample
 }
 
 // recordRebuild remembers one measured edit-to-scan duration.
-func recordRebuild(d time.Duration, heavy bool, at time.Time) {
+func recordRebuild(d time.Duration, heavy, mapsReady bool, at time.Time) {
 	if d <= 0 {
 		return
 	}
 	rebuildMu.Lock()
 	defer rebuildMu.Unlock()
 	loadRebuildsLocked()
-	sample := rebuildSample{At: at.UTC(), Ms: d.Milliseconds(), Heavy: heavy}
+	sample := rebuildSample{At: at.UTC(), Ms: d.Milliseconds(), Heavy: heavy, MapsReady: mapsReady}
 	rebuilds.Recent = appendSample(rebuilds.Recent, sample)
 	if heavy {
 		rebuilds.Heavy = appendSample(rebuilds.Heavy, sample)
@@ -166,7 +177,43 @@ func recordRebuild(d time.Duration, heavy bool, at time.Time) {
 	}
 }
 
-func rebuildBudgetFrom(history rebuildHistory) time.Duration {
+func budgetFor(worst time.Duration) time.Duration {
+	budget := worst*3/2 + 5*time.Second
+	if budget < minRebuildBudget {
+		budget = minRebuildBudget
+	}
+	return budget
+}
+
+// rebuildBudgetFrom is the budget the history allows. mapsReady: the map
+// copies are prepared now, so the next change rewrites no map in full.
+func rebuildBudgetFrom(history rebuildHistory, mapsReady bool) time.Duration {
+	if mapsReady {
+		var ready, light time.Duration
+		var haveReady, haveLight bool
+		for _, sample := range history.Recent {
+			d := time.Duration(sample.Ms) * time.Millisecond
+			switch {
+			case sample.MapsReady:
+				haveReady = true
+				if d > ready {
+					ready = d
+				}
+			case !sample.Heavy:
+				haveLight = true
+				if d > light {
+					light = d
+				}
+			}
+		}
+		switch {
+		case haveReady:
+			return budgetFor(ready)
+		case haveLight:
+			return budgetFor(light)
+		}
+		return readyRebuildBudget
+	}
 	var worst time.Duration
 	for _, samples := range [][]rebuildSample{history.Recent, history.Heavy} {
 		for _, sample := range samples {
@@ -175,28 +222,37 @@ func rebuildBudgetFrom(history rebuildHistory) time.Duration {
 			}
 		}
 	}
-	budget := worst*3/2 + 5*time.Second
+	budget := budgetFor(worst)
 	if len(history.Heavy) == 0 && budget < unprovenRebuildBudget {
 		budget = unprovenRebuildBudget
 	}
-	if budget < minRebuildBudget {
-		budget = minRebuildBudget
-	}
 	return budget
+}
+
+// mapsReadyNow reports whether the map copies are prepared, so a change now
+// rewrites maps in place. A variable for tests.
+var mapsReadyNow = func() bool {
+	if !mapPrepEnabled() {
+		return false
+	}
+	ready, _ := MapsPrepared(findGameDir())
+	return ready
 }
 
 // RebuildBudget estimates how long a skin set change takes on this PC, from
 // the edit until the manager's scan runs again with it.
 func RebuildBudget() time.Duration {
+	ready := mapsReadyNow()
 	rebuildMu.Lock()
 	defer rebuildMu.Unlock()
 	loadRebuildsLocked()
-	return rebuildBudgetFrom(rebuilds)
+	return rebuildBudgetFrom(rebuilds, ready)
 }
 
-// rewroteMapWAD reports whether the build that ended at armedAt rewrote one
+// rewroteMapWAD reports whether the build that ended at armedAt wrote one
 // of the map WADs in the session's overlay: only those multi-gigabyte files
-// make a rebuild heavy.
+// make a rebuild heavy, and only when the copy was not ready (a ready copy
+// is rewritten in place, which changes its time too).
 func rewroteMapWAD(prefix string, editAt, armedAt time.Time) bool {
 	if prefix == "" {
 		return false
