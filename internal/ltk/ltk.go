@@ -323,8 +323,9 @@ func Build(modsDir, overlay, game, names string) error {
 type managerSession struct {
 	cmd     *exec.Cmd
 	cdp     *cdpClient
-	modID   string // library id of the installed skin package
-	modFile string // the fantome file installed as modID
+	modID   string            // library id of the installed skin package
+	modFile string            // the fantome file installed as modID
+	modHash [sha256.Size]byte // package bytes successfully enabled as modID
 	stop    chan struct{}
 	exited  chan struct{}
 }
@@ -477,9 +478,13 @@ func Start(overlay string) error {
 		return err
 	}
 	pkg := prefix + ".fantome"
+	digest, err := packageDigest(pkg)
+	if err != nil {
+		return fmt.Errorf("LTK skin package for %s (build the overlay first): %w", prefix, err)
+	}
 	managerMu.Lock()
 	m := manager
-	same := m != nil && m.alive() && m.modFile == pkg
+	same := m != nil && m.alive() && m.matchesPackage(pkg, digest)
 	managerMu.Unlock()
 	if same {
 		s := currentSnapshot()
@@ -509,6 +514,10 @@ func Start(overlay string) error {
 // DLL's join check. Restarting the patcher here would reset that timeline
 // and make every in-flight game join too late.
 func startSession(pkg string) error {
+	digest, err := packageDigest(pkg)
+	if err != nil {
+		return err
+	}
 	managerMu.Lock()
 	defer managerMu.Unlock()
 	m, err := ensureManagerLocked()
@@ -530,7 +539,6 @@ func startSession(pkg string) error {
 	if err != nil {
 		return fmt.Errorf("LTK install: %w", err)
 	}
-	m.modID, m.modFile = modID, pkg
 	if err := m.cdp.toggleMod(modID, true); err != nil {
 		return fmt.Errorf("LTK enable: %w", err)
 	}
@@ -539,6 +547,7 @@ func startSession(pkg string) error {
 	if err := m.cdp.startPatcher(); err != nil {
 		return fmt.Errorf("LTK patcher start: %w", err)
 	}
+	m.modID, m.modFile, m.modHash = modID, pkg, digest
 	return awaitPatcherStart(m)
 }
 
@@ -546,7 +555,11 @@ func startSession(pkg string) error {
 // runs. The rebuild the edit triggers is deferred behind a running game and
 // applied when it ends.
 func swapAmeMod(m *managerSession, pkg string) error {
-	if m.modFile == pkg && m.modID != "" {
+	digest, err := packageDigest(pkg)
+	if err != nil {
+		return err
+	}
+	if m.matchesPackage(pkg, digest) {
 		return nil
 	}
 	if err := uninstallAmeMods(m); err != nil {
@@ -556,11 +569,24 @@ func swapAmeMod(m *managerSession, pkg string) error {
 	if err != nil {
 		return fmt.Errorf("LTK install: %w", err)
 	}
-	m.modID, m.modFile = modID, pkg
 	if err := m.cdp.toggleMod(modID, true); err != nil {
 		return fmt.Errorf("LTK enable: %w", err)
 	}
+	m.modID, m.modFile, m.modHash = modID, pkg, digest
 	return nil
+}
+
+// packageDigest identifies the published bytes, not Build's reusable pathname.
+func packageDigest(pkg string) ([sha256.Size]byte, error) {
+	data, err := os.ReadFile(pkg)
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("LTK package read: %w", err)
+	}
+	return sha256.Sum256(data), nil
+}
+
+func (m *managerSession) matchesPackage(pkg string, digest [sha256.Size]byte) bool {
+	return m.modID != "" && m.modFile == pkg && m.modHash == digest
 }
 
 // awaitOverlayRebuild waits until the background rebuild a mid-session mod

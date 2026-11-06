@@ -222,6 +222,7 @@ func TestOverlayFailureMessage(t *testing.T) {
 // overlay is written (the manager builds its own), and a second Build
 // replaces the package in place.
 func TestBuildProducesSkinPackageOnly(t *testing.T) {
+	stubGameWindow(t, false)
 	old := config.AmeDir
 	config.AmeDir = t.TempDir()
 	defer func() { config.AmeDir = old }()
