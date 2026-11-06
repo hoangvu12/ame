@@ -566,10 +566,14 @@ func swapAmeMod(m *managerSession, pkg string) error {
 // awaitOverlayRebuild waits until the background rebuild a mid-session mod
 // swap triggers has finished: the session thread picks the edit up by dipping
 // the phase to "building" and returns to scanning ("patching") when the new
-// overlay is in place. A rebuild fast enough to be missed, or one deferred
-// behind a running game, leaves the phase at "patching" throughout.
+// overlay is in place. The manager picks a library edit up within about a
+// second, but a rebuild fast enough to hide between polls — or an edit that
+// reuses every WAD — leaves the phase at "patching" throughout; the
+// no-building grace therefore stays short, so bursts of swaps (room party:
+// every teammate pick) do not pay a stall each. A rebuild deferred behind a
+// running game also leaves the phase at "patching" throughout.
 func awaitOverlayRebuild(m *managerSession) error {
-	buildingDeadline := time.Now().Add(10 * time.Second)
+	buildingDeadline := time.Now().Add(3 * time.Second)
 	deadline := time.Now().Add(30 * time.Second)
 	seenBuilding := false
 	for {
@@ -598,7 +602,7 @@ func awaitOverlayRebuild(m *managerSession) error {
 			display.Log("LTK: overlay rebuild still running; the skin applies when it finishes")
 			return nil
 		}
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
