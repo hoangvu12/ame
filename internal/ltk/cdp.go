@@ -36,6 +36,7 @@ const (
 	cdpInvokeTimeout    = 30 * time.Second
 	cdpInstallTimeout   = 180 * time.Second // large skin packages copy slowly
 	cdpStatusTimeout    = 10 * time.Second
+	cdpReconnectTimeout = 5 * time.Second // page lookup before a reconnect
 )
 
 // --- CDP client ---
@@ -50,8 +51,13 @@ const (
 // dials the same page again. The page, and the bridge installed in it, are
 // untouched by a reconnect.
 type cdpClient struct {
-	url    string
-	conn   *websocket.Conn
+	url string
+	// discover finds the manager page again before a reconnect: the page
+	// ame first reached can be the about:blank target the webview shows
+	// before the manager's document loads, which dies with that load. Nil
+	// redials url.
+	discover func() (string, error)
+	conn     *websocket.Conn
 	mu     sync.Mutex
 	next   int64
 	broken bool
@@ -95,6 +101,13 @@ func (c *cdpClient) fail() {
 func (c *cdpClient) reconnect() error {
 	if c.closed {
 		return fmt.Errorf("CDP connection closed")
+	}
+	if c.discover != nil {
+		url, err := c.discover()
+		if err != nil {
+			return err
+		}
+		c.url = url
 	}
 	conn, err := dialPage(c.url)
 	if err != nil {
@@ -623,11 +636,13 @@ func cdpHTTPGet(path string, timeout time.Duration) ([]byte, error) {
 
 // cdpFindPage waits for the manager's WebView page to appear in the DevTools
 // target list. The webview briefly shows about:blank before the Tauri
-// document loads, and a bridge built there dies with the navigation, so the
-// Tauri page is preferred; a bare page is accepted only after waiting for it.
+// document loads, and a connection made there dies with the navigation, so
+// the Tauri page is preferred; a bare page is accepted only after waiting
+// most of the timeout for it. A manager starting beside a loading game took
+// over 5s to load its document (22:14 on the owner's PC).
 func cdpFindPage(timeout time.Duration) (cdpPage, error) {
 	deadline := time.Now().Add(timeout)
-	tauriDeadline := time.Now().Add(5 * time.Second)
+	tauriDeadline := time.Now().Add(timeout * 4 / 5)
 	var fallback cdpPage
 	haveFallback := false
 	var lastErr error

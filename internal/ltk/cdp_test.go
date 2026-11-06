@@ -375,3 +375,33 @@ func TestCDPReconnectsAfterATimeout(t *testing.T) {
 		t.Fatal("a closed client dialed the page again")
 	}
 }
+
+// The first page ame reaches can be the about:blank target the webview
+// shows before the manager's document loads (22:14 on the owner's PC); it
+// stops answering once the document loads. A reconnect looks the manager's
+// page up again instead of redialing the dead target.
+func TestCDPReconnectFindsThePageAgain(t *testing.T) {
+	release := make(chan struct{})
+	blank := startFakeCDP(t, func(expr string) (any, error) {
+		<-release
+		return "blank", nil
+	})
+	defer close(release)
+	manager := startFakeCDP(t, func(expr string) (any, error) { return "manager", nil })
+	c, err := cdpDial(wsURL(blank.server.URL) + "/ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	c.discover = func() (string, error) { return wsURL(manager.server.URL) + "/ws", nil }
+	if _, err := c.evaluate("ping", 200*time.Millisecond); err == nil {
+		t.Fatal("the dead page answered")
+	}
+	raw, err := c.evaluate("ping", 2*time.Second)
+	if err != nil {
+		t.Fatalf("no reconnect to the rediscovered page: %v", err)
+	}
+	if string(raw) != `"manager"` {
+		t.Fatalf("reconnected to %s, want the manager page", raw)
+	}
+}

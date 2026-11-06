@@ -1023,6 +1023,13 @@ func ensureManagerLocked() (*managerSession, error) {
 		killLaunchedManager(cmd)
 		return nil, fmt.Errorf("LTK manager connect: %w", err)
 	}
+	c.discover = func() (string, error) {
+		page, err := cdpFindPage(cdpReconnectTimeout)
+		if err != nil {
+			return "", err
+		}
+		return page.WS, nil
+	}
 	if err := c.waitReady(cdpReadyTimeout); err != nil {
 		c.close()
 		killLaunchedManager(cmd)
