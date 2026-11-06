@@ -1,8 +1,1 @@
-- Skins are now applied through the official League Toolkit engine
-- Switched to a bigger and more up-to-date skin library
-- The needed tools are downloaded automatically on first use
-- The game no longer freezes while skins are being applied
-- Skin patching is much faster, especially with room party
-- Fixed skins sometimes not showing up in game
-- Fixed teammate skins failing to apply in room party
-- Uninstalling now also cleans up the skin engine's leftover files
+- The skin engine is now downloaded during setup, so the first skin pick is instant
