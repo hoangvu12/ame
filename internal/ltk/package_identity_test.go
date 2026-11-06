@@ -157,6 +157,60 @@ func TestRebuildTimeoutRetainsReadinessFence(t *testing.T) {
 	}
 }
 
+func TestStartRetriesReadinessAfterRebuildTimeout(t *testing.T) {
+	pkg := filepath.Join(t.TempDir(), "overlay.fantome")
+	if err := os.WriteFile(pkg, []byte("package"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := packageDigest(pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldManager, snap, oldTimeout := manager, currentSnapshot(), overlayRebuildTimeout
+	defer func() {
+		manager = oldManager
+		overlayRebuildTimeout = oldTimeout
+		setSnapshot(func(s *managerSnapshot) { *s = snap })
+	}()
+	phase := "building"
+	reads := 0
+	fake := startFakeCDP(t, func(expr string) (any, error) {
+		switch {
+		case strings.Contains(expr, "get_patcher_status"):
+			reads++
+			return fakeInvokeReply(map[string]any{"running": true, "phase": phase}), nil
+		case strings.Contains(expr, "__AME_BRIDGE__"):
+			return nil, nil
+		}
+		return nil, fmt.Errorf("unexpected IPC while retrying unchanged package: %s", expr)
+	})
+	c, err := cdpDial(wsURL(fake.server.URL) + "/ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	manager = &managerSession{cdp: c, modID: "installed", modFile: pkg, modHash: digest, stop: make(chan struct{}), exited: make(chan struct{})}
+	setSnapshot(func(s *managerSnapshot) {
+		*s = managerSnapshot{alive: true, running: true, phase: "building", pending: true}
+	})
+	overlayRebuildTimeout = time.Millisecond
+	if err := Start(strings.TrimSuffix(pkg, ".fantome")); err == nil {
+		t.Fatal("pending package reported ready on timeout")
+	}
+	if Ready() {
+		t.Fatal("timed-out package remained ready")
+	}
+	phase = "patching"
+	overlayRebuildTimeout = 4 * time.Second
+	before := reads
+	if err := Start(strings.TrimSuffix(pkg, ".fantome")); err != nil {
+		t.Fatal(err)
+	}
+	if reads <= before || !Ready() {
+		t.Fatal("retry did not confirm readiness through fresh status reads")
+	}
+}
+
 func TestArmRejectsStalePendingAndStoppedStatus(t *testing.T) {
 	old, snap := armSuspendTimeout, currentSnapshot()
 	armSuspendTimeout = time.Millisecond
