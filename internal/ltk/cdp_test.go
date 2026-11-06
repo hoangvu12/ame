@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -338,5 +339,39 @@ func TestOverlayRebuildCalls(t *testing.T) {
 	}
 	if state.State != "running" || state.Progress == nil || state.Progress.Current != 2 || state.Progress.Total != 5 {
 		t.Fatalf("rebuild state=%+v", state)
+	}
+}
+
+// The manager page can stall past a call's timeout (21:55:00 and 18:13 on
+// the owner's PC). The timed-out connection is unusable, so the next call
+// reaches the page over a new one instead of losing the manager.
+func TestCDPReconnectsAfterATimeout(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int32
+	fake := startFakeCDP(t, func(expr string) (any, error) {
+		if calls.Add(1) == 1 {
+			<-release // the first call stalls past its deadline
+		}
+		return "pong", nil
+	})
+	defer close(release)
+	c, err := cdpDial(wsURL(fake.server.URL) + "/ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	if _, err := c.evaluate("ping", 200*time.Millisecond); err == nil {
+		t.Fatal("a stalled call reported success")
+	}
+	raw, err := c.evaluate("ping", 2*time.Second)
+	if err != nil {
+		t.Fatalf("no reconnect after the timeout: %v", err)
+	}
+	if string(raw) != `"pong"` {
+		t.Fatalf("reply=%s", raw)
+	}
+	c.close()
+	if _, err := c.evaluate("ping", time.Second); err == nil {
+		t.Fatal("a closed client dialed the page again")
 	}
 }

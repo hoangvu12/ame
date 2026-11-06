@@ -43,19 +43,36 @@ const (
 // cdpClient is a WebSocket connection to the manager page's DevTools
 // endpoint. Commands are serialized; each call owns the connection until its
 // matching response arrives.
+//
+// A read that times out leaves a WebSocket connection unusable, and the
+// manager page can stall for seconds (a game starting, a build on the same
+// thread), so a failed call marks the connection broken and the next call
+// dials the same page again. The page, and the bridge installed in it, are
+// untouched by a reconnect.
 type cdpClient struct {
-	conn *websocket.Conn
-	mu   sync.Mutex
-	next int64
+	url    string
+	conn   *websocket.Conn
+	mu     sync.Mutex
+	next   int64
+	broken bool
+	closed bool
 }
 
-func cdpDial(wsURL string) (*cdpClient, error) {
+func dialPage(wsURL string) (*websocket.Conn, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	conn, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("CDP dial: %w", err)
 	}
-	return &cdpClient{conn: conn}, nil
+	return conn, nil
+}
+
+func cdpDial(wsURL string) (*cdpClient, error) {
+	conn, err := dialPage(wsURL)
+	if err != nil {
+		return nil, err
+	}
+	return &cdpClient{url: wsURL, conn: conn}, nil
 }
 
 func (c *cdpClient) lock()   { c.mu.Lock() }
@@ -64,7 +81,28 @@ func (c *cdpClient) unlock() { c.mu.Unlock() }
 func (c *cdpClient) close() {
 	c.lock()
 	defer c.unlock()
+	c.closed = true
 	c.conn.Close()
+}
+
+// fail marks the connection unusable after a failed read or write.
+func (c *cdpClient) fail() {
+	c.broken = true
+	c.conn.Close()
+}
+
+// reconnect dials the page again after a failure. The caller holds the lock.
+func (c *cdpClient) reconnect() error {
+	if c.closed {
+		return fmt.Errorf("CDP connection closed")
+	}
+	conn, err := dialPage(c.url)
+	if err != nil {
+		return err
+	}
+	c.conn, c.broken = conn, false
+	display.Log("LTK: reconnected to the manager page after a failed call")
+	return nil
 }
 
 type cdpCall struct {
@@ -78,6 +116,11 @@ type cdpCall struct {
 func (c *cdpClient) evaluate(expr string, timeout time.Duration) (json.RawMessage, error) {
 	c.lock()
 	defer c.unlock()
+	if c.broken {
+		if err := c.reconnect(); err != nil {
+			return nil, err
+		}
+	}
 	id := c.next
 	c.next++
 	c.conn.SetWriteDeadline(time.Now().Add(timeout))
@@ -90,6 +133,7 @@ func (c *cdpClient) evaluate(expr string, timeout time.Duration) (json.RawMessag
 			"returnByValue": true,
 		},
 	}); err != nil {
+		c.fail()
 		return nil, fmt.Errorf("CDP write: %w", err)
 	}
 	deadline := time.Now().Add(timeout)
@@ -102,6 +146,7 @@ func (c *cdpClient) evaluate(expr string, timeout time.Duration) (json.RawMessag
 			Result json.RawMessage `json:"result"`
 		}
 		if err := c.conn.ReadJSON(&msg); err != nil {
+			c.fail()
 			return nil, fmt.Errorf("CDP read: %w", err)
 		}
 		if msg.ID == nil || *msg.ID != id {
