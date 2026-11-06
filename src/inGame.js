@@ -1,3 +1,4 @@
+import { downloadDiagnosticZIP } from './diagnostics';
 import { IN_GAME_CONTAINER_ID } from './constants';
 import { wsSend, wsSendApply, wsSendUnstuck, getLastApplyPayload, isOverlayActive, setOverlayActive } from './websocket';
 import { openCustomSkinsModal } from './customSkins';
@@ -151,6 +152,10 @@ export function ensureInGameUI() {
     },
   });
   container.appendChild(unstuckBtn);
+  container.appendChild(createButton(`${t('settings.download_logs.button')} (ZIP)`, {
+    class: 'ame-ingame-unstuck',
+    onClick: () => downloadDiagnosticZIP(),
+  }));
 
   if (!dropdown) btn.style.display = 'none';
 
