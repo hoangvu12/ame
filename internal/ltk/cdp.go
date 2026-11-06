@@ -593,9 +593,13 @@ func launchManager(exe string) (*exec.Cmd, error) {
 	cmd := exec.Command(exe, "--shell-relaunched")
 	cmd.Dir = filepath.Dir(exe)
 	cmd.Env = append(os.Environ(), "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222")
-	applyManagerLaunch(cmd)
-	if err := cmd.Start(); err != nil {
-		return nil, err
+	releaseParent := applyManagerLaunch(cmd)
+	startErr := cmd.Start()
+	// The parent handle is consumed by CreateProcess itself; the manager
+	// keeps only the recorded parent pid after the launch returns.
+	releaseParent()
+	if startErr != nil {
+		return nil, startErr
 	}
 	return cmd, nil
 }
