@@ -2,7 +2,7 @@ import { CHAMP_SELECT_PHASES, POST_GAME_PHASES, IN_GAME_PHASES, IN_GAME_POLL_MS,
 import { ensureSwiftplayButton, removeSwiftplayButton, updateSwiftplayButtonState, unlockSwiftplayCarousel, isSwiftplaySkinPanelOpen, ensureSwiftplayConnectionBanner, updateSwiftplayConnectionBanner } from './swiftplay';
 import { getMyChampionId, getChampionSkins, loadChampionSkins, resetSkinsCache, fetchJson, fetchSummonerId, fetchOwnedSkins, forceDefaultSkin, getChampionIdFromLobbyDOM } from './api';
 import { injectStyles, unlockSkinCarousel } from './styles';
-import { wsConnect, wsSend, isOverlayActive, isConnected, isServerReady } from './websocket';
+import { wsConnect, wsSend, isOverlayActive, isConnected, isServerReady, noticeMapPrepIfRunning } from './websocket';
 import { ensureApplyButton, removeApplyButton, updateButtonState, ensureConnectionBanner, updateConnectionBanner, initConnectionStatus } from './ui';
 import { ensureChromaButton, closeChromaPanel } from './chroma';
 import { resetAutoApply, forceApplyIfNeeded, fetchAndLogGameflow, fetchAndLogTimer, checkAutoApply, lockRetrigger, setChampSelectActive } from './autoApply';
@@ -250,6 +250,7 @@ export async function init(context) {
       resetRandomSkin();
       resetSplashState();
       setChampSelectActive(true);
+      noticeMapPrepIfRunning();
       stopSwiftplayObserving();
       startObserving();
       fetchAndLogGameflow();

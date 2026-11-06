@@ -425,6 +425,10 @@ listen("patcher-game-overlay",ev=>{
 const p=(ev&&ev.payload!==undefined)?ev.payload:ev;
 bridge.overlay=(p&&typeof p.outcome==="string")?p.outcome:null;
 });
+listen("overlay-progress",ev=>{
+const p=(ev&&ev.payload!==undefined)?ev.payload:ev;
+bridge.progress=(p&&typeof p==="object")?p:null;
+});
 listen("patcher-error",ev=>{
 const p=(ev&&ev.payload!==undefined)?ev.payload:ev;
 try{bridge.failure=(p&&typeof p==="object")?JSON.stringify(p):String(p);}catch(e){bridge.failure=String(p);}
@@ -449,6 +453,64 @@ func (c *cdpClient) injectShim() (string, error) {
 // patcher session starts.
 func (c *cdpClient) clearBridgeFailure() {
 	_, _ = c.evaluate(`(()=>{const b=window.__AME_BRIDGE__;if(b)b.failure=null;return true})()`, cdpStatusTimeout)
+}
+
+// overlayRebuild is the manager's full overlay rebuild that ame started in
+// the page without awaiting it (see startOverlayRebuild).
+type overlayRebuild struct {
+	State    string          `json:"state"` // running | done | failed | missing
+	Error    json.RawMessage `json:"error"`
+	Progress *struct {
+		Stage       string `json:"stage"`
+		CurrentFile string `json:"currentFile"`
+		Current     int    `json:"current"`
+		Total       int    `json:"total"`
+	} `json:"progress"`
+}
+
+// startOverlayRebuildExpression starts plugin:patcher|rebuild_overlay and
+// returns at once. The command runs for as long as the map copies take
+// (minutes on a slow disk), and evaluate holds the connection for a whole
+// call, so the outcome is kept on the bridge and read with short polls.
+const startOverlayRebuildExpression = `(()=>{
+const I=window.__TAURI_INTERNALS__;
+const b=window.__AME_BRIDGE__;
+if(!I||typeof I.invoke!=="function"||!b)return "bridge-missing";
+if(b.rebuild&&b.rebuild.state==="running")return "running";
+const r={state:"running",error:null};
+b.rebuild=r;b.progress=null;
+I.invoke("plugin:patcher|rebuild_overlay",{}).then(v=>{
+if(v&&v.ok===true){r.state="done"}else{r.state="failed";r.error=v?v.error:null}
+},e=>{r.state="failed";r.error=String(e&&e.message||e)});
+return "started"})()`
+
+func (c *cdpClient) startOverlayRebuild() error {
+	raw, err := c.evaluate(startOverlayRebuildExpression, cdpInvokeTimeout)
+	if err != nil {
+		return err
+	}
+	var result string
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return fmt.Errorf("rebuild_overlay: %w", err)
+	}
+	if result != "started" {
+		return fmt.Errorf("rebuild_overlay: %s", result)
+	}
+	return nil
+}
+
+// overlayRebuildState reads the rebuild startOverlayRebuild left on the
+// bridge. "missing" means the page lost it (a reload drops the bridge).
+func (c *cdpClient) overlayRebuildState() (overlayRebuild, error) {
+	raw, err := c.evaluate(`(()=>{const b=window.__AME_BRIDGE__;if(!b||!b.rebuild)return{state:"missing"};return{state:b.rebuild.state,error:b.rebuild.error,progress:b.progress||null}})()`, cdpStatusTimeout)
+	if err != nil {
+		return overlayRebuild{}, err
+	}
+	var state overlayRebuild
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return overlayRebuild{}, fmt.Errorf("rebuild poll: %w", err)
+	}
+	return state, nil
 }
 
 // bridgeState is one poll of the manager page: the event bridge plus the

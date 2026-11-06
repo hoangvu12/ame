@@ -28,6 +28,9 @@
       "loading": "Releasing game...",
       "success": "Game released!",
       "error": "Failed to release game"
+    },
+    "map_prep": {
+      "preparing": "Preparing skins for the new League version (one time)..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "Skip bench swap cooldown (experimental)",
       "room_party": "Share skins with teammates using Ame",
       "start_with_windows": "Start ame with Windows",
-      "auto_update": "Automatically install updates"
+      "auto_update": "Automatically install updates",
+      "map_prep": "Prepare map files ahead of time for faster skin changes (uses about 4.5 GB)"
+    },
+    "map_prep": {
+      "idle": "Map files: not checked yet",
+      "preparing": "Map files: preparing{progress}...",
+      "ready": "Map files: ready, late skin changes stay fast",
+      "failed": "Map files: preparation failed, ame will try again later",
+      "skipped": "Map files: waiting ({reason})",
+      "off": "Map files: not prepared ahead of time"
     },
     "auto_select": {
       "enable": "Enable auto champion select",

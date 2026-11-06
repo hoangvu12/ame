@@ -287,6 +287,7 @@ func handleUninstall(conn *websocket.Conn) {
 
 	// Clean up overlay state and kill mod-tools
 	HandleCleanup()
+	ltk.RemoveMapCopies()
 
 	// Kill Pengu Loader process
 	kill := exec.Command("taskkill", "/F", "/IM", "Pengu Loader.exe")
@@ -855,6 +856,7 @@ func broadcastStatus(status, message string) {
 func init() {
 	roomState.OnUpdate = broadcastRoomUpdate
 	ltk.OnOverlayVerdict = reportOverlayVerdict
+	ltk.OnMapPrep = broadcastMapPrep
 }
 
 // handleConnection handles a single WebSocket connection
@@ -880,6 +882,10 @@ func handleConnection(conn *websocket.Conn) {
 	// setup knows to wait rather than showing itself as fully operational.
 	readyMsg, _ := json.Marshal(map[string]interface{}{"type": "ready", "ready": ready.Load()})
 	writeClientMessage(conn, websocket.TextMessage, readyMsg)
+	sendMapPrep(conn)
+	// The League client just started or reloaded, often right after an
+	// update replaced the maps.
+	scheduleMapPrep("client connected", mapPrepClientDelay)
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -964,6 +970,7 @@ func handleConnection(conn *websocket.Conn) {
 				"chatAvailability":      s.ChatAvailability,
 				"chatStatusMessage":     s.ChatStatusMessage,
 				"randomSkin":            s.RandomSkin,
+				"mapPrep":               s.MapPrep,
 			}
 			data, _ := json.Marshal(resp)
 			writeClientMessage(conn, websocket.TextMessage, data)
@@ -1084,6 +1091,25 @@ func handleConnection(conn *websocket.Conn) {
 				resp := BoolSettingMessage{Type: "roomParty", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
 				writeClientMessage(conn, websocket.TextMessage, data)
+			}
+
+		case "setMapPrep":
+			var msg BoolSettingMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
+				continue
+			}
+			if err := config.SetMapPrep(msg.Enabled); err != nil {
+				sendStatus(conn, "error", "Failed to save map preparation setting")
+			} else {
+				resp := BoolSettingMessage{Type: "mapPrep", Enabled: msg.Enabled}
+				data, _ := json.Marshal(resp)
+				writeClientMessage(conn, websocket.TextMessage, data)
+				// Off: later sets stop keeping the copies, and the manager
+				// deletes them on its next build. On: prepare them soon.
+				ltk.RefreshMapPrepSetting()
+				if msg.Enabled {
+					scheduleMapPrep("setting enabled", mapPrepStartupDelay)
+				}
 			}
 
 		case "setRandomSkin":
@@ -1398,6 +1424,7 @@ var ready atomic.Bool
 func SetReady() {
 	ready.Store(true)
 	broadcastReady()
+	scheduleMapPrep("startup", mapPrepStartupDelay)
 }
 
 // IsReady reports whether gated commands are currently accepted.

@@ -198,6 +198,7 @@ func TestShimInjection(t *testing.T) {
 		"patcher-game-attached",
 		"patcher-game-exited",
 		"patcher-error",
+		"overlay-progress",
 		"plugin:event|listen",
 		"transformCallback",
 	} {
@@ -306,4 +307,36 @@ func TestConfigureManagerSettings(t *testing.T) {
 	}
 	_ = before
 	_ = after
+}
+
+func TestOverlayRebuildCalls(t *testing.T) {
+	var exprs []string
+	fake := startFakeCDP(t, func(e string) (any, error) {
+		exprs = append(exprs, e)
+		if strings.Contains(e, "rebuild_overlay") {
+			return "started", nil
+		}
+		return map[string]any{
+			"state":    "running",
+			"progress": map[string]any{"stage": "patching", "currentFile": "Map11.wad.client", "current": 2, "total": 5},
+		}, nil
+	})
+	c, err := cdpDial(wsURL(fake.server.URL) + "/ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	if err := c.startOverlayRebuild(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(exprs[0], "plugin:patcher|rebuild_overlay") || strings.Contains(exprs[0], "await I.invoke") {
+		t.Fatalf("the rebuild must start without being awaited: %s", exprs[0])
+	}
+	state, err := c.overlayRebuildState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.State != "running" || state.Progress == nil || state.Progress.Current != 2 || state.Progress.Total != 5 {
+		t.Fatalf("rebuild state=%+v", state)
+	}
 }

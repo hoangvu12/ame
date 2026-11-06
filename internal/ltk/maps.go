@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/hoangvu12/ame/internal/config"
+	"github.com/hoangvu12/ame/internal/display"
 )
 
 // keepAliveMaps are the map WADs skin entries are routed into (Summoner's
@@ -147,4 +148,22 @@ func keepAliveEntries(game string) []packageEntry {
 		entries = append(entries, keepAliveEntry(wad))
 	}
 	return entries
+}
+
+// RemoveMapCopies deletes the manager's map copies and ame's keep-alive
+// package, so uninstalling ame leaves no kept copies behind. The manager
+// copies a map again in full the next time a mod touches it. Call it with
+// the manager stopped.
+func RemoveMapCopies() {
+	os.Remove(mapsPackagePath())
+	overlay := managerOverlayRoot()
+	if overlay == "" {
+		return
+	}
+	for _, wad := range keepAliveMaps {
+		path := filepath.Join(gameMapsDir(overlay), wad)
+		if err := os.Remove(path); err == nil {
+			display.Log("LTK: removed the manager's copy of " + wad)
+		}
+	}
 }

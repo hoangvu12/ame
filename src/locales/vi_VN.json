@@ -28,6 +28,9 @@
       "loading": "Đang giải phóng game...",
       "success": "Đã giải phóng game!",
       "error": "Giải phóng game thất bại"
+    },
+    "map_prep": {
+      "preparing": "Đang chuẩn bị trang phục cho phiên bản League mới (chỉ một lần)..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "Bỏ qua hồi chiêu đổi tướng (thử nghiệm)",
       "room_party": "Chia sẻ trang phục với đồng đội dùng Ame",
       "start_with_windows": "Mở ame cùng Windows",
-      "auto_update": "Tự động cài đặt cập nhật"
+      "auto_update": "Tự động cài đặt cập nhật",
+      "map_prep": "Chuẩn bị trước các tệp bản đồ để đổi trang phục nhanh hơn (dùng khoảng 4,5 GB)"
+    },
+    "map_prep": {
+      "idle": "Tệp bản đồ: chưa kiểm tra",
+      "preparing": "Tệp bản đồ: đang chuẩn bị{progress}...",
+      "ready": "Tệp bản đồ: đã sẵn sàng, đổi trang phục muộn vẫn nhanh",
+      "failed": "Tệp bản đồ: chuẩn bị thất bại, ame sẽ thử lại sau",
+      "skipped": "Tệp bản đồ: đang chờ ({reason})",
+      "off": "Tệp bản đồ: không chuẩn bị trước"
     },
     "auto_select": {
       "enable": "Bật tự động chọn tướng",

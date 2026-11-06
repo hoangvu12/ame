@@ -30,6 +30,9 @@ func TestMain(m *testing.M) {
 	probeMatchTiming = func() matchTiming { return matchTiming{stage: stageUnknown, detail: "no client in tests"} }
 	startRuntime = func(string) error { panic("test reached the manager hand-off") }
 	stopRuntime = func() { panic("test reached the runtime stop") }
+	// Triggers schedule real timers; a late one must find nothing to reach.
+	prepareMaps = func(string) error { return nil }
+	runtimeRunning = func() bool { return false }
 	dir, err := os.MkdirTemp("", "ame-server-test-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

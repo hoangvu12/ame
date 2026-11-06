@@ -142,6 +142,28 @@ test('declined cleanup keeps the overlay active', async () => {
   assert.equal(api.isOverlayActive(), false);
 });
 
+// ame copies the map files ahead of time; champion select that starts
+// while it still does (the first time after a League update) says so.
+test('map preparation status reaches listeners and the champion select notice', async () => {
+  const { api, sockets, notices } = await setup();
+  const seen = [];
+  api.onMapPrep((status) => seen.push(status.state));
+  api.noticeMapPrepIfRunning();
+  assert.deepEqual(notices, []);
+  const send = (msg) => sockets[0].onmessage({ data: JSON.stringify({ type: 'mapPrep', ...msg }) });
+  send({ state: 'preparing', stage: 'patching', current: 1, total: 3 });
+  assert.deepEqual(JSON.parse(JSON.stringify(api.getMapPrep())), { state: 'preparing', reason: '', stage: 'patching', current: 1, total: 3 });
+  api.noticeMapPrepIfRunning();
+  assert.deepEqual(notices, ['toast.map_prep.preparing']);
+  send({ state: 'ready' });
+  api.noticeMapPrepIfRunning();
+  assert.deepEqual(notices, ['toast.map_prep.preparing']);
+  assert.deepEqual(seen, ['preparing', 'ready']);
+  const late = [];
+  api.onMapPrep((status) => late.push(status.state));
+  assert.deepEqual(late, ['ready']);
+});
+
 test('send exception rejects and clears timer, allowing a later explicit retry', async () => {
   const { api, sockets, promises, timers } = await setup();
   sockets[0].failSend = true;

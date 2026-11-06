@@ -28,6 +28,9 @@
       "loading": "게임 해제 중...",
       "success": "게임이 해제되었습니다!",
       "error": "게임 해제 실패"
+    },
+    "map_prep": {
+      "preparing": "새 League 버전에 맞춰 스킨을 준비하는 중 (한 번만)..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "벤치 교체 쿨타임 무시(실험적)",
       "room_party": "Ame를 사용하는 팀원과 스킨 공유",
       "start_with_windows": "Windows 시작 시 ame 실행",
-      "auto_update": "업데이트 자동 설치"
+      "auto_update": "업데이트 자동 설치",
+      "map_prep": "스킨 변경을 빠르게 하기 위해 맵 파일을 미리 준비 (약 4.5GB 사용)"
+    },
+    "map_prep": {
+      "idle": "맵 파일: 아직 확인 전",
+      "preparing": "맵 파일: 준비 중{progress}...",
+      "ready": "맵 파일: 준비 완료, 늦은 스킨 변경도 빠르게 적용됩니다",
+      "failed": "맵 파일: 준비 실패, ame가 나중에 다시 시도합니다",
+      "skipped": "맵 파일: 대기 중 ({reason})",
+      "off": "맵 파일: 미리 준비하지 않음"
     },
     "auto_select": {
       "enable": "자동 챔피언 선택 활성화",

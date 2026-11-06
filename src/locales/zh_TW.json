@@ -28,6 +28,9 @@
       "loading": "正在釋放遊戲...",
       "success": "遊戲已釋放！",
       "error": "釋放遊戲失敗"
+    },
+    "map_prep": {
+      "preparing": "正在為新版 League 準備造型（僅一次）..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "略過替補席換人冷卻（實驗性）",
       "room_party": "與使用 Ame 的隊友分享造型",
       "start_with_windows": "隨 Windows 啟動 ame",
-      "auto_update": "自動安裝更新"
+      "auto_update": "自動安裝更新",
+      "map_prep": "預先準備地圖檔案，讓更換造型更快（約佔用 4.5 GB）"
+    },
+    "map_prep": {
+      "idle": "地圖檔案：尚未檢查",
+      "preparing": "地圖檔案：準備中{progress}...",
+      "ready": "地圖檔案：已就緒，臨時更換造型依然很快",
+      "failed": "地圖檔案：準備失敗，ame 稍後會重試",
+      "skipped": "地圖檔案：等待中（{reason}）",
+      "off": "地圖檔案：不預先準備"
     },
     "auto_select": {
       "enable": "啟用自動選角",

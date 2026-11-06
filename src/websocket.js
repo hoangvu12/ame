@@ -71,6 +71,11 @@ const randomSkinListeners = [];
 let chatStatusCache = { availability: '', statusMessage: '' };
 const chatStatusListeners = [];
 
+// Map preparation: ame copies the map files ahead of time so late skin
+// changes stay fast. Latest status + listeners.
+let mapPrepCache = null;
+const mapPrepListeners = [];
+
 // Room party: teammate update listeners
 const roomPartyListeners = [];
 let roomPartyTeammatesCache = [];
@@ -143,6 +148,30 @@ export function onSetting(key, cb) {
       if (idx !== -1) arr.splice(idx, 1);
     }
   };
+}
+
+/**
+ * Register a listener for the map preparation status.
+ * Fires immediately with the cached status (if any) and on every update.
+ * Returns an unsubscribe function.
+ */
+export function onMapPrep(cb) {
+  mapPrepListeners.push(cb);
+  if (mapPrepCache) cb(mapPrepCache);
+  return () => {
+    const idx = mapPrepListeners.indexOf(cb);
+    if (idx !== -1) mapPrepListeners.splice(idx, 1);
+  };
+}
+
+export function getMapPrep() { return mapPrepCache; }
+
+// Champion select started while ame still copies the map files (the first
+// time after a League update): the skins wait for that copy.
+export function noticeMapPrepIfRunning() {
+  if (mapPrepCache && mapPrepCache.state === 'preparing') {
+    toastSuccess(t('toast.map_prep.preparing'));
+  }
 }
 
 /** Re-fetch all settings from server. */
@@ -276,6 +305,9 @@ export function wsConnect() {
           }
           overlayActive = !!msg.overlayActive;
           logger.log('State from server:', overlayActive ? 'active' : 'inactive', lastApplyPayload);
+        } else if (msg.type === 'mapPrep') {
+          mapPrepCache = { state: msg.state, reason: msg.reason || '', stage: msg.stage || '', current: msg.current || 0, total: msg.total || 0 };
+          mapPrepListeners.forEach(cb => cb(mapPrepCache));
         } else if (msg.type === 'roomPartyUpdate') {
           roomPartyTeammatesCache = msg.teammates || [];
           roomPartyListeners.forEach(cb => cb(roomPartyTeammatesCache));

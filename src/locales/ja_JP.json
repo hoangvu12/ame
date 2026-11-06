@@ -28,6 +28,9 @@
       "loading": "ゲームを解放中...",
       "success": "ゲームを解放しました！",
       "error": "ゲームの解放に失敗しました"
+    },
+    "map_prep": {
+      "preparing": "新しいLeagueのバージョン用にスキンを準備中（初回のみ）..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "ベンチ交換のクールダウンを無視（実験的）",
       "room_party": "Ame を使うチームメイトとスキンを共有",
       "start_with_windows": "Windows 起動時に ame を起動",
-      "auto_update": "更新を自動でインストール"
+      "auto_update": "更新を自動でインストール",
+      "map_prep": "スキンの変更を速くするため、マップファイルを事前に準備する（約4.5 GB使用）"
+    },
+    "map_prep": {
+      "idle": "マップファイル：未確認",
+      "preparing": "マップファイル：準備中{progress}...",
+      "ready": "マップファイル：準備完了。直前のスキン変更も高速です",
+      "failed": "マップファイル：準備に失敗しました。後でもう一度試します",
+      "skipped": "マップファイル：待機中（{reason}）",
+      "off": "マップファイル：事前に準備しません"
     },
     "auto_select": {
       "enable": "自動チャンピオン選択を有効化",

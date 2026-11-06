@@ -257,4 +257,5 @@ func handleCleanupRequest(conn *websocket.Conn) {
 		return
 	}
 	HandleCleanup()
+	scheduleMapPrep("after game", mapPrepPostGame)
 }

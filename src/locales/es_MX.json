@@ -28,6 +28,9 @@
       "loading": "Liberando juego...",
       "success": "¡Juego liberado!",
       "error": "Error al liberar el juego"
+    },
+    "map_prep": {
+      "preparing": "Preparando los aspectos para la nueva versión de League (solo una vez)..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "Omitir el enfriamiento del cambio de banco (experimental)",
       "room_party": "Compartir skins con compañeros que usen Ame",
       "start_with_windows": "Iniciar ame con Windows",
-      "auto_update": "Instalar actualizaciones automáticamente"
+      "auto_update": "Instalar actualizaciones automáticamente",
+      "map_prep": "Preparar los archivos de mapa con antelación para cambiar de aspecto más rápido (usa unos 4,5 GB)"
+    },
+    "map_prep": {
+      "idle": "Archivos de mapa: aún sin comprobar",
+      "preparing": "Archivos de mapa: preparando{progress}...",
+      "ready": "Archivos de mapa: listos, los cambios de aspecto de última hora siguen siendo rápidos",
+      "failed": "Archivos de mapa: la preparación falló, ame lo intentará más tarde",
+      "skipped": "Archivos de mapa: en espera ({reason})",
+      "off": "Archivos de mapa: no se preparan con antelación"
     },
     "auto_select": {
       "enable": "Activar selección automática de campeón",

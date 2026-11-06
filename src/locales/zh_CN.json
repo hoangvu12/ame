@@ -28,6 +28,9 @@
       "loading": "正在释放游戏...",
       "success": "游戏已释放！",
       "error": "释放游戏失败"
+    },
+    "map_prep": {
+      "preparing": "正在为新版本 League 准备皮肤（仅一次）..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "跳过替补席换人冷却（实验性）",
       "room_party": "与使用 Ame 的队友分享皮肤",
       "start_with_windows": "随 Windows 启动 ame",
-      "auto_update": "自动安装更新"
+      "auto_update": "自动安装更新",
+      "map_prep": "提前准备地图文件，让更换皮肤更快（约占用 4.5 GB）"
+    },
+    "map_prep": {
+      "idle": "地图文件：尚未检查",
+      "preparing": "地图文件：准备中{progress}...",
+      "ready": "地图文件：已就绪，临时更换皮肤依然很快",
+      "failed": "地图文件：准备失败，ame 稍后会重试",
+      "skipped": "地图文件：等待中（{reason}）",
+      "off": "地图文件：不提前准备"
     },
     "auto_select": {
       "enable": "启用自动选人",

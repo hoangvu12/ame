@@ -627,7 +627,18 @@ func startSession(pkg string) error {
 	if err != nil {
 		return err
 	}
-	managerMu.Lock()
+	// A map preparation writing the copies goes first. One can only start
+	// while managerMu is free, so the check is repeated under the lock.
+	for {
+		if err := waitForMapPrep(); err != nil {
+			return err
+		}
+		managerMu.Lock()
+		if !MapPrepRunning() {
+			break
+		}
+		managerMu.Unlock()
+	}
 	defer managerMu.Unlock()
 	// Checked before the manager is (re)launched too: a relaunch replaces
 	// the host serving a running game.

@@ -1,5 +1,5 @@
 import { getPluginLogsJSON } from './logger';
-import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, onRandomSkin, setRandomSkinMode, requestLogs } from './websocket';
+import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, onRandomSkin, setRandomSkinMode, requestLogs, onMapPrep } from './websocket';
 import { downloadDiagnosticZIP } from './diagnostics';
 import { el } from './dom';
 import { createButton, createCheckbox, createChampionSearch, createInput } from './components';
@@ -54,6 +54,32 @@ function buildToggle(id, labelText, settingKey) {
   });
   onSetting(settingKey, (enabled) => { input.checked = enabled; });
   return el('div', { class: 'ame-settings-toggle-row' }, checkbox);
+}
+
+export function mapPrepText(status) {
+  if (!status) return t('settings.map_prep.idle');
+  switch (status.state) {
+    case 'preparing':
+      return t('settings.map_prep.preparing', { progress: status.total ? ` (${status.current}/${status.total})` : '' });
+    case 'ready':
+      return t('settings.map_prep.ready');
+    case 'failed':
+      return t('settings.map_prep.failed');
+    case 'skipped':
+      return t('settings.map_prep.skipped', { reason: status.reason });
+    case 'off':
+      return t('settings.map_prep.off');
+  }
+  return t('settings.map_prep.idle');
+}
+
+function buildMapPrepSection() {
+  const line = el('span', { class: 'ame-list-label ame-map-prep-status', style: 'margin-top: 4px' }, mapPrepText(null));
+  onMapPrep((status) => { line.textContent = mapPrepText(status); });
+  return el('div', null,
+    buildToggle('ameMapPrep', t('settings.general.map_prep'), 'mapPrep'),
+    el('div', { class: 'ame-sub-toggle' }, line),
+  );
 }
 
 let championSummary = null;
@@ -391,6 +417,7 @@ function buildPanel() {
           buildToggle('ameRoomParty', t('settings.general.room_party'), 'roomParty'),
           buildToggle('ameStartWithWindows', t('settings.general.start_with_windows'), 'startWithWindows'),
           buildToggle('ameAutoUpdate', t('settings.general.auto_update'), 'autoUpdate'),
+          buildMapPrepSection(),
           buildChatStatusSection(),
           buildRandomSkinSection(),
           el('div', { class: 'ame-settings-toggle-row' },

@@ -28,6 +28,9 @@
       "loading": "Liberando jogo...",
       "success": "Jogo liberado!",
       "error": "Falha ao liberar o jogo"
+    },
+    "map_prep": {
+      "preparing": "Preparando as skins para a nova versão do League (só uma vez)..."
     }
   },
   "settings": {
@@ -45,7 +48,16 @@
       "bench_swap_skip_cooldown": "Ignorar o tempo de recarga da troca no banco (experimental)",
       "room_party": "Compartilhar skins com colegas que usam o Ame",
       "start_with_windows": "Iniciar o ame com o Windows",
-      "auto_update": "Instalar atualizações automaticamente"
+      "auto_update": "Instalar atualizações automaticamente",
+      "map_prep": "Preparar os arquivos de mapa com antecedência para trocar de skin mais rápido (usa cerca de 4,5 GB)"
+    },
+    "map_prep": {
+      "idle": "Arquivos de mapa: ainda não verificados",
+      "preparing": "Arquivos de mapa: preparando{progress}...",
+      "ready": "Arquivos de mapa: prontos, trocas de skin de última hora continuam rápidas",
+      "failed": "Arquivos de mapa: a preparação falhou, o ame tentará novamente mais tarde",
+      "skipped": "Arquivos de mapa: aguardando ({reason})",
+      "off": "Arquivos de mapa: não preparados com antecedência"
     },
     "auto_select": {
       "enable": "Ativar seleção automática de campeão",
