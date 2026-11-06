@@ -2,6 +2,7 @@ package ltk
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -170,4 +171,31 @@ func TestDisarmStartsTheIdleCountdown(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("the idle manager was never stopped after the disarm")
+}
+
+// Quitting ame during a match must not kill the injection host under the
+// game: the Garen game whose host was killed mid-match hung on exit. The
+// manager is handed to the after-game stop instead.
+func TestStopLeavesTheManagerToAGameInProgress(t *testing.T) {
+	fake := &fakePatcher{running: true}
+	m := installFakeManager(t, fake)
+	m.cmd = &exec.Cmd{}
+	var deferred *exec.Cmd
+	oldGame, oldAfter := gameProcessRunning, stopAfterGame
+	gameProcessRunning = func() bool { return true }
+	stopAfterGame = func(cmd *exec.Cmd) { deferred = cmd }
+	defer func() { gameProcessRunning, stopAfterGame = oldGame, oldAfter }()
+	Stop()
+	if fake.stops() != 0 {
+		t.Fatal("the patcher was stopped under a running game")
+	}
+	if deferred != m.cmd {
+		t.Fatal("the manager was not handed to the after-game stop")
+	}
+	managerMu.Lock()
+	gone := manager == nil
+	managerMu.Unlock()
+	if !gone || Running() {
+		t.Fatal("ame still holds the manager it let go")
+	}
 }

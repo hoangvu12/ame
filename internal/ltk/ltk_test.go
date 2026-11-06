@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,6 +34,7 @@ func TestMain(m *testing.M) {
 	}
 	config.AmeDir = dir
 	mapPrepEnabled = func() bool { return false }
+	stopAfterGame = func(*exec.Cmd) { panic("test reached the after-game manager stop") }
 	managerOverlayRoot = func() string { return filepath.Join(dir, "manager-overlay") }
 	code := m.Run()
 	os.RemoveAll(dir)

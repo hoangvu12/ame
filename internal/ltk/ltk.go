@@ -849,6 +849,18 @@ func stopLocked() {
 	}
 	manager = nil
 	close(m.stop)
+	if gameProcessRunning() {
+		// The patcher's DLL is inside the running game. Killing its host
+		// under it left the game hanging on exit (22:22 kill, Garen game
+		// stuck ~1 min after its last frame, Vanguard shut down as it
+		// ended), so the manager and host are left alone and ended once
+		// the game is gone.
+		display.Log("LTK: League is running; the manager and its injection host stop after the game ends")
+		m.cdp.close()
+		stopAfterGame(m.cmd)
+		resetSnapshot()
+		return
+	}
 	// Stop the patcher first so the injected host detaches cleanly, then
 	// terminate the manager and its WebView2 children.
 	if err := m.cdp.stopPatcher(); err != nil {
@@ -856,6 +868,10 @@ func stopLocked() {
 	}
 	killManagerTree(m.cmd)
 	m.cdp.close()
+	resetSnapshot()
+}
+
+func resetSnapshot() {
 	snapshotMu.Lock()
 	snapshot = managerSnapshot{}
 	rebuild, armedAt = nil, time.Time{}
