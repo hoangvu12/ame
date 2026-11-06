@@ -375,6 +375,12 @@ export function wsConnect() {
             } else {
               notifyKept();
             }
+          } else if (msg.status === 'cleanupDeclined') {
+            // League is running: ame kept the patcher serving the match, so
+            // the skins stay on despite the optimistic flip in wsSend. Servers
+            // that predate this reply always clean up, and never send it.
+            overlayActive = true;
+            notifyKept();
           } else if (msg.status === 'error') {
             if (applyReject) {
               settleApply(new Error(msg.message));

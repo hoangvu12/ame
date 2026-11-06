@@ -250,7 +250,10 @@ func reportOverlayVerdict(pid uint64, verdict string) {
 func handleCleanupRequest(conn *websocket.Conn) {
 	if gameRunning() {
 		display.Log("LTK: cleanup request ignored while League is running; the patcher keeps serving this match")
-		sendStatus(conn, "kept", "Skins cannot change during a match. Changes apply next match.")
+		// Its own status, so the plugin can undo the optimistic "skins off"
+		// it set when sending the request; a "kept" can also answer a
+		// selection.
+		sendStatus(conn, "cleanupDeclined", "Skins cannot change during a match. Changes apply next match.")
 		return
 	}
 	HandleCleanup()

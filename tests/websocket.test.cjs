@@ -126,6 +126,22 @@ test('kept without a pending apply shows a rate-limited notice', async () => {
   assert.deepEqual(notices, ['toast.apply.kept']);
 });
 
+// In-game "Remove Skin" flips the overlay off as it sends cleanup. While
+// League runs ame declines and the skins stay on, so the state flips back;
+// a server that predates the reply always cleans up and never sends it.
+test('declined cleanup keeps the overlay active', async () => {
+  const { api, sockets, notices } = await setup();
+  api.setOverlayActive(true);
+  api.wsSend({ type: 'cleanup' });
+  assert.equal(api.isOverlayActive(), false);
+  sockets[0].status('cleanupDeclined');
+  assert.equal(api.isOverlayActive(), true);
+  assert.deepEqual(notices, ['toast.apply.kept']);
+
+  api.wsSend({ type: 'cleanup' });
+  assert.equal(api.isOverlayActive(), false);
+});
+
 test('send exception rejects and clears timer, allowing a later explicit retry', async () => {
   const { api, sockets, promises, timers } = await setup();
   sockets[0].failSend = true;

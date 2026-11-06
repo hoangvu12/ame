@@ -236,7 +236,7 @@ func TestCleanupRequestNeverStopsTheRuntimeDuringAMatch(t *testing.T) {
 	if stubs.stops != 0 {
 		t.Fatal("cleanup stopped the runtime while League ran")
 	}
-	if msg := readStatus(t, peer); msg.Status != "kept" {
+	if msg := readStatus(t, peer); msg.Status != "cleanupDeclined" {
 		t.Fatalf("status=%+v", msg)
 	}
 	gameRunning = func() bool { return false }
