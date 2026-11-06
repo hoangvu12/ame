@@ -1,1 +1,2 @@
-- The skin engine is now downloaded during setup, so the first skin pick is instant
+- Fixed champion and skin changes sometimes keeping the previous selection
+- Fixed room party keeping outdated teammate skins after players changed their selections
