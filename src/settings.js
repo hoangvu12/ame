@@ -1,4 +1,5 @@
-import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, onRandomSkin, setRandomSkinMode } from './websocket';
+import { getPluginLogsJSON } from './logger';
+import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, onRandomSkin, setRandomSkinMode, requestLogs } from './websocket';
 import { downloadDiagnosticZIP } from './diagnostics';
 import { el } from './dom';
 import { createButton, createCheckbox, createChampionSearch, createInput } from './components';
@@ -276,6 +277,46 @@ function buildRandomSkinSection() {
   );
 }
 
+function formatTimestamp(ms) {
+  return new Date(ms).toISOString().replace('T', ' ').slice(0, 23);
+}
+
+function downloadLogs() {
+  requestLogs(({ version, entries: serverEntries }) => {
+    const pluginEntries = getPluginLogsJSON();
+
+    // Combine and sort by timestamp
+    const allLogs = [...serverEntries, ...pluginEntries].sort((a, b) => a.timestamp - b.timestamp);
+
+    // Build formatted output
+    const lines = [
+      `=== ame ${version} debug log ===`,
+      `Exported: ${new Date().toISOString()}`,
+      `Total entries: ${allLogs.length} (server: ${serverEntries.length}, plugin: ${pluginEntries.length})`,
+      '',
+      'Timestamp                 Source          Message',
+      '-'.repeat(100),
+    ];
+
+    for (const entry of allLogs) {
+      const ts = formatTimestamp(entry.timestamp);
+      const src = entry.source.padEnd(15);
+      lines.push(`${ts}  ${src} ${entry.message}`);
+    }
+
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ame-logs-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
 function showUninstallDialog() {
   if (document.getElementById(UNINSTALL_DIALOG_ID)) return;
 
@@ -365,6 +406,10 @@ function buildPanel() {
           createButton(t('settings.download_logs.button'), {
             class: 'ame-settings-download-logs',
             onClick: () => downloadDiagnosticZIP(),
+          }),
+          createButton(`${t('settings.download_logs.button')} (plugin)`, {
+            class: 'ame-settings-download-plugin-logs',
+            onClick: () => downloadLogs(),
           }),
           createButton(t('settings.uninstall.button'), {
             class: 'ame-settings-uninstall',
