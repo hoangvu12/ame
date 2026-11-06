@@ -47,10 +47,28 @@ echo.
 :: Kill running processes
 echo   %DIM%Stopping processes...%R%
 taskkill /F /IM "ame.exe" >nul 2>&1
+taskkill /F /IM "ame-dev.exe" >nul 2>&1
 taskkill /F /IM "ame_core.exe" >nul 2>&1
 taskkill /F /IM "ame-server.exe" >nul 2>&1
 taskkill /F /IM "mod-tools.exe" >nul 2>&1
+taskkill /F /T /IM "ltk-manager.exe" >nul 2>&1
+taskkill /F /IM "ltk_patcher_host.exe" >nul 2>&1
 taskkill /F /IM "Pengu Loader.exe" >nul 2>&1
+
+:: Clean up the LTK Manager library: ame's hidden manager keeps a skin
+:: package ("ame skin set") installed and an overlay built under the
+:: manager's data dir. The manager must be stopped first so its library
+:: index is not rewritten afterwards; removing the files is enough, the
+:: manager drops missing mods from its index on its next start. Only ame's
+:: pieces are removed — the user's own LTK Manager mods and settings stay.
+set "LTK_DIR=%APPDATA%\dev.leaguetoolkit.manager"
+if exist "%LTK_DIR%\mods\ame-skin-set" (
+    rmdir /s /q "%LTK_DIR%\mods\ame-skin-set" >nul 2>&1
+    del /f /q "%LTK_DIR%\mods\ame-skin-set.fantome" >nul 2>&1
+)
+if exist "%LTK_DIR%\profiles\default\overlay" (
+    rmdir /s /q "%LTK_DIR%\profiles\default\overlay" >nul 2>&1
+)
 
 :: Remove scheduled task (Start with Windows)
 schtasks /delete /tn "ame" /f >nul 2>&1
