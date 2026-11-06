@@ -227,8 +227,11 @@ func packMod(dir, path string) error {
 // package ame installs into the manager's library. Entries of earlier mods
 // win — the same priority the overlay builder gives them — and the sources'
 // metadata is replaced by ame's own, so the package carries a stable library
-// name that identifies it on later runs.
-func mergeFantomes(sources []string, dest string) error {
+// name that identifies it on later runs. The extra entries (the map
+// keep-alive files) follow the mods; one whose WAD a mod already ships is
+// left out, since the builder reads a WAD that has directory entries from
+// those alone and would ignore a packed WAD of the same name.
+func mergeFantomes(sources []string, dest string, extra []packageEntry) error {
 	file, err := os.Create(dest)
 	if err != nil {
 		return err
@@ -277,6 +280,19 @@ func mergeFantomes(sources []string, dest string) error {
 		}
 		input.Close()
 	}
+	for _, entry := range extra {
+		if shipsWAD(written, entry.name) {
+			continue
+		}
+		writer, err := archive.CreateHeader(&zip.FileHeader{Name: entry.name, Method: zip.Store})
+		if err != nil {
+			return err
+		}
+		if _, err = writer.Write(entry.data); err != nil {
+			return err
+		}
+		written[entry.name] = true
+	}
 	info, err := archive.CreateHeader(&zip.FileHeader{Name: "META/info.json", Method: zip.Store})
 	if err != nil {
 		return err
@@ -289,6 +305,24 @@ func mergeFantomes(sources []string, dest string) error {
 		return err
 	}
 	return file.Close()
+}
+
+// shipsWAD reports whether the written entries already hold the WAD the
+// directory-layout entry name (WAD/<wad>/<file>) belongs to, packed or as
+// directory entries.
+func shipsWAD(written map[string]bool, name string) bool {
+	parts := strings.SplitN(name, "/", 3)
+	if len(parts) < 3 {
+		return false
+	}
+	wad := strings.ToLower(parts[0] + "/" + parts[1])
+	for existing := range written {
+		lower := strings.ToLower(existing)
+		if lower == wad || strings.HasPrefix(lower, wad+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // Build packs the selected mods and merges them into the skin package
@@ -326,14 +360,15 @@ func Build(modsDir, overlay, game, names string) error {
 		}
 		packages = append(packages, path)
 	}
-	if err := mergeFantomes(packages, staged); err != nil {
+	keepAlive := keepAliveEntries(game)
+	if err := mergeFantomes(packages, staged, keepAlive); err != nil {
 		os.Remove(staged)
 		return fmt.Errorf("LTK skin package: %w", err)
 	}
 	if err := publishPackage(staged, overlay+".fantome"); err != nil {
 		return err
 	}
-	display.Log(fmt.Sprintf("LTK build: merged %d mod(s) into the skin package in %s", len(packages), time.Since(started).Round(time.Millisecond)))
+	display.Log(fmt.Sprintf("LTK build: merged %d mod(s) into the skin package in %s (%d map keep-alive entries)", len(packages), time.Since(started).Round(time.Millisecond), len(keepAlive)))
 	return nil
 }
 

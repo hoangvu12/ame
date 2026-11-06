@@ -32,6 +32,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	config.AmeDir = dir
+	mapPrepEnabled = func() bool { return false }
+	managerOverlayRoot = func() string { return filepath.Join(dir, "manager-overlay") }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -81,7 +83,7 @@ func TestMergeFantomes(t *testing.T) {
 		}
 	}
 	merged := filepath.Join(scratch, "merged.fantome")
-	if err := mergeFantomes(packs, merged); err != nil {
+	if err := mergeFantomes(packs, merged, nil); err != nil {
 		t.Fatal(err)
 	}
 	z, err := zip.OpenReader(merged)

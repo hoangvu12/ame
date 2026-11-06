@@ -37,7 +37,7 @@ func TestLiveManagerSession(t *testing.T) {
 	if err := packMod(modDir, pkg); err != nil {
 		t.Fatal(err)
 	}
-	if err := mergeFantomes([]string{pkg}, pkg+".merged"); err != nil {
+	if err := mergeFantomes([]string{pkg}, pkg+".merged", nil); err != nil {
 		t.Fatal(err)
 	}
 	pkg = pkg + ".merged"

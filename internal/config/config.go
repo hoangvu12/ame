@@ -56,6 +56,7 @@ type Settings struct {
 	ChatAvailability  string                `json:"chatAvailability"`
 	ChatStatusMessage string                `json:"chatStatusMessage"`
 	RandomSkin        string                `json:"randomSkin"`
+	MapPrep           bool                  `json:"mapPrep"`
 	CustomMods        []CustomMod           `json:"customMods"`
 }
 
@@ -67,6 +68,7 @@ func Init() error {
 
 	// Set defaults before loading (fields missing from JSON keep these values)
 	settings.AutoUpdate = true
+	settings.MapPrep = true
 
 	// Try settings.json first
 	data, err := os.ReadFile(settingsPath)
@@ -92,6 +94,7 @@ func Init() error {
 
 	// Neither file exists — start with defaults
 	settings.AutoUpdate = true
+	settings.MapPrep = true
 	ensureAutoSelectRoles()
 	return nil
 }
@@ -196,6 +199,22 @@ func SetAutoUpdate(enabled bool) error {
 	mu.Lock()
 	defer mu.Unlock()
 	settings.AutoUpdate = enabled
+	return save()
+}
+
+// MapPrep reports whether map copies are prepared ahead of time, so late
+// skin changes stay fast.
+func MapPrep() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return settings.MapPrep
+}
+
+// SetMapPrep updates and persists the map preparation setting.
+func SetMapPrep(enabled bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	settings.MapPrep = enabled
 	return save()
 }
 
