@@ -311,24 +311,6 @@ func (c *cdpClient) installMod(path string) (string, error) {
 	return outcome.Mod.ID, nil
 }
 
-// updateMod replaces an installed mod's archive in place (manager v1.33.0
-// plugin:library|update_mod). The library id, enabled state and profile
-// choices survive, and the manager requests a single overlay refresh.
-func (c *cdpClient) updateMod(id, path string) (string, error) {
-	raw, err := c.invokeTauri("plugin:library|update_mod", map[string]any{"modId": id, "filePath": path}, cdpInstallTimeout)
-	if err != nil {
-		return "", err
-	}
-	var mod managerMod
-	if err := json.Unmarshal(raw, &mod); err != nil {
-		return "", fmt.Errorf("update_mod: %w", err)
-	}
-	if mod.ID == "" {
-		return id, nil
-	}
-	return mod.ID, nil
-}
-
 func (c *cdpClient) toggleMod(id string, enabled bool) error {
 	_, err := c.invokeTauri("plugin:library|toggle_mod", map[string]any{"modId": id, "enabled": enabled}, cdpInvokeTimeout)
 	return err

@@ -698,60 +698,43 @@ func swapAmeMod(m *managerSession, pkg string) error {
 }
 
 // replaceAmeMod puts pkg into the manager's library as its one ame skin
-// package with as few edits as possible. An installed ame package is
-// replaced in place with update_mod: one edit, one refresh, and the library
-// identity and enabled state survive. The uninstall + install + enable
-// sequence it replaces cost up to three refreshes, and a slow install past
-// the 750ms settle window rebuilt an empty overlay in between. Leftovers
-// from crashed runs go in the same burst, inside the settle window.
+// package. The new package is installed and enabled first, then every older
+// ame package is uninstalled, all in one burst inside the manager's 750ms
+// settle window, so a refresh in between never sees an empty set.
+//
+// update_mod is never used: manager v1.33.0 clears its overlay build-version
+// marker on every update (mods/archive/install/update.rs ->
+// invalidate_overlay_for), and the next build then deletes every cached
+// overlay WAD of every profile and copies them all again, the prepared map
+// copies included. A fresh install under a new library id keeps them.
 func replaceAmeMod(m *managerSession, pkg string, digest [sha256.Size]byte, running bool, phase string) error {
 	mods, err := m.cdp.installedMods()
 	if err != nil {
 		return fmt.Errorf("LTK library read: %w", err)
 	}
-	var target *managerMod
-	var leftovers []managerMod
+	var previous []managerMod
 	for _, mod := range mods {
-		if !isAmeMod(mod, m.modID) {
-			continue
+		if isAmeMod(mod, m.modID) {
+			previous = append(previous, mod)
 		}
-		if target == nil {
-			kept := mod
-			target = &kept
-			continue
-		}
-		if mod.ID == m.modID {
-			leftovers = append(leftovers, *target)
-			kept := mod
-			target = &kept
-			continue
-		}
-		leftovers = append(leftovers, mod)
 	}
 	if running {
 		beginRebuild(time.Now(), phase)
 	}
 	// Until the write succeeds the manager may hold either package.
 	m.modID = ""
-	var modID string
-	if target != nil {
-		if modID, err = m.cdp.updateMod(target.ID, pkg); err != nil {
-			return fmt.Errorf("LTK update: %w", err)
-		}
-		if !target.Enabled {
-			if err := m.cdp.toggleMod(modID, true); err != nil {
-				return fmt.Errorf("LTK enable: %w", err)
-			}
-		}
-	} else {
-		if modID, err = m.cdp.installMod(pkg); err != nil {
-			return fmt.Errorf("LTK install: %w", err)
-		}
-		if err := m.cdp.toggleMod(modID, true); err != nil {
-			return fmt.Errorf("LTK enable: %w", err)
-		}
+	modID, err := m.cdp.installMod(pkg)
+	if err != nil {
+		return fmt.Errorf("LTK install: %w", err)
 	}
-	for _, mod := range leftovers {
+	if err := m.cdp.toggleMod(modID, true); err != nil {
+		return fmt.Errorf("LTK enable: %w", err)
+	}
+	for _, mod := range previous {
+		// The manager answers a package it already holds with that mod.
+		if mod.ID == modID {
+			continue
+		}
 		if err := m.cdp.uninstallMod(mod.ID); err != nil {
 			display.Log(fmt.Sprintf("LTK: uninstall of stale skin package %s failed: %v", mod.ID, err))
 		}

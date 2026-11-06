@@ -374,15 +374,22 @@ func TestStartRefusesLibraryEditsWhileGameRuns(t *testing.T) {
 	}
 }
 
-// An installed ame package is replaced in place: one update_mod edit, the
-// identity kept, leftovers removed in the same burst, nothing reinstalled.
-func TestReplaceUsesUpdateModOnInstalledPackage(t *testing.T) {
-	for _, enabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+// A new skin set is installed and enabled before the previous ame packages
+// are uninstalled, in one burst: a refresh in between never sees an empty
+// set. update_mod is never used: the manager answers it by deleting every
+// cached overlay WAD, the prepared map copies included.
+func TestReplaceInstallsBeforeUninstalling(t *testing.T) {
+	for _, already := range []bool{false, true} {
+		t.Run(fmt.Sprintf("alreadyInstalled=%v", already), func(t *testing.T) {
 			isolateManagerState(t)
 			pkg := filepath.Join(t.TempDir(), "overlay.fantome")
 			if err := os.WriteFile(pkg, []byte("next set"), 0600); err != nil {
 				t.Fatal(err)
+			}
+			newID := "fresh"
+			if already {
+				// The manager already holds these bytes as the armed mod.
+				newID = "armed"
 			}
 			var mu sync.Mutex
 			var calls []string
@@ -396,27 +403,31 @@ func TestReplaceUsesUpdateModOnInstalledPackage(t *testing.T) {
 				case strings.Contains(expr, "get_installed_mods"):
 					return fakeInvokeReply([]any{
 						map[string]any{"id": "leftover", "name": "ame-skin-set", "enabled": true},
-						map[string]any{"id": "armed", "name": ameModName, "enabled": enabled},
+						map[string]any{"id": "armed", "name": ameModName, "enabled": true},
 						map[string]any{"id": "users-mod", "name": "Someone else's mod", "enabled": true},
 					}), nil
 				case strings.Contains(expr, "update_mod"):
-					if !strings.Contains(expr, `"modId":"armed"`) || !strings.Contains(expr, "overlay.fantome") {
-						return nil, fmt.Errorf("update_mod with wrong arguments: %s", expr)
-					}
-					record("update:armed")
-					return fakeInvokeReply(map[string]any{"id": "armed", "name": ameModName, "enabled": enabled}), nil
+					return nil, fmt.Errorf("update_mod purges the manager's overlay cache: %s", expr)
 				case strings.Contains(expr, "uninstall_mod"):
-					if strings.Contains(expr, `"modId":"leftover"`) {
-						record("uninstall:leftover")
-						return fakeInvokeReply(nil), nil
+					for _, id := range []string{"leftover", "armed"} {
+						if strings.Contains(expr, `"modId":"`+id+`"`) {
+							record("uninstall:" + id)
+							return fakeInvokeReply(nil), nil
+						}
 					}
 					return nil, fmt.Errorf("uninstalled the wrong mod: %s", expr)
 				case strings.Contains(expr, "toggle_mod"):
-					record("toggle")
+					if !strings.Contains(expr, `"modId":"`+newID+`"`) || !strings.Contains(expr, `"enabled":true`) {
+						return nil, fmt.Errorf("enabled the wrong mod: %s", expr)
+					}
+					record("enable:" + newID)
 					return fakeInvokeReply(nil), nil
 				case strings.Contains(expr, "install_mod"):
+					if !strings.Contains(expr, "overlay.fantome") {
+						return nil, fmt.Errorf("installed the wrong file: %s", expr)
+					}
 					record("install")
-					return fakeInvokeReply(nil), nil
+					return fakeInvokeReply(map[string]any{"kind": "installed", "mod": map[string]any{"id": newID, "name": ameModName}}), nil
 				}
 				return nil, fmt.Errorf("unexpected IPC: %s", expr)
 			})
@@ -424,16 +435,16 @@ func TestReplaceUsesUpdateModOnInstalledPackage(t *testing.T) {
 			if err := swapAmeMod(m, pkg); err != nil {
 				t.Fatal(err)
 			}
-			want := []string{"update:armed", "uninstall:leftover"}
-			if !enabled {
-				want = []string{"update:armed", "toggle", "uninstall:leftover"}
+			want := []string{"install", "enable:fresh", "uninstall:leftover", "uninstall:armed"}
+			if already {
+				want = []string{"install", "enable:armed", "uninstall:leftover"}
 			}
 			if strings.Join(calls, ",") != strings.Join(want, ",") {
 				t.Fatalf("library edits=%v, want %v", calls, want)
 			}
 			digest, _ := packageDigest(pkg)
-			if !m.matchesPackage(pkg, digest) || m.modID != "armed" {
-				t.Fatal("the replaced package's identity was not kept")
+			if !m.matchesPackage(pkg, digest) || m.modID != newID {
+				t.Fatalf("the installed package's identity was not recorded: %q", m.modID)
 			}
 			if !PreparedState().Pending && !currentSnapshot().pending {
 				t.Fatal("the edit raised no rebuild fence")
