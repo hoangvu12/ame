@@ -17,11 +17,10 @@ import (
 )
 
 const diagnosticFileCap = 512 * 1024
-const diagnosticFileCount = 6 // three launch files and three newest manager logs
 
 var diagnosticSecrets = regexp.MustCompile(`(?i)((?:authorization|password|passwd|access[_-]?token|refresh[_-]?token|token|api[_-]?key|secret)["']?\s*[:=]\s*["']?)[^\s,"'}]+`)
 var diagnosticURLs = regexp.MustCompile(`(?i)(?:https?|wss?)://[^\s"<>]+`)
-var diagnosticHomes = regexp.MustCompile(`(?i)(?:[a-z]:[\/]+Users[\/]+|/home/|/Users/)[^\/\s"<>]+`)
+var diagnosticHomes = regexp.MustCompile(`(?i)(?:[a-z]:[\\/]+Users[\\/]+|/home/|/Users/)[^\\/\s"<>]+`)
 var diagnosticBearer = regexp.MustCompile(`(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9+/_.=:-]+`)
 
 func redactDiagnostic(data []byte) []byte {
@@ -30,7 +29,9 @@ func redactDiagnostic(data []byte) []byte {
 		if home := os.Getenv(key); home != "" {
 			re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(home))
 			s = re.ReplaceAllString(s, "<home>")
-			s = strings.ReplaceAll(s, strings.ReplaceAll(home, `\`, `\`), "<home>")
+			escapedHome := strings.ReplaceAll(home, `\`, `\\`)
+			escapedRE := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(escapedHome))
+			s = escapedRE.ReplaceAllString(s, "<home>")
 		}
 	}
 	s = diagnosticHomes.ReplaceAllString(s, "<home>")

@@ -87,3 +87,22 @@ func TestDiagnosticDownloadSecurity(t *testing.T) {
 		}
 	}
 }
+
+func TestDiagnosticWindowsHomeRedaction(t *testing.T) {
+	t.Setenv("USERPROFILE", `C:\Users\Current`)
+	t.Setenv("HOME", "")
+	for _, input := range []string{
+		`C:\Users\Friend\game`,
+		`C:\Users\Friend\game`,
+		`{"path":"C:\Users\Friend\game"}`,
+		`c:\users\FRIEND\game`,
+		`C:/Users/Friend/game`,
+		`C:\Users\Current\game`,
+		`C:\Users\Current\game`,
+	} {
+		got := string(redactDiagnostic([]byte(input)))
+		if strings.Contains(strings.ToLower(got), "friend") || strings.Contains(strings.ToLower(got), "current") || !strings.Contains(got, "<home>") {
+			t.Errorf("home not redacted: %q => %q", input, got)
+		}
+	}
+}
