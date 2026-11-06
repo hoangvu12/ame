@@ -359,6 +359,17 @@ func checkPenguActivation() bool {
 	return true
 }
 
+// SetupLtkManager downloads the LTK Manager the patcher runs as a hidden
+// helper, so the first skin selection does not pay the one-time ~30s
+// delivery. Cached by release marker: later runs cost one release check,
+// and a new manager release updates the cache here, before it is needed.
+// Failures are not fatal — the lazy path at first skin selection retries.
+func SetupLtkManager() {
+	if _, err := ltk.ManagerFetch(); err != nil {
+		info("Skin engine will be downloaded on first use: " + err.Error())
+	}
+}
+
 // RunSetup runs the full setup process (version can be passed for display)
 func RunSetup(config Config) bool {
 	// Create directories
@@ -385,6 +396,10 @@ func RunSetup(config Config) bool {
 			return false
 		}
 	}
+
+	// Download the LTK Manager while the user is still waiting on setup;
+	// the first champion-select pick then starts instantly.
+	SetupLtkManager()
 
 	// Only auto-activate on fresh install
 	if freshInstall {
