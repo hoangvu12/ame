@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPackageIdentitySwap(t *testing.T) {
@@ -71,7 +72,9 @@ func TestPackageIdentitySwap(t *testing.T) {
 				previous, snap := manager, currentSnapshot()
 				m.stop, m.exited = make(chan struct{}), make(chan struct{})
 				manager = m
-				setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{alive: true, running: true} })
+				setSnapshot(func(s *managerSnapshot) {
+					*s = managerSnapshot{alive: true, running: true, phase: "patching", observed: time.Now()}
+				})
 				err = Start(strings.TrimSuffix(pkg, ".fantome"))
 				manager = previous
 				setSnapshot(func(s *managerSnapshot) { *s = snap })
@@ -118,7 +121,9 @@ func TestStartReusesUnchangedPackage(t *testing.T) {
 	previous, previousSnapshot := manager, currentSnapshot()
 	defer func() { manager = previous; setSnapshot(func(s *managerSnapshot) { *s = previousSnapshot }) }()
 	manager = &managerSession{modID: "installed", modFile: pkg, modHash: digest, stop: make(chan struct{}), exited: make(chan struct{})}
-	setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{alive: true, running: true} })
+	setSnapshot(func(s *managerSnapshot) {
+		*s = managerSnapshot{alive: true, running: true, phase: "patching", observed: time.Now()}
+	})
 	if err := Start(strings.TrimSuffix(pkg, ".fantome")); err != nil {
 		t.Fatal(err)
 	}
@@ -127,5 +132,49 @@ func TestStartReusesUnchangedPackage(t *testing.T) {
 	}
 	if err := Start(strings.TrimSuffix(pkg, ".fantome")); err == nil {
 		t.Fatal("missing package reused by pathname")
+	}
+}
+
+func TestRebuildTimeoutRetainsReadinessFence(t *testing.T) {
+	old, snap := overlayRebuildTimeout, currentSnapshot()
+	overlayRebuildTimeout = 20 * time.Millisecond
+	defer func() { overlayRebuildTimeout = old; setSnapshot(func(s *managerSnapshot) { *s = snap }) }()
+	fake := startFakeCDP(t, func(expr string) (any, error) {
+		return fakeInvokeReply(map[string]any{"running": true, "phase": "building"}), nil
+	})
+	c, err := cdpDial(wsURL(fake.server.URL) + "/ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{pending: true} })
+	if err := awaitOverlayRebuild(&managerSession{cdp: c}); err == nil {
+		t.Fatal("timeout reported success")
+	}
+	s := currentSnapshot()
+	if !s.pending || s.phase != "building" || s.observed.IsZero() {
+		t.Fatalf("status/fence lost: %+v", s)
+	}
+}
+
+func TestArmRejectsStalePendingAndStoppedStatus(t *testing.T) {
+	old, snap := armSuspendTimeout, currentSnapshot()
+	armSuspendTimeout = time.Millisecond
+	defer func() { armSuspendTimeout = old; setSnapshot(func(s *managerSnapshot) { *s = snap }) }()
+	for _, s := range []managerSnapshot{
+		{alive: true, running: true, phase: "patching"},
+		{alive: true, running: true, phase: "patching", observed: time.Now(), pending: true},
+		{alive: true, phase: "patching", observed: time.Now()},
+	} {
+		setSnapshot(func(dst *managerSnapshot) { *dst = s })
+		if err := ArmSuspended(123); err == nil {
+			t.Fatalf("accepted unsafe status: %+v", s)
+		}
+	}
+	cancel := make(chan struct{})
+	close(cancel)
+	setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{alive: true, running: true, phase: "building"} })
+	if err := ArmSuspendedCancel(123, cancel); err == nil {
+		t.Fatal("ignored cancellation")
 	}
 }

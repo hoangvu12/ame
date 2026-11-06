@@ -137,6 +137,7 @@ func TestStatusAccessors(t *testing.T) {
 		s.alive = true
 		s.running = true
 		s.phase = "patching"
+		s.observed = time.Now()
 	})
 	if !Running() || !WaitingForGame() || Hooked() {
 		t.Fatal("scanning session not reported as waiting for a game")
@@ -201,6 +202,7 @@ func TestArmSuspendedWaitsForPatching(t *testing.T) {
 		s.alive = true
 		s.running = true
 		s.phase = "patching"
+		s.observed = time.Now()
 	})
 	if err := ArmSuspended(123); err != nil {
 		t.Fatalf("armed patcher did not release the game: %v", err)

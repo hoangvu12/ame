@@ -361,6 +361,8 @@ type managerSnapshot struct {
 	attached bool   // the injected DLL is in a game
 	pid      uint64
 	failure  string
+	pending  bool      // library edit has not yet passed the rebuild fence
+	observed time.Time // last successful authoritative status read
 }
 
 var (
@@ -395,6 +397,12 @@ func Hooked() bool {
 func WaitingForGame() bool {
 	s := currentSnapshot()
 	return s.alive && s.running && !s.attached && s.failure == ""
+}
+
+// Ready reports a recent scanning status, not merely a live patcher process.
+func Ready() bool {
+	s := currentSnapshot()
+	return s.alive && s.running && s.phase == "patching" && !s.pending && s.failure == "" && !s.observed.IsZero() && time.Since(s.observed) < 2*time.Second
 }
 
 func Failure() string { return currentSnapshot().failure }
@@ -437,6 +445,10 @@ var armSuspendTimeout = 25 * time.Second
 // is scanning for a game. The held game is released only once the host is
 // armed, so its window cannot appear before the hook is installed.
 func ArmSuspended(pid uint32) error {
+	return ArmSuspendedCancel(pid, nil)
+}
+
+func ArmSuspendedCancel(pid uint32, cancel <-chan struct{}) error {
 	if manager == nil && !currentSnapshot().alive {
 		return fmt.Errorf("LTK manager is not running")
 	}
@@ -453,7 +465,7 @@ func ArmSuspended(pid uint32) error {
 		if !s.alive {
 			return fmt.Errorf("LTK manager stopped before the patcher was ready")
 		}
-		if s.phase == "patching" {
+		if s.running && s.phase == "patching" && !s.pending && !s.observed.IsZero() && time.Since(s.observed) < 2*time.Second && (!s.attached || s.pid == uint64(pid)) {
 			return nil
 		}
 		// The poll can lag a start by a few hundred milliseconds, so an idle
@@ -462,6 +474,8 @@ func ArmSuspended(pid uint32) error {
 			return fmt.Errorf("LTK patcher stopped before the game was released")
 		}
 		select {
+		case <-cancel:
+			return fmt.Errorf("LTK readiness wait cancelled")
 		case <-timer.C:
 			return fmt.Errorf("LTK patcher did not finish building before the game was released")
 		case <-tick.C:
@@ -491,7 +505,7 @@ func Start(overlay string) error {
 		if s.failure != "" {
 			return fmt.Errorf("LTK session failed: %s", s.failure)
 		}
-		if s.running {
+		if s.running && s.phase == "patching" && !s.pending && time.Since(s.observed) < 2*time.Second {
 			display.Log("LTK: preserving manager session for the armed skin package")
 			return nil
 		}
@@ -532,6 +546,7 @@ func startSession(pkg string) error {
 		setSnapshot(func(s *managerSnapshot) { s.failure = "" })
 		return awaitOverlayRebuild(m)
 	}
+	setSnapshot(func(s *managerSnapshot) { s.pending = true; s.observed = time.Time{} })
 	if err := uninstallAmeMods(m); err != nil {
 		return err
 	}
@@ -548,7 +563,10 @@ func startSession(pkg string) error {
 		return fmt.Errorf("LTK patcher start: %w", err)
 	}
 	m.modID, m.modFile, m.modHash = modID, pkg, digest
-	return awaitPatcherStart(m)
+	if err := awaitPatcherStart(m); err != nil {
+		return err
+	}
+	return awaitOverlayRebuild(m)
 }
 
 // swapAmeMod installs pkg as the library's only ame mod while the patcher
@@ -562,6 +580,7 @@ func swapAmeMod(m *managerSession, pkg string) error {
 	if m.matchesPackage(pkg, digest) {
 		return nil
 	}
+	setSnapshot(func(s *managerSnapshot) { s.pending = true; s.observed = time.Time{} })
 	if err := uninstallAmeMods(m); err != nil {
 		return err
 	}
@@ -598,18 +617,31 @@ func (m *managerSession) matchesPackage(pkg string, digest [sha256.Size]byte) bo
 // no-building grace therefore stays short, so bursts of swaps (room party:
 // every teammate pick) do not pay a stall each. A rebuild deferred behind a
 // running game also leaves the phase at "patching" throughout.
+var overlayRebuildTimeout = 30 * time.Second
+
+func publishStatus(status patcherStatus) {
+	setSnapshot(func(s *managerSnapshot) {
+		s.alive = true
+		s.running = status.Running
+		s.phase = status.Phase
+		s.observed = time.Now()
+	})
+}
+
 func awaitOverlayRebuild(m *managerSession) error {
 	buildingDeadline := time.Now().Add(3 * time.Second)
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(overlayRebuildTimeout)
 	seenBuilding := false
 	for {
 		status, err := m.cdp.patcherStatus()
 		if err == nil {
+			publishStatus(status)
 			switch status.Phase {
 			case "building":
 				seenBuilding = true
 			case "patching":
-				if seenBuilding || time.Now().After(buildingDeadline) {
+				if status.Running && !currentSnapshot().attached && (seenBuilding || time.Now().After(buildingDeadline)) {
+					setSnapshot(func(s *managerSnapshot) { s.pending = false })
 					return nil
 				}
 			case "idle":
@@ -625,8 +657,7 @@ func awaitOverlayRebuild(m *managerSession) error {
 			return fmt.Errorf("LTK session failed: %s", failure)
 		}
 		if time.Now().After(deadline) {
-			display.Log("LTK: overlay rebuild still running; the skin applies when it finishes")
-			return nil
+			return fmt.Errorf("LTK overlay rebuild readiness deadline exceeded")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -666,6 +697,7 @@ func awaitPatcherStart(m *managerSession) error {
 					s.alive = true
 					s.running = status.Running
 					s.phase = status.Phase
+					s.observed = time.Now()
 				})
 				return nil
 			}
@@ -861,6 +893,7 @@ func pollManager(m *managerSession) {
 		}
 		setSnapshot(func(s *managerSnapshot) {
 			*s = managerSnapshot{
+				pending:  s.pending,
 				alive:    true,
 				attached: state.Attached,
 				failure:  failure,
@@ -868,6 +901,7 @@ func pollManager(m *managerSession) {
 			if state.Status != nil {
 				s.running = state.Status.Running
 				s.phase = state.Status.Phase
+				s.observed = time.Now()
 			}
 			if state.PID != nil {
 				s.pid = *state.PID

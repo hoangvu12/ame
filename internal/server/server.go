@@ -196,6 +196,8 @@ var lastBaseSkinID string
 var lastChampionName string
 var lastSkinName string
 var lastChromaName string
+var preparationInvalid atomic.Bool
+
 var lastModKey string
 var stateMu sync.Mutex
 
@@ -320,6 +322,12 @@ func customModKey() string {
 func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string) {
 	skinPreparationMu.Lock()
 	defer skinPreparationMu.Unlock()
+	if preparationInvalid.Swap(false) {
+		stateMu.Lock()
+		lastModKey = ""
+		stateMu.Unlock()
+		prebuiltModKey = ""
+	}
 	started := time.Now()
 	display.Log(fmt.Sprintf("Apply: begin champion=%s skin=%s sharing=%v", championID, skinID, roomState.IsActive()))
 	defer func() {
@@ -347,7 +355,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	// If runoverlay is already running for this exact mod set, skip — nothing to do
 	stateMu.Lock()
-	alreadyActive := modtools.IsRunning() && lastModKey == skin.OverlayKey(currentModKey)
+	alreadyActive := !preparationInvalid.Load() && ltk.Ready() && modtools.IsRunning() && lastModKey == skin.OverlayKey(currentModKey)
 	display.Log(fmt.Sprintf("Apply: modKey=%s lastModKey=%s running=%v alreadyActive=%v", currentModKey, lastModKey, modtools.IsRunning(), alreadyActive))
 	stateMu.Unlock()
 	if alreadyActive {
@@ -419,7 +427,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		display.Log("Apply: room party inactive, own skin only")
 	}
 
-	prebuilt := prebuiltModKey == skin.OverlayKey(currentModKey)
+	prebuilt := !preparationInvalid.Load() && ltk.Ready() && prebuiltModKey == skin.OverlayKey(currentModKey)
 	if prebuilt {
 		// The prebuilt overlay is the published skin package: the manager
 		// builds its own overlay from it when Start installs it.
@@ -490,6 +498,11 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	// Start the runtime host (hooks the game process when it finds it)
 	if err := modtools.RunOverlay(config.OverlayDir); err != nil {
+		preparationInvalid.Store(true)
+		stateMu.Lock()
+		lastModKey = ""
+		stateMu.Unlock()
+		prebuiltModKey = ""
 		sendStatus(conn, "error", fmt.Sprintf("Failed to start overlay: %v", err))
 		return
 	}
@@ -536,6 +549,12 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, championName, skinName, chromaName string, revision uint64) {
 	skinPreparationMu.Lock()
 	defer skinPreparationMu.Unlock()
+	if preparationInvalid.Swap(false) {
+		stateMu.Lock()
+		lastModKey = ""
+		stateMu.Unlock()
+		prebuiltModKey = ""
+	}
 	if revision != selectionRevision.Load() {
 		display.Log("Prefetch: skipped superseded queued selection")
 		return
@@ -615,7 +634,7 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	}
 
 	// Skip if already pre-built for this exact set of skins
-	if prebuiltModKey == skin.OverlayKey(currentModKey) && modtools.IsRunning() {
+	if !preparationInvalid.Load() && ltk.Ready() && prebuiltModKey == skin.OverlayKey(currentModKey) && modtools.IsRunning() {
 		display.Log(fmt.Sprintf("Prefetch: skipped (already built), modKey=%s", currentModKey))
 		return
 	}
@@ -677,6 +696,11 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	}
 	prebuiltModKey = skin.OverlayKey(prebuiltModKey)
 	if err := modtools.RunOverlay(config.OverlayDir); err != nil {
+		preparationInvalid.Store(true)
+		stateMu.Lock()
+		lastModKey = ""
+		stateMu.Unlock()
+		prebuiltModKey = ""
 		display.Log(fmt.Sprintf("Prefetch: runtime startup failed: %v", err))
 		prebuiltModKey = ""
 		return
@@ -694,6 +718,12 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 func HandleCleanup() {
 	skinPreparationMu.Lock()
 	defer skinPreparationMu.Unlock()
+	if preparationInvalid.Swap(false) {
+		stateMu.Lock()
+		lastModKey = ""
+		stateMu.Unlock()
+		prebuiltModKey = ""
+	}
 	activeSuspenderMu.Lock()
 	if state := activeSuspendState; state != nil {
 		select {
@@ -1533,7 +1563,7 @@ var waitPreparationHook = func(pid uint32, cancel <-chan struct{}) error {
 	if !ltk.Running() {
 		return nil
 	}
-	return ltk.ArmSuspended(pid)
+	return ltk.ArmSuspendedCancel(pid, cancel)
 }
 
 // Reservations are taken before jobs wait for skinPreparationMu. All queued
@@ -1707,6 +1737,8 @@ func beginPreparationHold() func() {
 				handoffErr = fmt.Errorf("suspension safety deadline reached during runtime handoff")
 			}
 			if err := handoffErr; err != nil {
+				preparationInvalid.Store(true)
+				go broadcastPreparationFailure(err)
 				display.Log(fmt.Sprintf("Preparation hook handoff incomplete: %v; releasing game safely", err))
 				display.SetOverlayKey("display.value.overlay_inactive", nil)
 				display.Log("! Skin runtime was not ready before game release; this match may need restarting")
@@ -1716,6 +1748,8 @@ func beginPreparationHold() func() {
 		case <-suspendCancel:
 			display.Log("Suspend cancelled, releasing game...")
 		case <-holdTimer.C:
+			preparationInvalid.Store(true)
+			go broadcastPreparationFailure(fmt.Errorf("suspension safety deadline reached before runtime readiness"))
 			display.Log("Safety timeout reached (30s), releasing game...")
 		}
 
@@ -1739,4 +1773,14 @@ func beginPreparationHold() func() {
 	}()
 
 	return func() { close(applyDone); <-released }
+}
+
+// Never take skinPreparationMu here: the lease owner may hold it while
+// waiting for this goroutine to release the game.
+func broadcastPreparationFailure(err error) {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+	for conn := range clients {
+		sendStatus(conn, "error", fmt.Sprintf("Skin runtime was not ready: %v. This match may need restarting.", err))
+	}
 }
