@@ -186,8 +186,38 @@ func toString(v interface{}) string {
 	}
 }
 
-var clients = make(map[*websocket.Conn]bool)
+var clients = make(map[*websocket.Conn]*sync.Mutex)
 var clientsMu sync.Mutex
+
+const clientWriteTimeout = 5 * time.Second
+
+// Snapshot membership without holding the registry lock during network I/O.
+func connectedClients() []*websocket.Conn {
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+	connections := make([]*websocket.Conn, 0, len(clients))
+	for conn := range clients {
+		connections = append(connections, conn)
+	}
+	return connections
+}
+
+// All application writes (including deadline changes) share one lock per client.
+// Missing clients are disconnected: never recreate their lock for a late sender.
+func writeClientMessage(conn *websocket.Conn, messageType int, data []byte) error {
+	clientsMu.Lock()
+	mu := clients[conn]
+	clientsMu.Unlock()
+	if mu == nil {
+		return net.ErrClosed
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(clientWriteTimeout)); err != nil {
+		return err
+	}
+	return conn.WriteMessage(messageType, data)
+}
 
 // Last applied skin state — survives client reconnects
 var lastChampionID string
@@ -229,7 +259,7 @@ func sendStatus(conn *websocket.Conn, status, message string) {
 		Message: message,
 	}
 	data, _ := json.Marshal(payload)
-	conn.WriteMessage(websocket.TextMessage, data)
+	writeClientMessage(conn, websocket.TextMessage, data)
 
 	// Log important status changes to the live display
 	switch status {
@@ -823,10 +853,8 @@ func broadcastRoomUpdate(teammates []roomparty.Member) {
 	}
 	data, _ := json.Marshal(msg)
 
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-	for conn := range clients {
-		conn.WriteMessage(websocket.TextMessage, data)
+	for _, conn := range connectedClients() {
+		writeClientMessage(conn, websocket.TextMessage, data)
 	}
 }
 
@@ -848,7 +876,7 @@ func handleConnection(conn *websocket.Conn) {
 		display.Log("Client disconnected")
 	}()
 	clientsMu.Lock()
-	clients[conn] = true
+	clients[conn] = &sync.Mutex{}
 	clientsMu.Unlock()
 	display.SetStatusKey("display.value.connected", nil)
 	display.Log("Client connected")
@@ -856,7 +884,7 @@ func handleConnection(conn *websocket.Conn) {
 	// Tell the client where startup got to, so a plugin that connects during
 	// setup knows to wait rather than showing itself as fully operational.
 	readyMsg, _ := json.Marshal(map[string]interface{}{"type": "ready", "ready": ready.Load()})
-	conn.WriteMessage(websocket.TextMessage, readyMsg)
+	writeClientMessage(conn, websocket.TextMessage, readyMsg)
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -918,7 +946,7 @@ func handleConnection(conn *websocket.Conn) {
 			}
 			resp := GamePathMessage{Type: "gamePath", Path: path}
 			data, _ := json.Marshal(resp)
-			conn.WriteMessage(websocket.TextMessage, data)
+			writeClientMessage(conn, websocket.TextMessage, data)
 
 		case "setGamePath":
 			var msg GamePathMessage
@@ -930,7 +958,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := GamePathMessage{Type: "gamePath", Path: msg.Path}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "getSettings":
@@ -951,7 +979,7 @@ func handleConnection(conn *websocket.Conn) {
 				"randomSkin":            s.RandomSkin,
 			}
 			data, _ := json.Marshal(resp)
-			conn.WriteMessage(websocket.TextMessage, data)
+			writeClientMessage(conn, websocket.TextMessage, data)
 
 		case "setAutoAccept":
 			var msg BoolSettingMessage
@@ -963,7 +991,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := BoolSettingMessage{Type: "autoAccept", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setBenchSwap":
@@ -976,7 +1004,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := BoolSettingMessage{Type: "benchSwap", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setBenchSwapSkipCooldown":
@@ -989,7 +1017,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := BoolSettingMessage{Type: "benchSwapSkipCooldown", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setStartWithWindows":
@@ -1010,7 +1038,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := BoolSettingMessage{Type: "startWithWindows", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setAutoUpdate":
@@ -1023,7 +1051,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := BoolSettingMessage{Type: "autoUpdate", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setAutoSelect":
@@ -1036,7 +1064,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := BoolSettingMessage{Type: "autoSelect", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setAutoSelectRole":
@@ -1055,7 +1083,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := AutoSelectRoleMessage{Type: "autoSelectRole", Role: msg.Role, Picks: msg.Picks, Bans: msg.Bans}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setRoomParty":
@@ -1068,7 +1096,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := BoolSettingMessage{Type: "roomParty", Enabled: msg.Enabled}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setRandomSkin":
@@ -1081,7 +1109,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := RandomSkinMessage{Type: "randomSkin", Mode: msg.Mode}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "setChatStatus":
@@ -1094,7 +1122,7 @@ func handleConnection(conn *websocket.Conn) {
 			} else {
 				resp := ChatStatusSettingMessage{Type: "chatStatus", Availability: msg.Availability, StatusMessage: msg.StatusMessage}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "roomPartyJoin":
@@ -1151,7 +1179,7 @@ func handleConnection(conn *websocket.Conn) {
 			}
 			stateMu.Unlock()
 			data, _ := json.Marshal(state)
-			conn.WriteMessage(websocket.TextMessage, data)
+			writeClientMessage(conn, websocket.TextMessage, data)
 
 		case "getLogs":
 			logs := display.GetLogsJSON()
@@ -1162,7 +1190,7 @@ func handleConnection(conn *websocket.Conn) {
 				"entries": logs,
 			}
 			data, _ := json.Marshal(resp)
-			conn.WriteMessage(websocket.TextMessage, data)
+			writeClientMessage(conn, websocket.TextMessage, data)
 
 		case "pickCustomModFile":
 			go func() {
@@ -1182,7 +1210,7 @@ func handleConnection(conn *websocket.Conn) {
 					"suggestedChampionId": result.SuggestedChampionID,
 				}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}()
 
 		case "importCustomMod":
@@ -1201,7 +1229,7 @@ func handleConnection(conn *websocket.Conn) {
 					"mod":  mod,
 				}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}()
 
 		case "getCustomMods":
@@ -1214,7 +1242,7 @@ func handleConnection(conn *websocket.Conn) {
 				"mods": mods,
 			}
 			data, _ := json.Marshal(resp)
-			conn.WriteMessage(websocket.TextMessage, data)
+			writeClientMessage(conn, websocket.TextMessage, data)
 
 		case "deleteCustomMod":
 			var msg CustomModIDMessage
@@ -1229,7 +1257,7 @@ func handleConnection(conn *websocket.Conn) {
 					"id":   msg.ID,
 				}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "updateCustomMod":
@@ -1246,7 +1274,7 @@ func handleConnection(conn *websocket.Conn) {
 					"mod":  mod,
 				}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "toggleCustomMod":
@@ -1263,7 +1291,7 @@ func handleConnection(conn *websocket.Conn) {
 					"mod":  mod,
 				}
 				data, _ := json.Marshal(resp)
-				conn.WriteMessage(websocket.TextMessage, data)
+				writeClientMessage(conn, websocket.TextMessage, data)
 			}
 
 		case "pickCustomModImage":
@@ -1288,7 +1316,7 @@ func handleConnection(conn *websocket.Conn) {
 							"mod":  m,
 						}
 						data, _ := json.Marshal(resp)
-						conn.WriteMessage(websocket.TextMessage, data)
+						writeClientMessage(conn, websocket.TextMessage, data)
 						break
 					}
 				}
@@ -1309,7 +1337,7 @@ func handleConnection(conn *websocket.Conn) {
 							"mod":  m,
 						}
 						data, _ := json.Marshal(resp)
-						conn.WriteMessage(websocket.TextMessage, data)
+						writeClientMessage(conn, websocket.TextMessage, data)
 						break
 					}
 				}
@@ -1406,10 +1434,8 @@ func broadcastReady() {
 	payload := map[string]interface{}{"type": "ready", "ready": true}
 	data, _ := json.Marshal(payload)
 
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-	for conn := range clients {
-		conn.WriteMessage(websocket.TextMessage, data)
+	for _, conn := range connectedClients() {
+		writeClientMessage(conn, websocket.TextMessage, data)
 	}
 }
 
@@ -1779,9 +1805,7 @@ func beginPreparationHold() func() {
 // Never take skinPreparationMu here: the lease owner may hold it while
 // waiting for this goroutine to release the game.
 func broadcastPreparationFailure(err error) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-	for conn := range clients {
+	for _, conn := range connectedClients() {
 		sendStatus(conn, "error", fmt.Sprintf("Skin runtime was not ready: %v. This match may need restarting.", err))
 	}
 }
