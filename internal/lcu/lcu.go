@@ -89,6 +89,56 @@ func RestartClient() error {
 	return nil
 }
 
+// getJSON reads an LCU endpoint into out.
+func getJSON(path string, out any) error {
+	port, token, err := getCredentials()
+	if err != nil {
+		return err
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte("riot:" + token))
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://127.0.0.1:%s%s", port, path), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Basic "+auth)
+	resp, err := lcuClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("LCU %s returned status %d", path, resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// GameflowPhase returns the client's gameflow phase ("ChampSelect",
+// "GameStart", "InProgress", ...).
+func GameflowPhase() (string, error) {
+	var phase string
+	if err := getJSON("/lol-gameflow/v1/gameflow-phase", &phase); err != nil {
+		return "", err
+	}
+	return phase, nil
+}
+
+// ChampSelectTimer is /lol-champ-select/v1/session/timer. The values are as
+// of InternalNowInEpochMs, the client's clock when it last updated them.
+type ChampSelectTimer struct {
+	AdjustedTimeLeftInPhase int64  `json:"adjustedTimeLeftInPhase"`
+	InternalNowInEpochMs    int64  `json:"internalNowInEpochMs"`
+	IsInfinite              bool   `json:"isInfinite"`
+	Phase                   string `json:"phase"`
+	TotalTimeInPhase        int64  `json:"totalTimeInPhase"`
+}
+
+// GetChampSelectTimer reads the champion select timer.
+func GetChampSelectTimer() (ChampSelectTimer, error) {
+	var timer ChampSelectTimer
+	err := getJSON("/lol-champ-select/v1/session/timer", &timer)
+	return timer, err
+}
+
 type regionLocaleResponse struct {
 	Locale string `json:"locale"`
 }

@@ -275,6 +275,17 @@ type patcherStatus struct {
 	Session *struct {
 		OverlayPrefix string `json:"overlayPrefix"`
 	} `json:"session"`
+	// ChangesAfterGame: a library edit waits for the running game to end
+	// before the overlay is rebuilt; the game keeps the set it loaded.
+	ChangesAfterGame bool `json:"changesAfterGame"`
+}
+
+// prefix is the overlay root the session patches against, if known.
+func (s patcherStatus) prefix() string {
+	if s.Session == nil {
+		return ""
+	}
+	return s.Session.OverlayPrefix
 }
 
 // installMod installs a .fantome archive into the manager's library and
@@ -298,6 +309,24 @@ func (c *cdpClient) installMod(path string) (string, error) {
 		return "", fmt.Errorf("install_mod: manager returned no mod id (%s)", outcome.Kind)
 	}
 	return outcome.Mod.ID, nil
+}
+
+// updateMod replaces an installed mod's archive in place (manager v1.33.0
+// plugin:library|update_mod). The library id, enabled state and profile
+// choices survive, and the manager requests a single overlay refresh.
+func (c *cdpClient) updateMod(id, path string) (string, error) {
+	raw, err := c.invokeTauri("plugin:library|update_mod", map[string]any{"modId": id, "filePath": path}, cdpInstallTimeout)
+	if err != nil {
+		return "", err
+	}
+	var mod managerMod
+	if err := json.Unmarshal(raw, &mod); err != nil {
+		return "", fmt.Errorf("update_mod: %w", err)
+	}
+	if mod.ID == "" {
+		return id, nil
+	}
+	return mod.ID, nil
 }
 
 func (c *cdpClient) toggleMod(id string, enabled bool) error {
@@ -562,8 +591,9 @@ func managerPortInUse() bool {
 
 // killExistingManagers terminates every running ltk-manager.exe, including
 // the copy the user may have open: the single-instance plugin would otherwise
-// focus the existing window instead of answering on the DevTools port.
-func killExistingManagers() {
+// focus the existing window instead of answering on the DevTools port. A
+// variable so tests can never reach a real manager.
+var killExistingManagers = func() {
 	cmd := exec.Command("taskkill", "/IM", managerExeName, "/F", "/T")
 	hide(cmd)
 	out, err := cmd.CombinedOutput()
@@ -614,6 +644,18 @@ func managerSettingsFile() string {
 	return filepath.Join(appData, "dev.leaguetoolkit.manager", "settings.json")
 }
 
+// managerRequiredSettings are the settings.json fields the manager's
+// Settings struct (v1.33.0 src-tauri/src/state.rs) has no default for, with
+// the values a fresh install writes. A document missing one fails to parse
+// ("missing field `theme`"); the manager then falls back to its defaults and
+// overwrites the file, discarding the League path and tray setting below.
+var managerRequiredSettings = map[string]any{
+	"theme":              "system",
+	"accentColor":        map[string]any{},
+	"patchTft":           false,
+	"migrationDismissed": false,
+}
+
 // configureManagerSettings points the manager at ame's game directory and
 // keeps its window in the tray so nothing is shown to the user. The file is
 // only written before a launch: the manager owns it while it runs.
@@ -642,9 +684,15 @@ func configureManagerSettings(game string) error {
 		doc["startInTray"] = true
 		changed = true
 	}
-	if fresh {
+	if _, ok := doc["firstRunComplete"]; fresh || !ok {
 		doc["firstRunComplete"] = true
 		changed = true
+	}
+	for key, value := range managerRequiredSettings {
+		if _, ok := doc[key]; !ok {
+			doc[key] = value
+			changed = true
+		}
 	}
 	if !changed {
 		return nil

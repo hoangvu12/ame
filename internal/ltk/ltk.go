@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/hoangvu12/ame/internal/config"
 	"github.com/hoangvu12/ame/internal/display"
+	"github.com/hoangvu12/ame/internal/game"
 	"github.com/hoangvu12/ame/internal/zipname"
 )
 
@@ -42,6 +44,25 @@ const ameModName = "ame skin set"
 // gameDir is the game directory the last Build ran against; the manager's
 // league path is configured from it. Guarded by managerMu.
 var gameDir string
+
+// findGameDir locates the install when no Build has run yet, so the first
+// manager launch is pointed at the right League. A variable for tests.
+var findGameDir = game.FindGameDir
+
+// ErrGameRunning refuses a library edit while a League game process exists.
+// Every edit stops the manager's scan and starts a new one after the
+// rebuild, and the injected DLL refuses a game created before that scan
+// ("joined too late"), so an edit now can only take the skins away from this
+// match. The armed set stays for it.
+var ErrGameRunning = errors.New("League is already running; the skin set cannot change until the match ends")
+
+// GameRunning reports whether a League game process exists.
+func GameRunning() bool { return gameProcessRunning() }
+
+// ErrRebuildPending: the manager holds the new skin set, but its rebuild
+// outlasted the wait (a slow disk rewriting map WADs). It is armed for the
+// match only if the rebuild ends before League starts.
+var ErrRebuildPending = errors.New("the manager is still rebuilding the skin set")
 
 // Prepare installs immutable, content-addressed files; no download at runtime.
 // The patcher DLL and host are excluded from hash validation and never
@@ -361,6 +382,9 @@ type managerSnapshot struct {
 	attached bool   // the injected DLL is in a game
 	pid      uint64
 	failure  string
+	verdict  string    // the DLL's word on the attached game (overlayVerdict)
+	deferred bool      // a library edit waits for the running game to end
+	prefix   string    // the session's overlay root
 	pending  bool      // library edit has not yet passed the rebuild fence
 	observed time.Time // last successful authoritative status read
 }
@@ -368,7 +392,88 @@ type managerSnapshot struct {
 var (
 	snapshotMu sync.Mutex
 	snapshot   managerSnapshot
+	// Guarded by snapshotMu: what ame's skin package is doing in the manager.
+	rebuild     *rebuildTracker // edit still on its way into the scan
+	armedAt     time.Time       // the scan last restarted with ame's package
+	gameEndedAt time.Time       // the last League game process ended
 )
+
+// beginRebuild fences readiness from the moment ame edits the library (or
+// starts the patcher) until the scan runs with the edit.
+func beginRebuild(at time.Time, phase string) {
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
+	snapshot.pending = true
+	snapshot.observed = time.Time{}
+	rebuild = newRebuildTracker(at, phase)
+}
+
+// observeRebuild folds a status read into the pending edit and reports
+// whether the scan now runs with it. The first caller to see completion
+// clears the fence and records how long this PC took.
+func observeRebuild(status patcherStatus, now time.Time) bool {
+	snapshotMu.Lock()
+	r := rebuild
+	if r == nil {
+		ready := status.Running && status.Phase == "patching" && !status.ChangesAfterGame
+		if ready {
+			snapshot.pending = false
+		}
+		snapshotMu.Unlock()
+		return ready
+	}
+	if !status.Running || !r.observe(status.Phase, status.ChangesAfterGame, now) {
+		snapshotMu.Unlock()
+		return false
+	}
+	rebuild = nil
+	snapshot.pending = false
+	armedAt = r.armedAt
+	snapshotMu.Unlock()
+	if d := r.duration(); d > 0 {
+		heavy := rewroteMapWAD(status.prefix(), r.editAt, r.armedAt)
+		recordRebuild(d, heavy, now)
+		kind := "champion WADs only"
+		if heavy {
+			kind = "map WADs rewritten"
+		}
+		display.Log(fmt.Sprintf("LTK: skin set reached the patcher scan %s after the edit (%s); rebuild budget now %s", d.Round(100*time.Millisecond), kind, RebuildBudget().Round(time.Second)))
+	} else {
+		display.Log("LTK: skin set reached the patcher scan")
+	}
+	return true
+}
+
+// Prepared is what the manager holds of ame's skin package for the match
+// about to start.
+type Prepared struct {
+	// Armed: the scan runs with ame's latest package, and it started after
+	// the last game ended, so it belongs to the next match.
+	Armed bool
+	// Pending: an edit is still on its way into the scan.
+	Pending    bool
+	PendingFor time.Duration
+}
+
+// PreparedState reports whether a skin set is armed or rebuilding for the
+// coming match. A set left from a finished match is neither: it is what the
+// previous champion select chose.
+func PreparedState() Prepared {
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
+	s := snapshot
+	if !s.alive || !s.running {
+		return Prepared{}
+	}
+	if r := rebuild; r != nil {
+		return Prepared{Pending: true, PendingFor: time.Since(r.editAt)}
+	}
+	armed := s.phase == "patching" && s.failure == "" && !armedAt.IsZero() && armedAt.After(gameEndedAt)
+	return Prepared{Armed: armed}
+}
+
+// OnOverlayVerdict is told what the DLL said about each game it attached to.
+var OnOverlayVerdict func(pid uint64, verdict string)
 
 func currentSnapshot() managerSnapshot {
 	snapshotMu.Lock()
@@ -438,51 +543,6 @@ func WaitForHook(pid uint32, cancel <-chan struct{}, timeout time.Duration) erro
 	}
 }
 
-// armSuspendTimeout bounds how long ArmSuspended holds a suspended game.
-var armSuspendTimeout = 25 * time.Second
-
-// ArmSuspended blocks until the manager's patcher has built its overlay and
-// is scanning for a game. The held game is released only once the host is
-// armed, so its window cannot appear before the hook is installed.
-func ArmSuspended(pid uint32) error {
-	return ArmSuspendedCancel(pid, nil)
-}
-
-func ArmSuspendedCancel(pid uint32, cancel <-chan struct{}) error {
-	if manager == nil && !currentSnapshot().alive {
-		return fmt.Errorf("LTK manager is not running")
-	}
-	start := time.Now()
-	timer := time.NewTimer(armSuspendTimeout)
-	defer timer.Stop()
-	tick := time.NewTicker(100 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		s := currentSnapshot()
-		if s.failure != "" {
-			return fmt.Errorf("LTK session failed: %s", s.failure)
-		}
-		if !s.alive {
-			return fmt.Errorf("LTK manager stopped before the patcher was ready")
-		}
-		if s.running && s.phase == "patching" && !s.pending && !s.observed.IsZero() && time.Since(s.observed) < 2*time.Second && (!s.attached || s.pid == uint64(pid)) {
-			return nil
-		}
-		// The poll can lag a start by a few hundred milliseconds, so an idle
-		// phase is only fatal once the session had time to appear.
-		if !s.running && s.phase != "building" && time.Since(start) > 2*time.Second {
-			return fmt.Errorf("LTK patcher stopped before the game was released")
-		}
-		select {
-		case <-cancel:
-			return fmt.Errorf("LTK readiness wait cancelled")
-		case <-timer.C:
-			return fmt.Errorf("LTK patcher did not finish building before the game was released")
-		case <-tick.C:
-		}
-	}
-}
-
 // Start installs the skin package built for overlay into the LTK Manager's
 // library and starts its patcher. The manager process stays resident for
 // later skin switches.
@@ -521,12 +581,12 @@ func Start(overlay string) error {
 
 // startSession arms pkg as the manager's skin package.
 //
-// When a session is already live the mod is swapped in place: the manager
-// rebuilds its overlay in the background and the host process — whose
-// session start the injected DLL compares against the game's creation —
-// keeps running, so a game launched later in the session still passes the
-// DLL's join check. Restarting the patcher here would reset that timeline
-// and make every in-flight game join too late.
+// A live session keeps its host process, but not its scan: every library
+// edit stops the scan, rebuilds the overlay and starts a new scan session,
+// and the injected DLL refuses a game created before that session ("joined
+// too late"). So no edit may happen once League's process exists — it could
+// only take the skins away from the match — and an edit made earlier helps
+// only if its rebuild ends before League starts.
 func startSession(pkg string) error {
 	digest, err := packageDigest(pkg)
 	if err != nil {
@@ -534,44 +594,46 @@ func startSession(pkg string) error {
 	}
 	managerMu.Lock()
 	defer managerMu.Unlock()
+	// Checked before the manager is (re)launched too: a relaunch replaces
+	// the host serving a running game.
+	if gameProcessRunning() {
+		return ErrGameRunning
+	}
 	m, err := ensureManagerLocked()
 	if err != nil {
 		return err
 	}
-	if status, err := m.cdp.patcherStatus(); err == nil && status.Running {
-		if err := swapAmeMod(m, pkg); err != nil {
+	status, statusErr := m.cdp.patcherStatus()
+	running := statusErr == nil && status.Running
+	if !m.matchesPackage(pkg, digest) {
+		// The last look before the write: from here the manager restarts its
+		// scan whatever happens.
+		if gameProcessRunning() {
+			return ErrGameRunning
+		}
+		if err := replaceAmeMod(m, pkg, digest, running, status.Phase); err != nil {
 			return err
 		}
-		m.cdp.clearBridgeFailure()
-		setSnapshot(func(s *managerSnapshot) { s.failure = "" })
-		return awaitOverlayRebuild(m)
-	}
-	setSnapshot(func(s *managerSnapshot) { s.pending = true; s.observed = time.Time{} })
-	if err := uninstallAmeMods(m); err != nil {
-		return err
-	}
-	modID, err := m.cdp.installMod(pkg)
-	if err != nil {
-		return fmt.Errorf("LTK install: %w", err)
-	}
-	if err := m.cdp.toggleMod(modID, true); err != nil {
-		return fmt.Errorf("LTK enable: %w", err)
 	}
 	m.cdp.clearBridgeFailure()
 	setSnapshot(func(s *managerSnapshot) { s.failure = "" })
-	if err := m.cdp.startPatcher(); err != nil {
-		return fmt.Errorf("LTK patcher start: %w", err)
-	}
-	m.modID, m.modFile, m.modHash = modID, pkg, digest
-	if err := awaitPatcherStart(m); err != nil {
-		return err
+	if !running {
+		if gameProcessRunning() {
+			return ErrGameRunning
+		}
+		beginRebuild(time.Now(), "idle")
+		if err := m.cdp.startPatcher(); err != nil {
+			return fmt.Errorf("LTK patcher start: %w", err)
+		}
+		if err := awaitPatcherStart(m); err != nil {
+			return err
+		}
 	}
 	return awaitOverlayRebuild(m)
 }
 
-// swapAmeMod installs pkg as the library's only ame mod while the patcher
-// runs. The rebuild the edit triggers is deferred behind a running game and
-// applied when it ends.
+// swapAmeMod makes pkg the library's ame skin package while the patcher
+// runs, unless the manager already holds these exact bytes.
 func swapAmeMod(m *managerSession, pkg string) error {
 	digest, err := packageDigest(pkg)
 	if err != nil {
@@ -580,16 +642,67 @@ func swapAmeMod(m *managerSession, pkg string) error {
 	if m.matchesPackage(pkg, digest) {
 		return nil
 	}
-	setSnapshot(func(s *managerSnapshot) { s.pending = true; s.observed = time.Time{} })
-	if err := uninstallAmeMods(m); err != nil {
-		return err
-	}
-	modID, err := m.cdp.installMod(pkg)
+	return replaceAmeMod(m, pkg, digest, true, "patching")
+}
+
+// replaceAmeMod puts pkg into the manager's library as its one ame skin
+// package with as few edits as possible. An installed ame package is
+// replaced in place with update_mod: one edit, one refresh, and the library
+// identity and enabled state survive. The uninstall + install + enable
+// sequence it replaces cost up to three refreshes, and a slow install past
+// the 750ms settle window rebuilt an empty overlay in between. Leftovers
+// from crashed runs go in the same burst, inside the settle window.
+func replaceAmeMod(m *managerSession, pkg string, digest [sha256.Size]byte, running bool, phase string) error {
+	mods, err := m.cdp.installedMods()
 	if err != nil {
-		return fmt.Errorf("LTK install: %w", err)
+		return fmt.Errorf("LTK library read: %w", err)
 	}
-	if err := m.cdp.toggleMod(modID, true); err != nil {
-		return fmt.Errorf("LTK enable: %w", err)
+	var target *managerMod
+	var leftovers []managerMod
+	for _, mod := range mods {
+		if !isAmeMod(mod, m.modID) {
+			continue
+		}
+		if target == nil {
+			kept := mod
+			target = &kept
+			continue
+		}
+		if mod.ID == m.modID {
+			leftovers = append(leftovers, *target)
+			kept := mod
+			target = &kept
+			continue
+		}
+		leftovers = append(leftovers, mod)
+	}
+	if running {
+		beginRebuild(time.Now(), phase)
+	}
+	// Until the write succeeds the manager may hold either package.
+	m.modID = ""
+	var modID string
+	if target != nil {
+		if modID, err = m.cdp.updateMod(target.ID, pkg); err != nil {
+			return fmt.Errorf("LTK update: %w", err)
+		}
+		if !target.Enabled {
+			if err := m.cdp.toggleMod(modID, true); err != nil {
+				return fmt.Errorf("LTK enable: %w", err)
+			}
+		}
+	} else {
+		if modID, err = m.cdp.installMod(pkg); err != nil {
+			return fmt.Errorf("LTK install: %w", err)
+		}
+		if err := m.cdp.toggleMod(modID, true); err != nil {
+			return fmt.Errorf("LTK enable: %w", err)
+		}
+	}
+	for _, mod := range leftovers {
+		if err := m.cdp.uninstallMod(mod.ID); err != nil {
+			display.Log(fmt.Sprintf("LTK: uninstall of stale skin package %s failed: %v", mod.ID, err))
+		}
 	}
 	m.modID, m.modFile, m.modHash = modID, pkg, digest
 	return nil
@@ -608,15 +721,11 @@ func (m *managerSession) matchesPackage(pkg string, digest [sha256.Size]byte) bo
 	return m.modID != "" && m.modFile == pkg && m.modHash == digest
 }
 
-// awaitOverlayRebuild waits until the background rebuild a mid-session mod
-// swap triggers has finished: the session thread picks the edit up by dipping
-// the phase to "building" and returns to scanning ("patching") when the new
-// overlay is in place. The manager picks a library edit up within about a
-// second, but a rebuild fast enough to hide between polls — or an edit that
-// reuses every WAD — leaves the phase at "patching" throughout; the
-// no-building grace therefore stays short, so bursts of swaps (room party:
-// every teammate pick) do not pay a stall each. A rebuild deferred behind a
-// running game also leaves the phase at "patching" throughout.
+// awaitOverlayRebuild waits until the scan runs with ame's latest edit (see
+// rebuildTracker). It is bounded: a slow disk can take well over a minute to
+// rewrite the map WADs, and the caller must not sit on the preparation lock
+// that long. A timeout leaves the fence up; pollManager keeps following the
+// rebuild and lowers the fence when the scan restarts.
 var overlayRebuildTimeout = 30 * time.Second
 
 func publishStatus(status patcherStatus) {
@@ -624,31 +733,26 @@ func publishStatus(status patcherStatus) {
 		s.alive = true
 		s.running = status.Running
 		s.phase = status.Phase
+		s.deferred = status.ChangesAfterGame
+		s.prefix = status.prefix()
 		s.observed = time.Now()
 	})
 }
 
 func awaitOverlayRebuild(m *managerSession) error {
-	buildingDeadline := time.Now().Add(3 * time.Second)
 	deadline := time.Now().Add(overlayRebuildTimeout)
-	seenBuilding := false
 	for {
 		status, err := m.cdp.patcherStatus()
 		if err == nil {
 			publishStatus(status)
-			switch status.Phase {
-			case "building":
-				seenBuilding = true
-			case "patching":
-				if status.Running && !currentSnapshot().attached && (seenBuilding || time.Now().After(buildingDeadline)) {
-					setSnapshot(func(s *managerSnapshot) { s.pending = false })
-					return nil
-				}
-			case "idle":
+			if status.Phase == "idle" || !status.Running {
 				if failure := currentSnapshot().failure; failure != "" {
 					return fmt.Errorf("LTK patcher start: %s", failure)
 				}
 				return fmt.Errorf("LTK patcher stopped while rebuilding the overlay")
+			}
+			if observeRebuild(status, time.Now()) {
+				return nil
 			}
 		} else {
 			display.Log("LTK: patcher status: " + err.Error())
@@ -657,30 +761,10 @@ func awaitOverlayRebuild(m *managerSession) error {
 			return fmt.Errorf("LTK session failed: %s", failure)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("LTK overlay rebuild readiness deadline exceeded")
+			return fmt.Errorf("LTK overlay rebuild readiness deadline exceeded: %w", ErrRebuildPending)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-// uninstallAmeMods removes every skin package ame owns from the manager's
-// library: the one this session installed and any leftovers from earlier
-// runs, which outlive the manager process.
-func uninstallAmeMods(m *managerSession) error {
-	mods, err := m.cdp.installedMods()
-	if err != nil {
-		return fmt.Errorf("LTK library read: %w", err)
-	}
-	for _, mod := range mods {
-		if !isAmeMod(mod, m.modID) {
-			continue
-		}
-		if err := m.cdp.uninstallMod(mod.ID); err != nil {
-			display.Log(fmt.Sprintf("LTK: uninstall of stale skin package %s failed: %v", mod.ID, err))
-		}
-	}
-	m.modID = ""
-	return nil
 }
 
 // awaitPatcherStart waits until the manager's session thread reports a phase
@@ -737,7 +821,10 @@ func stopLocked() {
 	}
 	killManagerTree(m.cmd)
 	m.cdp.close()
-	setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{} })
+	snapshotMu.Lock()
+	snapshot = managerSnapshot{}
+	rebuild, armedAt = nil, time.Time{}
+	snapshotMu.Unlock()
 }
 
 // killManagerTree terminates the manager process and its WebView2 children.
@@ -778,7 +865,14 @@ func ensureManagerLocked() (*managerSession, error) {
 			return nil, fmt.Errorf("LTK cannot use DevTools port %d: %w", cdpPort, err)
 		}
 	}
-	if err := configureManagerSettings(gameDir); err != nil {
+	// The first launch of a run precedes any Build, so gameDir may still be
+	// empty: without a path the manager auto-detects, which can pick another
+	// install than the one ame patches.
+	league := gameDir
+	if league == "" {
+		league = findGameDir()
+	}
+	if err := configureManagerSettings(league); err != nil {
 		display.Log("LTK: manager settings: " + err.Error())
 	}
 	cmd, err := launchManager(exe)
@@ -831,30 +925,133 @@ func killLaunchedManager(cmd *exec.Cmd) {
 }
 
 // overlayFailureMessage translates the DLL's verdict about the overlay of
-// an attached game into a failure. "Live" means the overlay went out;
-// "None" means the DLL said nothing, which also happens mid-attach.
+// an attached game into a failure. "live" means the overlay went out; "none"
+// means the DLL said nothing, which also happens mid-attach.
 func overlayFailureMessage(outcome string) string {
-	switch outcome {
-	case "TooLate":
-		return "the game started before the patcher session; start a fresh match after selecting the skin"
-	case "EndOfLife":
-		return "the patcher DLL reached end of life; update LTK Manager's patcher"
-	case "Disabled":
+	switch overlayVerdict(outcome) {
+	case "too-late":
+		return "the game started before the patcher scan; this match runs without the new skins, the next match will have them"
+	case "end-of-life":
+		return "the patcher DLL does not support this game build yet; LTK Manager must deliver a newer patcher"
+	case "disabled":
 		return "the overlay failed the DLL's verification and was disabled"
-	case "HookFailed":
+	case "hook-failed":
 		return "the DLL could not install its overlay hook"
 	}
 	return ""
 }
 
+// managerView is what one poll of the manager saw.
+type managerView struct {
+	running  bool
+	phase    string
+	attached bool
+	pid      uint64
+	verdict  string
+	failure  string
+	deferred bool
+	game     bool // a League game process exists
+}
+
+// managerWatch remembers the previous poll, so the log records transitions
+// with their timing rather than repeating states.
+type managerWatch struct {
+	seen       bool
+	last       managerView
+	phaseSince time.Time
+	scanSince  time.Time // the patcher scan last (re)started
+}
+
+// note compares a poll with the previous one and describes what changed.
+// pendingFor is how long ame's latest edit has been on its way into the
+// scan, zero when none is.
+func (w *managerWatch) note(v managerView, now time.Time, pendingFor time.Duration) []string {
+	var lines []string
+	prev := w.last
+	if !w.seen {
+		w.seen = true
+		w.phaseSince = now
+		if v.phase == "patching" {
+			w.scanSince = now
+		}
+		lines = append(lines, fmt.Sprintf("LTK: patcher phase %s", phaseName(v.phase)))
+		if v.game {
+			lines = append(lines, "LTK: a League game was already running when ame connected to the manager")
+		}
+		prev = managerView{phase: v.phase, game: v.game}
+	}
+	if v.phase != prev.phase {
+		line := fmt.Sprintf("LTK: patcher phase %s -> %s after %s", phaseName(prev.phase), phaseName(v.phase), now.Sub(w.phaseSince).Round(100*time.Millisecond))
+		switch v.phase {
+		case "building":
+			line += " (scan stopped to build the overlay)"
+		case "patching":
+			line += " (scan started)"
+			w.scanSince = now
+		}
+		w.phaseSince = now
+		lines = append(lines, line)
+	}
+	if v.game && !prev.game {
+		switch {
+		case pendingFor > 0:
+			lines = append(lines, fmt.Sprintf("LTK: League started while ame's skin set was still rebuilding (edit %s ago); the patcher will refuse this match as joined too late, so it runs without the new skins and the next match will have them", pendingFor.Round(100*time.Millisecond)))
+		case v.phase == "patching" && !w.scanSince.IsZero():
+			lines = append(lines, fmt.Sprintf("LTK: League started %s after the patcher scan began", now.Sub(w.scanSince).Round(100*time.Millisecond)))
+		default:
+			lines = append(lines, fmt.Sprintf("LTK: League started while the patcher was %s; this match runs without ame's skins", phaseName(v.phase)))
+		}
+	} else if !v.game && prev.game {
+		lines = append(lines, "LTK: League game process ended")
+	}
+	if v.attached && !prev.attached {
+		lines = append(lines, fmt.Sprintf("LTK: patcher DLL attached pid=%d", v.pid))
+	}
+	if v.verdict != "" && v.verdict != prev.verdict {
+		lines = append(lines, verdictLine(v.pid, v.verdict))
+	}
+	if v.failure != "" && v.failure != prev.failure && overlayFailureMessage(v.verdict) != v.failure {
+		lines = append(lines, "LTK: patcher failure: "+v.failure)
+	}
+	if v.deferred && !prev.deferred {
+		lines = append(lines, "LTK: a library edit waits for the running game to end (changesAfterGame)")
+	}
+	w.last = v
+	return lines
+}
+
+func phaseName(phase string) string {
+	if phase == "" {
+		return "unknown"
+	}
+	return phase
+}
+
+// verdictLine is the log line for the DLL's verdict on an attached game.
+// Only "live" confirms that skins reached a match.
+func verdictLine(pid uint64, verdict string) string {
+	switch verdict {
+	case "live":
+		return fmt.Sprintf("LTK: overlay verdict pid=%d: live, the patcher DLL confirmed the skins in this match", pid)
+	case "too-late":
+		return fmt.Sprintf("LTK: overlay verdict pid=%d: too-late, League started before the patcher scan; this match runs without the new skins, the next match will have them", pid)
+	}
+	if message := overlayFailureMessage(verdict); message != "" {
+		return fmt.Sprintf("LTK: overlay verdict pid=%d: %s, %s", pid, verdict, message)
+	}
+	return fmt.Sprintf("LTK: overlay verdict pid=%d: %s", pid, verdict)
+}
+
 // pollManager keeps the session snapshot current: phase and running state
 // from the manager's status command, attachment and failures from the event
-// bridge. The loop ends when the session is torn down, the manager dies, or
-// the DevTools connection breaks.
+// bridge. It also follows ame's pending edit into the scan, notices League
+// starting and ending, and logs every transition. The loop ends when the
+// session is torn down, the manager dies, or the DevTools connection breaks.
 func pollManager(m *managerSession) {
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
 	failures := 0
+	var watch managerWatch
 	for {
 		select {
 		case <-m.stop:
@@ -882,30 +1079,64 @@ func pollManager(m *managerSession) {
 				display.Log("LTK: bridge re-injection: " + err.Error())
 			}
 		}
-		failure := state.Failure
-		if failure != "" {
-			failure = errorText(json.RawMessage(failure))
+		now := time.Now()
+		view := managerView{attached: state.Attached, game: gameProcessRunning()}
+		if state.Attached {
+			view.verdict = overlayVerdict(state.Overlay)
 		}
-		if overlay := overlayFailureMessage(state.Overlay); overlay != "" && state.Attached {
+		if state.PID != nil {
+			view.pid = *state.PID
+		}
+		view.failure = state.Failure
+		if view.failure != "" {
+			view.failure = errorText(json.RawMessage(view.failure))
+		}
+		if overlay := overlayFailureMessage(view.verdict); overlay != "" {
 			// The game is attached but the DLL stayed inert: the skin the user
 			// armed for this match did not apply, and that must be visible.
-			failure = overlay
+			view.failure = overlay
 		}
-		setSnapshot(func(s *managerSnapshot) {
-			*s = managerSnapshot{
-				pending:  s.pending,
-				alive:    true,
-				attached: state.Attached,
-				failure:  failure,
-			}
-			if state.Status != nil {
-				s.running = state.Status.Running
-				s.phase = state.Status.Phase
-				s.observed = time.Now()
-			}
-			if state.PID != nil {
-				s.pid = *state.PID
-			}
-		})
+		if state.Status != nil {
+			view.running = state.Status.Running
+			view.phase = state.Status.Phase
+			view.deferred = state.Status.ChangesAfterGame
+		}
+		pendingFor := time.Duration(0)
+		snapshotMu.Lock()
+		next := managerSnapshot{
+			pending:  snapshot.pending,
+			alive:    true,
+			attached: view.attached,
+			pid:      view.pid,
+			failure:  view.failure,
+			verdict:  view.verdict,
+		}
+		if state.Status != nil {
+			next.running = view.running
+			next.phase = view.phase
+			next.deferred = view.deferred
+			next.prefix = state.Status.prefix()
+			next.observed = now
+		} else {
+			next.running, next.phase, next.prefix = snapshot.running, snapshot.phase, snapshot.prefix
+		}
+		snapshot = next
+		if watch.last.game && !view.game {
+			gameEndedAt = now
+		}
+		if rebuild != nil {
+			pendingFor = now.Sub(rebuild.editAt)
+		}
+		snapshotMu.Unlock()
+		verdictChanged := view.verdict != "" && view.verdict != watch.last.verdict
+		for _, line := range watch.note(view, now, pendingFor) {
+			display.Log(line)
+		}
+		if state.Status != nil {
+			observeRebuild(*state.Status, now)
+		}
+		if notify := OnOverlayVerdict; verdictChanged && notify != nil {
+			notify(view.pid, view.verdict)
+		}
 	}
 }

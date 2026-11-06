@@ -15,12 +15,26 @@ import (
 )
 
 // TestMain keeps the manager tests offline: the release client would
-// otherwise reach GitHub on every fresh manager start.
+// otherwise reach GitHub on every fresh manager start. The suite may run
+// while ame, the manager and a League game are in use on this machine, so
+// no test may reach a real manager, see a real game, or write into the real
+// ame directory.
 func TestMain(m *testing.M) {
 	managerFetch = func() (string, error) {
 		return "", fmt.Errorf("delivery disabled in tests")
 	}
-	os.Exit(m.Run())
+	killExistingManagers = func() { panic("test reached killExistingManagers") }
+	gameProcessRunning = func() bool { return false }
+	findGameDir = func() string { return "" }
+	dir, err := os.MkdirTemp("", "ame-ltk-test-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	config.AmeDir = dir
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func TestPackMod(t *testing.T) {
@@ -170,52 +184,36 @@ func TestStatusAccessors(t *testing.T) {
 	}
 }
 
-func TestArmSuspendedWaitsForPatching(t *testing.T) {
-	old := armSuspendTimeout
-	armSuspendTimeout = 150 * time.Millisecond
-	defer func() { armSuspendTimeout = old }()
-	reset := func() {
-		setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{} })
+// Manager v1.33.0 serializes the DLL's OverlayOutcome in kebab-case
+// (incident.rs, rename_all = "kebab-case"); earlier ame builds matched the
+// PascalCase variant names, so no verdict was ever recognized.
+func TestOverlayFailureMessage(t *testing.T) {
+	for _, outcome := range []string{"live", "none", "", "Live", "None"} {
+		if overlayFailureMessage(outcome) != "" {
+			t.Fatalf("non-failing outcome %q reported as a failure", outcome)
+		}
 	}
-	reset()
-	defer reset()
-
-	setSnapshot(func(s *managerSnapshot) {
-		s.alive = true
-		s.running = true
-		s.phase = "building"
-	})
-	if err := ArmSuspended(123); err == nil {
-		t.Fatal("overlay build released the game early")
+	for _, outcome := range []string{"too-late", "end-of-life", "disabled", "hook-failed", "TooLate", "EndOfLife", "Disabled", "HookFailed"} {
+		if overlayFailureMessage(outcome) == "" {
+			t.Fatalf("%s is not reported as a failure", outcome)
+		}
 	}
-
-	setSnapshot(func(s *managerSnapshot) {
-		s.alive = true
-		s.running = false
-		s.phase = "idle"
-	})
-	if err := ArmSuspended(123); err == nil {
-		t.Fatal("stopped patcher released the game")
-	}
-
-	setSnapshot(func(s *managerSnapshot) {
-		s.alive = true
-		s.running = true
-		s.phase = "patching"
-		s.observed = time.Now()
-	})
-	if err := ArmSuspended(123); err != nil {
-		t.Fatalf("armed patcher did not release the game: %v", err)
+	if !strings.Contains(overlayFailureMessage("too-late"), "next match") {
+		t.Fatalf("too-late does not say when skins return: %q", overlayFailureMessage("too-late"))
 	}
 }
 
-func TestOverlayFailureMessage(t *testing.T) {
-	if overlayFailureMessage("Live") != "" || overlayFailureMessage("None") != "" || overlayFailureMessage("") != "" {
-		t.Fatal("non-failing overlay outcomes reported as failures")
+func TestOverlayVerdictNormalization(t *testing.T) {
+	cases := map[string]string{
+		"live": "live", "too-late": "too-late", "end-of-life": "end-of-life",
+		"disabled": "disabled", "hook-failed": "hook-failed", "none": "", "": "",
+		"Live": "live", "TooLate": "too-late", "EndOfLife": "end-of-life",
+		"Disabled": "disabled", "HookFailed": "hook-failed", "None": "",
+		"mystery": "mystery",
 	}
-	for _, outcome := range []string{"TooLate", "EndOfLife", "Disabled", "HookFailed"} {
-		if overlayFailureMessage(outcome) == "" {
-			t.Fatalf("%s is not reported as a failure", outcome)
+	for raw, want := range cases {
+		if got := overlayVerdict(raw); got != want {
+			t.Fatalf("overlayVerdict(%q)=%q, want %q", raw, got, want)
 		}
 	}
 }

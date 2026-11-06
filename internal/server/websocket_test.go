@@ -62,7 +62,7 @@ func TestConcurrentClientWrites(t *testing.T) {
 				case 0:
 					sendStatus(conn, "ready", "test")
 				case 1:
-					broadcastPreparationFailure(fmt.Errorf("fake failure"))
+					broadcastStatus("error", fmt.Sprintf("fake failure %d", i))
 				case 2:
 					broadcastReady()
 				case 3:

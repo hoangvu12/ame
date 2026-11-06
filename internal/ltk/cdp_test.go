@@ -275,10 +275,21 @@ func TestConfigureManagerSettings(t *testing.T) {
 	if doc["firstRunComplete"] != true {
 		t.Fatalf("firstRunComplete=%v", doc["firstRunComplete"])
 	}
+	// The manager rejects a document without these (upstream state.rs) and
+	// overwrites it with defaults, dropping the League path above.
+	for key := range managerRequiredSettings {
+		if _, ok := doc[key]; !ok {
+			t.Fatalf("fresh settings lack required field %q: %v", key, doc)
+		}
+	}
+	if doc["theme"] != "system" {
+		t.Fatalf("theme=%v", doc["theme"])
+	}
 
 	// A second run rewrites nothing, and existing settings survive.
 	before, _ := os.Stat(path)
 	doc["telemetryEnabled"] = false
+	doc["theme"] = "dark"
 	if data, err := json.Marshal(doc); err == nil {
 		os.WriteFile(path, data, 0600)
 	}
@@ -290,8 +301,8 @@ func TestConfigureManagerSettings(t *testing.T) {
 	data, _ = os.ReadFile(path)
 	var kept map[string]any
 	json.Unmarshal(data, &kept)
-	if kept["telemetryEnabled"] != false {
-		t.Fatalf("existing settings clobbered: %v", kept["telemetryEnabled"])
+	if kept["telemetryEnabled"] != false || kept["theme"] != "dark" {
+		t.Fatalf("existing settings clobbered: %v", kept)
 	}
 	_ = before
 	_ = after

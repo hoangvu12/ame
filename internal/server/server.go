@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,7 +31,6 @@ import (
 	"github.com/hoangvu12/ame/internal/setup"
 	"github.com/hoangvu12/ame/internal/skin"
 	"github.com/hoangvu12/ame/internal/startup"
-	"github.com/hoangvu12/ame/internal/suspend"
 )
 
 // ApplyMessage represents an apply skin request
@@ -239,15 +239,6 @@ var prebuiltModKey string
 var skinPreparationMu sync.Mutex
 var selectionRevision atomic.Uint64
 
-// Active suspender state — allows handleUnstuck to resume the real suspender
-var activeSuspenderMu sync.Mutex
-var activeSuspendState *suspendState
-
-type suspendState struct {
-	suspender preparationSuspender
-	cancel    chan struct{}
-}
-
 // Room party state
 var roomState = roomparty.NewRoomState()
 
@@ -396,7 +387,15 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		display.SetSkin(skinName, chromaName)
 		display.SetOverlayKey("display.value.overlay_active", nil)
 		display.Log("Apply: reusing runtime armed during champion select")
-		sendStatus(conn, "ready", "Skin applied!")
+		sendStatus(conn, "ready", "Skin prepared for the match")
+		return
+	}
+
+	// Too late to change what the manager holds for this match (League
+	// runs, or champion select has less time left than this PC's rebuild):
+	// decided before any download or build, and again before the edit.
+	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+		reportBlockedChange(conn, "Apply", verdict, reason)
 		return
 	}
 
@@ -415,8 +414,6 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	// Download skin if not default
 	display.Log("Apply: preparing own skin")
-	finishPreparation := beginPreparationSuspend()
-	defer finishPreparation()
 	resumeScanner, err := ltk.BeginPreparation(config.OverlayDir)
 	if err != nil {
 		sendStatus(conn, "error", fmt.Sprintf("Could not prepare skin runtime: %v", err))
@@ -440,11 +437,6 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		}
 	}
 
-	// Kill any previous runoverlay
-	if ltk.Running() && !ltk.WaitingForGame() {
-		sendStatus(conn, "error", "The game has already started attaching the selected skins. Changed or newly shared skins need a fresh match.")
-		return
-	}
 	// Build overlay (or reuse pre-built one from prefetch).
 	display.Log("Apply: waiting for overlay build lock")
 	overlayBuildMu.Lock()
@@ -526,13 +518,32 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 		teammateSkinCount = roomState.BuiltTeammateSkinCount()
 	}
 
-	// Start the runtime host (hooks the game process when it finds it)
-	if err := modtools.RunOverlay(config.OverlayDir); err != nil {
+	// The last look before the manager's library changes: downloads and the
+	// package build may have taken seconds.
+	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+		reportBlockedChange(conn, "Apply", verdict, reason)
+		return
+	}
+
+	// Hand the package to the manager (its patcher hooks the game when it
+	// finds it)
+	err = startRuntime(config.OverlayDir)
+	if errors.Is(err, ltk.ErrGameRunning) {
+		verdict, reason := lateChange(championID)
+		reportBlockedChange(conn, "Apply", verdict, reason)
+		return
+	}
+	setPreparedChampion(championID)
+	if err != nil {
 		preparationInvalid.Store(true)
 		stateMu.Lock()
 		lastModKey = ""
 		stateMu.Unlock()
 		prebuiltModKey = ""
+		if errors.Is(err, ltk.ErrRebuildPending) {
+			sendStatus(conn, "error", "Skins are still being prepared (this PC rebuilds them slowly). They apply this match only if that finishes before the game starts.")
+			return
+		}
 		sendStatus(conn, "error", fmt.Sprintf("Failed to start overlay: %v", err))
 		return
 	}
@@ -566,12 +577,14 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	display.SetSkin(skinName, chromaName)
 	display.SetOverlayKey("display.value.overlay_active", nil)
 
+	// "Prepared": the manager scans with the set. Only the patcher DLL's
+	// verdict on the game (logged as "LTK: overlay verdict") confirms skins.
 	if teammateSkinCount > 0 {
-		sendStatus(conn, "ready", fmt.Sprintf("Skin applied! (+%d teammate skins)", teammateSkinCount))
+		sendStatus(conn, "ready", fmt.Sprintf("Skin prepared for the match (+%d teammate skins)", teammateSkinCount))
 	} else if !hasSkin && hasCustomMods {
-		sendStatus(conn, "ready", "Custom mods applied!")
+		sendStatus(conn, "ready", "Custom mods prepared for the match")
 	} else {
-		sendStatus(conn, "ready", "Skin applied!")
+		sendStatus(conn, "ready", "Skin prepared for the match")
 	}
 }
 
@@ -594,9 +607,11 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	hasTeammateSkins := roomState.IsActive() && roomState.HasTeammateSkins()
 
 	// Nothing to prefetch: disarm a previous selection before a game starts.
+	// Never while League runs: stopping the patcher cannot take skins out of
+	// a match that loaded them.
 	if !hasSkin && !hasCustomMods && !hasTeammateSkins {
-		if ltk.WaitingForGame() {
-			modtools.KillModTools()
+		if patcherWaiting() && !gameRunning() {
+			stopRuntime()
 			stateMu.Lock()
 			lastModKey = ""
 			stateMu.Unlock()
@@ -604,13 +619,13 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 		return
 	}
 
-	// Don't build if overlay is already active (mid-game)
-	if modtools.IsRunning() && !ltk.WaitingForGame() {
+	// Too late to change what the manager holds for this match: decided
+	// before any download or build, and again before the edit.
+	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+		reportBlockedChange(conn, "Prefetch", verdict, reason)
 		return
 	}
 
-	finishPreparation := beginPreparationSuspend()
-	defer finishPreparation()
 	resumeScanner, err := ltk.BeginPreparation(config.OverlayDir)
 	if err != nil {
 		display.Log("Prefetch: cannot prepare scanner: " + err.Error())
@@ -669,15 +684,6 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 		return
 	}
 	display.Log(fmt.Sprintf("Prefetch: modKey=%s (was %s), roomActive=%v", currentModKey, prebuiltModKey, roomState.IsActive()))
-	// Preparation may take seconds; attachment can begin during a download.
-	// Keep that match's overlay intact when a late shared selection arrives.
-	if ltk.Running() && !ltk.WaitingForGame() {
-		display.Log("Prefetch: selection changed after attachment started; keeping current match overlay")
-		return
-	}
-	stateMu.Lock()
-	lastModKey = ""
-	stateMu.Unlock()
 
 	if err := refreshModsDir(config.ModsDir, skinID, zipPath); err != nil {
 		display.Log("Prefetch: skin extraction failed: " + err.Error())
@@ -716,25 +722,43 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	}
 
 	// Record what was actually built
+	builtKey := skinID
 	if roomState.IsActive() {
-		prebuiltModKey = roomState.ComputeBuiltModKey(skinID)
-	} else {
-		prebuiltModKey = skinID
+		builtKey = roomState.ComputeBuiltModKey(skinID)
 	}
 	if cmk := customModKey(); cmk != "" {
-		prebuiltModKey += ";" + cmk
+		builtKey += ";" + cmk
 	}
-	prebuiltModKey = skin.OverlayKey(prebuiltModKey)
-	if err := modtools.RunOverlay(config.OverlayDir); err != nil {
+	builtKey = skin.OverlayKey(builtKey)
+
+	// The last look before the manager's library changes. A kept set leaves
+	// the bookkeeping on the armed set: only a package the manager accepted
+	// becomes the prebuilt one.
+	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+		reportBlockedChange(conn, "Prefetch", verdict, reason)
+		return
+	}
+	err = startRuntime(config.OverlayDir)
+	if errors.Is(err, ltk.ErrGameRunning) {
+		verdict, reason := lateChange(championID)
+		reportBlockedChange(conn, "Prefetch", verdict, reason)
+		return
+	}
+	setPreparedChampion(championID)
+	if err != nil {
 		preparationInvalid.Store(true)
 		stateMu.Lock()
 		lastModKey = ""
 		stateMu.Unlock()
 		prebuiltModKey = ""
+		if errors.Is(err, ltk.ErrRebuildPending) {
+			display.Log("Prefetch: the manager is still rebuilding this skin set; it is armed only if the rebuild ends before League starts")
+			return
+		}
 		display.Log(fmt.Sprintf("Prefetch: runtime startup failed: %v", err))
-		prebuiltModKey = ""
 		return
 	}
+	prebuiltModKey = builtKey
 	stateMu.Lock()
 	lastModKey = prebuiltModKey
 	lastChampionID, lastSkinID, lastBaseSkinID = championID, skinID, baseSkinID
@@ -744,7 +768,10 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	display.Log(fmt.Sprintf("Skin ready (prebuilt key: %s)", prebuiltModKey))
 }
 
-// HandleCleanup handles cleanup request
+// HandleCleanup stops the skin runtime and forgets the prepared selection.
+// It is unconditional: uninstall, the stuck-game button and shutting ame
+// down call it directly. The plugin's cleanup message goes through
+// handleCleanupRequest, which declines while League runs.
 func HandleCleanup() {
 	skinPreparationMu.Lock()
 	defer skinPreparationMu.Unlock()
@@ -754,16 +781,7 @@ func HandleCleanup() {
 		stateMu.Unlock()
 		prebuiltModKey = ""
 	}
-	activeSuspenderMu.Lock()
-	if state := activeSuspendState; state != nil {
-		select {
-		case <-state.cancel:
-		default:
-			close(state.cancel)
-		}
-	}
-	activeSuspenderMu.Unlock()
-	modtools.KillModTools()
+	stopRuntime()
 	removeOverlayState(config.OverlayDir)
 
 	overlayBuildMu.Lock()
@@ -778,53 +796,22 @@ func HandleCleanup() {
 	lastSkinName = ""
 	lastChromaName = ""
 	lastModKey = ""
+	preparedChampionID = ""
 	stateMu.Unlock()
 
 	display.SetSkin("", "")
 	display.SetOverlayKey("display.value.overlay_inactive", nil)
 }
 
-// handleUnstuck releases suspended game and kills the process to help users who are stuck
+// handleUnstuck ends a stuck game at the user's explicit request (the
+// in-game "I'm stuck" button). ame never pauses the game anymore, so there
+// is nothing to resume first.
 func handleUnstuck(conn *websocket.Conn) {
 	started := time.Now()
 	defer func() {
 		display.Log(fmt.Sprintf("Unstuck: handler returned duration_ms=%d", time.Since(started).Milliseconds()))
 	}()
-	display.Log("Unstuck: releasing game...")
-
-	// Take ownership of the active suspend state atomically
-	activeSuspenderMu.Lock()
-	state := activeSuspendState
-	activeSuspendState = nil
-	if state != nil {
-		select {
-		case <-state.cancel:
-		default:
-			close(state.cancel)
-		}
-	}
-	activeSuspenderMu.Unlock()
-
-	if state != nil {
-
-		// Resume via the actual suspender that holds the frozen thread handles
-		activeSuspenderMu.Lock()
-		s := state.suspender
-		state.suspender = nil
-		activeSuspenderMu.Unlock()
-
-		if s != nil {
-			display.Log("Unstuck: resuming via active suspender")
-			if err := s.Resume(); err != nil {
-				display.Log(fmt.Sprintf("Unstuck: resume failed: %v", err))
-			} else {
-				display.Log("Unstuck: resume completed")
-			}
-		}
-	}
-
-	// Small delay to let the resume take effect
-	time.Sleep(300 * time.Millisecond)
+	display.Log("Unstuck: ending the game at the user's request")
 
 	// Kill the game process
 	display.Log("Unstuck: attempting game termination")
@@ -858,8 +845,16 @@ func broadcastRoomUpdate(teammates []roomparty.Member) {
 	}
 }
 
+// broadcastStatus sends a status message to every connected client.
+func broadcastStatus(status, message string) {
+	for _, conn := range connectedClients() {
+		sendStatus(conn, status, message)
+	}
+}
+
 func init() {
 	roomState.OnUpdate = broadcastRoomUpdate
+	ltk.OnOverlayVerdict = reportOverlayVerdict
 }
 
 // handleConnection handles a single WebSocket connection
@@ -915,11 +910,7 @@ func handleConnection(conn *websocket.Conn) {
 			skinID := toString(applyMsg.SkinID)
 			baseSkinID := toString(applyMsg.BaseSkinID)
 			selectionRevision.Add(1)
-			finish := reservePreparation()
-			func() {
-				defer finish()
-				handleApply(conn, championID, skinID, baseSkinID, applyMsg.ChampionName, applyMsg.SkinName, applyMsg.ChromaName)
-			}()
+			handleApply(conn, championID, skinID, baseSkinID, applyMsg.ChampionName, applyMsg.SkinName, applyMsg.ChromaName)
 
 		case "prefetch":
 			var prefetchMsg ApplyMessage
@@ -930,14 +921,10 @@ func handleConnection(conn *websocket.Conn) {
 			skinID := toString(prefetchMsg.SkinID)
 			baseSkinID := toString(prefetchMsg.BaseSkinID)
 			revision := selectionRevision.Add(1)
-			finish := reservePreparation()
-			go func() {
-				defer finish()
-				handlePrefetch(conn, championID, skinID, baseSkinID, prefetchMsg.ChampionName, prefetchMsg.SkinName, prefetchMsg.ChromaName, revision)
-			}()
+			go handlePrefetch(conn, championID, skinID, baseSkinID, prefetchMsg.ChampionName, prefetchMsg.SkinName, prefetchMsg.ChromaName, revision)
 
 		case "cleanup":
-			HandleCleanup()
+			handleCleanupRequest(conn)
 
 		case "getGamePath":
 			path := config.GamePath()
@@ -1567,245 +1554,4 @@ func refreshModsDir(modsDir, skinID, zipPath string) error {
 		return err
 	}
 	return skin.ExtractPackage(zipPath, filepath.Join(modsDir, fmt.Sprintf("skin_%s", skinID)))
-}
-
-// beginPreparationSuspend guards both prefetch and apply, with identical release paths.
-type preparationSuspender interface {
-	SuspendProcess() error
-	WaitReady(<-chan struct{}, time.Duration) error
-	Suspend() (int, error)
-	Resume() error
-	Close()
-}
-
-var findPreparationProcess = suspend.FindProcess
-var newPreparationSuspender = func(pid uint32) (preparationSuspender, error) { return suspend.NewSuspender(pid) }
-var preparationHoldLimit = 30 * time.Second
-var waitPreparationHook = func(pid uint32, cancel <-chan struct{}) error {
-	select {
-	case <-cancel:
-		return fmt.Errorf("preparation cancelled before hook handoff")
-	default:
-	}
-	if !ltk.Running() {
-		return nil
-	}
-	return ltk.ArmSuspendedCancel(pid, cancel)
-}
-
-// Reservations are taken before jobs wait for skinPreparationMu. All queued
-// jobs therefore share one actual hold; only the last release resumes the game.
-var preparationLeases struct {
-	sync.Mutex
-	users  int
-	finish func()
-}
-
-func preparationLease(start bool) func() {
-	preparationLeases.Lock()
-	preparationLeases.users++
-	if start && preparationLeases.finish == nil {
-		preparationLeases.finish = beginPreparationHold()
-	}
-	preparationLeases.Unlock()
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			preparationLeases.Lock()
-			defer preparationLeases.Unlock()
-			preparationLeases.users--
-			if preparationLeases.users == 0 && preparationLeases.finish != nil {
-				finish := preparationLeases.finish
-				preparationLeases.finish = nil
-				finish()
-			}
-		})
-	}
-}
-
-func reservePreparation() func() { return preparationLease(false) }
-
-func beginPreparationSuspend() func() {
-	return preparationLease(true)
-}
-
-func beginPreparationHold() func() {
-	// applyDone signals that overlay build + runoverlay start are complete.
-	// The suspend goroutine only freezes the game if it appears BEFORE this closes.
-	applyDone := make(chan struct{})
-	released := make(chan struct{})
-
-	// Create cancel channel and suspend state for this apply (used by handleUnstuck)
-	suspendCancel := make(chan struct{})
-	state := &suspendState{cancel: suspendCancel}
-
-	// Cancel any previous apply's suspend goroutine
-	activeSuspenderMu.Lock()
-	if prev := activeSuspendState; prev != nil {
-		select {
-		case <-prev.cancel:
-		default:
-			close(prev.cancel)
-		}
-	}
-	activeSuspendState = state
-	activeSuspenderMu.Unlock()
-
-	// Merged done channel: closes when either applyDone or suspendCancel closes.
-	// This lets WaitReady exit promptly on unstuck cancel (fix for review issue #2).
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-applyDone:
-		case <-suspendCancel:
-		}
-		close(done)
-	}()
-
-	// Background: if game appears while we're still building/starting, freeze it.
-	go func() {
-		defer close(released)
-		defer func() {
-			activeSuspenderMu.Lock()
-			if activeSuspendState == state {
-				activeSuspendState = nil
-			}
-			activeSuspenderMu.Unlock()
-		}()
-
-		// Poll for game process, but stop early if apply finishes or cancelled
-		var pid uint32
-		deadline := time.Now().Add(120 * time.Second)
-		for time.Now().Before(deadline) {
-			select {
-			case <-done:
-				return
-			default:
-			}
-			if p := findPreparationProcess("League of Legends.exe"); p != 0 {
-				pid = p
-				break
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		if pid == 0 {
-			return
-		}
-
-		// Double-check apply hasn't finished during the FindProcess call
-		select {
-		case <-done:
-			return
-		default:
-		}
-
-		display.Log(fmt.Sprintf("Game detected (PID %d), holding until ready...", pid))
-		s, err := newPreparationSuspender(pid)
-		if err != nil {
-			display.Log(fmt.Sprintf("Failed to create suspender: %v", err))
-			return
-		}
-
-		// Prefer freezing from our side (no code runs inside the game, so resume
-		// can't deadlock). Some machines deny it; fall back to remote threads.
-		if err := s.SuspendProcess(); err != nil {
-			display.Log(fmt.Sprintf("Process suspend unavailable (%v), falling back to remote threads", err))
-
-			// Wait for the process to accept remote threads (loader lock released)
-			// Uses merged done channel so both applyDone and suspendCancel can abort it
-			if err := s.WaitReady(done, 30*time.Second); err != nil {
-				display.Log(fmt.Sprintf("Suspend skipped: %v", err))
-				s.Close()
-				return
-			}
-
-			// Re-check cancel between WaitReady and Suspend to avoid suspending after cancel
-			select {
-			case <-done:
-				display.Log("Suspend skipped: cancelled after WaitReady")
-				s.Close()
-				return
-			default:
-			}
-
-			count, suspendErr := s.Suspend()
-			if suspendErr != nil || count == 0 {
-				display.Log(fmt.Sprintf("Failed to suspend game: count=%d, err=%v", count, suspendErr))
-				s.Close()
-				return
-			}
-			display.Log(fmt.Sprintf("Game suspended via remote threads (count=%d)", count))
-		} else {
-			display.Log("Game suspended via NtSuspendProcess")
-		}
-
-		// Register the suspender so handleUnstuck can access it
-		activeSuspenderMu.Lock()
-		state.suspender = s
-		activeSuspenderMu.Unlock()
-
-		// One deadline covers preparation AND handoff. Never put a potentially
-		// blocking runtime call on the goroutine that owns game release.
-		holdTimer := time.NewTimer(preparationHoldLimit)
-		defer holdTimer.Stop()
-		handoffCancel := make(chan struct{})
-		defer close(handoffCancel)
-		select {
-		case <-applyDone:
-			result := make(chan error, 1)
-			wait := waitPreparationHook
-			go func() { result <- wait(pid, handoffCancel) }()
-			var handoffErr error
-			select {
-			case handoffErr = <-result:
-			case <-suspendCancel:
-				handoffErr = fmt.Errorf("cancelled during runtime handoff")
-			case <-holdTimer.C:
-				handoffErr = fmt.Errorf("suspension safety deadline reached during runtime handoff")
-			}
-			if err := handoffErr; err != nil {
-				preparationInvalid.Store(true)
-				go broadcastPreparationFailure(err)
-				display.Log(fmt.Sprintf("Preparation hook handoff incomplete: %v; releasing game safely", err))
-				display.SetOverlayKey("display.value.overlay_inactive", nil)
-				display.Log("! Skin runtime was not ready before game release; this match may need restarting")
-			} else {
-				display.Log("Preparation complete, runtime prepared; releasing game for window discovery and attachment...")
-			}
-		case <-suspendCancel:
-			display.Log("Suspend cancelled, releasing game...")
-		case <-holdTimer.C:
-			preparationInvalid.Store(true)
-			go broadcastPreparationFailure(fmt.Errorf("suspension safety deadline reached before runtime readiness"))
-			display.Log("Safety timeout reached (30s), releasing game...")
-		}
-
-		// Only resume if handleUnstuck hasn't already taken ownership
-		activeSuspenderMu.Lock()
-		owned := state.suspender == s
-		if owned {
-			state.suspender = nil
-		}
-		activeSuspenderMu.Unlock()
-
-		if owned {
-			if err := s.Resume(); err != nil {
-				display.Log(fmt.Sprintf("Game release failed: %v", err))
-			} else {
-				display.Log("Game released")
-			}
-		} else {
-			display.Log("Suspender already handled by unstuck, skipping resume")
-		}
-	}()
-
-	return func() { close(applyDone); <-released }
-}
-
-// Never take skinPreparationMu here: the lease owner may hold it while
-// waiting for this goroutine to release the game.
-func broadcastPreparationFailure(err error) {
-	for _, conn := range connectedClients() {
-		sendStatus(conn, "error", fmt.Sprintf("Skin runtime was not ready: %v. This match may need restarting.", err))
-	}
 }

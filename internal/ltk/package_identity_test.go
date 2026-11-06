@@ -1,6 +1,7 @@
 package ltk
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 func TestPackageIdentitySwap(t *testing.T) {
 	for _, failure := range []string{"", "install_mod", "toggle_mod"} {
 		t.Run("failure="+failure, func(t *testing.T) {
+			isolateManagerState(t)
 			pkg := filepath.Join(t.TempDir(), "overlay.fantome")
 			write := func(data string) {
 				t.Helper()
@@ -110,6 +112,7 @@ func TestPackageIdentitySwap(t *testing.T) {
 }
 
 func TestStartReusesUnchangedPackage(t *testing.T) {
+	isolateManagerState(t)
 	pkg := filepath.Join(t.TempDir(), "overlay.fantome")
 	if err := os.WriteFile(pkg, []byte("package"), 0600); err != nil {
 		t.Fatal(err)
@@ -136,6 +139,7 @@ func TestStartReusesUnchangedPackage(t *testing.T) {
 }
 
 func TestRebuildTimeoutRetainsReadinessFence(t *testing.T) {
+	isolateManagerState(t)
 	old, snap := overlayRebuildTimeout, currentSnapshot()
 	overlayRebuildTimeout = 20 * time.Millisecond
 	defer func() { overlayRebuildTimeout = old; setSnapshot(func(s *managerSnapshot) { *s = snap }) }()
@@ -148,8 +152,8 @@ func TestRebuildTimeoutRetainsReadinessFence(t *testing.T) {
 	}
 	defer c.close()
 	setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{pending: true} })
-	if err := awaitOverlayRebuild(&managerSession{cdp: c}); err == nil {
-		t.Fatal("timeout reported success")
+	if err := awaitOverlayRebuild(&managerSession{cdp: c}); !errors.Is(err, ErrRebuildPending) {
+		t.Fatalf("timeout reported as %v", err)
 	}
 	s := currentSnapshot()
 	if !s.pending || s.phase != "building" || s.observed.IsZero() {
@@ -158,6 +162,7 @@ func TestRebuildTimeoutRetainsReadinessFence(t *testing.T) {
 }
 
 func TestStartRetriesReadinessAfterRebuildTimeout(t *testing.T) {
+	isolateManagerState(t)
 	pkg := filepath.Join(t.TempDir(), "overlay.fantome")
 	if err := os.WriteFile(pkg, []byte("package"), 0600); err != nil {
 		t.Fatal(err)
@@ -211,24 +216,25 @@ func TestStartRetriesReadinessAfterRebuildTimeout(t *testing.T) {
 	}
 }
 
-func TestArmRejectsStalePendingAndStoppedStatus(t *testing.T) {
-	old, snap := armSuspendTimeout, currentSnapshot()
-	armSuspendTimeout = time.Millisecond
-	defer func() { armSuspendTimeout = old; setSnapshot(func(s *managerSnapshot) { *s = snap }) }()
+// Readiness needs a fresh status of a running scan with no edit in flight.
+func TestReadyRejectsStalePendingAndStoppedStatus(t *testing.T) {
+	isolateManagerState(t)
 	for _, s := range []managerSnapshot{
 		{alive: true, running: true, phase: "patching"},
 		{alive: true, running: true, phase: "patching", observed: time.Now(), pending: true},
 		{alive: true, phase: "patching", observed: time.Now()},
+		{alive: true, running: true, phase: "building", observed: time.Now()},
+		{alive: true, running: true, phase: "patching", observed: time.Now().Add(-5 * time.Second)},
 	} {
 		setSnapshot(func(dst *managerSnapshot) { *dst = s })
-		if err := ArmSuspended(123); err == nil {
+		if Ready() {
 			t.Fatalf("accepted unsafe status: %+v", s)
 		}
 	}
-	cancel := make(chan struct{})
-	close(cancel)
-	setSnapshot(func(s *managerSnapshot) { *s = managerSnapshot{alive: true, running: true, phase: "building"} })
-	if err := ArmSuspendedCancel(123, cancel); err == nil {
-		t.Fatal("ignored cancellation")
+	setSnapshot(func(s *managerSnapshot) {
+		*s = managerSnapshot{alive: true, running: true, phase: "patching", observed: time.Now()}
+	})
+	if !Ready() {
+		t.Fatal("fresh scanning status not ready")
 	}
 }
