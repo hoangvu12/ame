@@ -1053,10 +1053,15 @@ func ensureManagerLocked() (*managerSession, error) {
 		return nil, ErrGameRunning
 	}
 	stopLocked()
+	// Each step's time goes into the ready line: a launch beside a loading
+	// game once spent 6s before the manager's first log line with no trace
+	// of where.
+	steps := newStepTimer()
 	// Terminate any running manager before touching its files: the
 	// single-instance plugin would otherwise focus the old window, and the
 	// delivered pair cannot be replaced while it runs.
 	killExistingManagers()
+	steps.mark("kill")
 	// The manager runtime is delivered to the shared cache, one download for
 	// the manager and its bundled injector. The manager delivers the patcher
 	// DLL itself.
@@ -1064,11 +1069,13 @@ func ensureManagerLocked() (*managerSession, error) {
 	if err != nil {
 		return nil, fmt.Errorf("LTK manager runtime: %w", err)
 	}
+	steps.mark("delivery")
 	if managerPortInUse() {
 		if err := waitForPortFree(3 * time.Second); err != nil {
 			return nil, fmt.Errorf("LTK cannot use DevTools port %d: %w", cdpPort, err)
 		}
 	}
+	steps.mark("port")
 	// The first launch of a run precedes any Build, so gameDir may still be
 	// empty: without a path the manager auto-detects, which can pick another
 	// install than the one ame patches.
@@ -1079,15 +1086,18 @@ func ensureManagerLocked() (*managerSession, error) {
 	if err := configureManagerSettings(league); err != nil {
 		display.Log("LTK: manager settings: " + err.Error())
 	}
+	steps.mark("settings")
 	cmd, err := launchManager(exe)
 	if err != nil {
 		return nil, fmt.Errorf("LTK manager launch: %w", err)
 	}
+	steps.mark("spawn")
 	page, err := cdpFindPage(cdpHandshakeTimeout)
 	if err != nil {
 		killLaunchedManager(cmd)
 		return nil, fmt.Errorf("LTK manager WebView: %w", err)
 	}
+	steps.mark("page")
 	c, err := cdpDial(page.WS)
 	if err != nil {
 		killLaunchedManager(cmd)
@@ -1105,6 +1115,7 @@ func ensureManagerLocked() (*managerSession, error) {
 		killLaunchedManager(cmd)
 		return nil, fmt.Errorf("LTK manager page: %w", err)
 	}
+	steps.mark("ready")
 	result, err := c.injectShim()
 	if err != nil || (result != "installed" && result != "already") {
 		c.close()
@@ -1126,9 +1137,33 @@ func ensureManagerLocked() (*managerSession, error) {
 		close(m.exited)
 	}()
 	go pollManager(m)
-	display.Log(fmt.Sprintf("LTK: manager ready pid=%d page=%s", cmd.Process.Pid, page.URL))
+	steps.mark("bridge")
+	display.Log(fmt.Sprintf("LTK: manager ready pid=%d page=%s in %s (%s)", cmd.Process.Pid, page.URL, steps.total(), steps))
 	return m, nil
 }
+
+// stepTimer records how long each step of a sequence took.
+type stepTimer struct {
+	start, last time.Time
+	parts       []string
+}
+
+func newStepTimer() *stepTimer {
+	now := time.Now()
+	return &stepTimer{start: now, last: now}
+}
+
+func (s *stepTimer) mark(step string) {
+	now := time.Now()
+	s.parts = append(s.parts, fmt.Sprintf("%s %dms", step, now.Sub(s.last).Milliseconds()))
+	s.last = now
+}
+
+func (s *stepTimer) total() time.Duration {
+	return s.last.Sub(s.start).Round(10 * time.Millisecond)
+}
+
+func (s *stepTimer) String() string { return strings.Join(s.parts, ", ") }
 
 func killLaunchedManager(cmd *exec.Cmd) {
 	killManagerTree(cmd)

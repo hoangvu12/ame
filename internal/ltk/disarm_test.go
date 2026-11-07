@@ -242,3 +242,14 @@ func TestStopLeavesTheManagerToAGameInProgress(t *testing.T) {
 		t.Fatal("ame still holds the manager it let go")
 	}
 }
+
+func TestStepTimerNamesEachStep(t *testing.T) {
+	steps := newStepTimer()
+	steps.mark("kill")
+	time.Sleep(15 * time.Millisecond)
+	steps.mark("delivery")
+	got := steps.String()
+	if !strings.HasPrefix(got, "kill ") || !strings.Contains(got, ", delivery ") || steps.total() < 10*time.Millisecond {
+		t.Fatalf("steps=%q total=%s", got, steps.total())
+	}
+}
