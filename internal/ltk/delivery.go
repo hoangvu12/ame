@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hoangvu12/ame/internal/config"
@@ -51,22 +52,53 @@ var managerDir = filepath.Join(config.AmeDir, "manager")
 // managerFetch is ManagerFetch, overridden by tests to stay offline.
 var managerFetch = ManagerFetch
 
+// latestSetup is ltkLatestSetup, overridden by tests to stay offline.
+var latestSetup = ltkLatestSetup
+
+// managerRecheckInterval: a release check this recent is reused. Setup
+// checks at startup, and every manager launch used to check again, which
+// put a GitHub round-trip (up to its 30s timeout on a bad network) between
+// a skin pick and the patcher scan.
+const managerRecheckInterval = 6 * time.Hour
+
+var (
+	releaseCheckMu sync.Mutex
+	releaseChecked time.Time // the last check that left a usable pair
+)
+
+func markReleaseChecked() {
+	releaseCheckMu.Lock()
+	releaseChecked = time.Now()
+	releaseCheckMu.Unlock()
+}
+
+func releaseCheckedRecently() bool {
+	releaseCheckMu.Lock()
+	defer releaseCheckMu.Unlock()
+	return !releaseChecked.IsZero() && time.Since(releaseChecked) < managerRecheckInterval
+}
+
 // ManagerFetch ensures the shared manager directory holds the signed
 // ltk-manager.exe and its bundled ltk_patcher_host.exe from the newest LTK
 // Manager release, and returns the path of ltk-manager.exe.
 //
-// Nothing is downloaded when the release marker matches the newest tag. When
+// Nothing is downloaded when the release marker matches the newest tag, and
+// GitHub is not asked again within managerRecheckInterval of a check. When
 // GitHub cannot be reached, or the download or extraction fails, the
 // previously delivered pair keeps being used; only a machine that has never
 // delivered the pair fails.
 func ManagerFetch() (string, error) {
 	exePath := filepath.Join(managerDir, managerExeName)
 	hostPath := filepath.Join(managerDir, managerHostName)
+	if releaseCheckedRecently() && managerPairUsable(exePath, hostPath) {
+		return exePath, nil
+	}
 
-	tag, setupURL, err := ltkLatestSetup()
+	tag, setupURL, err := latestSetup()
 	if err == nil {
 		if marked, readErr := os.ReadFile(filepath.Join(managerDir, managerReleaseFile)); readErr == nil &&
 			strings.TrimSpace(string(marked)) == tag && managerPairUsable(exePath, hostPath) {
+			markReleaseChecked()
 			return exePath, nil
 		}
 		if setup, downloadErr := downloadFile(setupURL); downloadErr == nil {
@@ -78,6 +110,7 @@ func ManagerFetch() (string, error) {
 						display.Log("LTK: manager release marker: " + err.Error())
 					}
 					display.Log(fmt.Sprintf("LTK: delivered LTK Manager %s to %s", tag, managerDir))
+					markReleaseChecked()
 					return exePath, nil
 				}
 			} else {
@@ -92,6 +125,8 @@ func ManagerFetch() (string, error) {
 
 	if managerPairUsable(exePath, hostPath) {
 		display.Log("LTK: using the previously delivered LTK Manager runtime")
+		// A failed check is not repeated at every launch either.
+		markReleaseChecked()
 		return exePath, nil
 	}
 	return "", fmt.Errorf("LTK Manager runtime is unavailable: %v (ame must reach GitHub once to deliver it)", err)
