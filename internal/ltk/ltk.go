@@ -422,6 +422,9 @@ type managerSnapshot struct {
 	prefix   string    // the session's overlay root
 	pending  bool      // library edit has not yet passed the rebuild fence
 	observed time.Time // last successful authoritative status read
+	// lost: the manager runs but its page stopped answering, so what it
+	// does is unknown until a poll gets through again.
+	lost bool
 }
 
 var (
@@ -494,6 +497,10 @@ type Prepared struct {
 	// Pending: an edit is still on its way into the scan.
 	Pending    bool
 	PendingFor time.Duration
+	// Unknown: a manager runs that ame cannot see into (its page stopped
+	// answering, or an earlier ame left it serving a match), so whether a
+	// set is armed is unknown.
+	Unknown bool
 }
 
 // PreparedState reports whether a skin set is armed or rebuilding for the
@@ -501,9 +508,17 @@ type Prepared struct {
 // previous champion select chose.
 func PreparedState() Prepared {
 	snapshotMu.Lock()
-	defer snapshotMu.Unlock()
 	s := snapshot
-	if !s.alive || !s.running {
+	if s.lost {
+		snapshotMu.Unlock()
+		return Prepared{Unknown: true}
+	}
+	if !s.alive {
+		snapshotMu.Unlock()
+		return Prepared{Unknown: managerProcessRunning()}
+	}
+	defer snapshotMu.Unlock()
+	if !s.running {
 		return Prepared{}
 	}
 	if r := rebuild; r != nil {
@@ -1242,7 +1257,11 @@ func verdictLine(pid uint64, verdict string) string {
 // from the manager's status command, attachment and failures from the event
 // bridge. It also follows ame's pending edit into the scan, notices League
 // starting and ending, and logs every transition. The loop ends when the
-// session is torn down, the manager dies, or the DevTools connection breaks.
+// session is torn down or the manager dies. A connection that stops
+// answering marks the manager unobserved, not gone: the loop keeps asking
+// (every call redials the page) and picks the session up again. It used to
+// stop for good, and at 22:14 ame then reported a match without skins while
+// the patcher had them live.
 func pollManager(m *managerSession) {
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
@@ -1253,7 +1272,7 @@ func pollManager(m *managerSession) {
 		case <-m.stop:
 			return
 		case <-m.exited:
-			setSnapshot(func(s *managerSnapshot) { s.alive = false })
+			setSnapshot(func(s *managerSnapshot) { s.alive, s.lost = false, false })
 			display.Log("LTK: manager process exited")
 			return
 		case <-tick.C:
@@ -1261,12 +1280,14 @@ func pollManager(m *managerSession) {
 		state, err := m.cdp.bridgeState()
 		if err != nil {
 			failures++
-			if failures >= 5 {
-				setSnapshot(func(s *managerSnapshot) { s.alive = false })
-				display.Log("LTK: manager connection lost: " + err.Error())
-				return
+			if failures == 5 {
+				setSnapshot(func(s *managerSnapshot) { s.alive, s.lost = false, true })
+				display.Log("LTK: manager connection lost: " + err.Error() + "; still trying")
 			}
 			continue
+		}
+		if failures >= 5 {
+			display.Log("LTK: manager connection restored")
 		}
 		failures = 0
 		if !state.Shim {

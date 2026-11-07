@@ -26,6 +26,7 @@ func TestMain(m *testing.M) {
 	}
 	killExistingManagers = func() { panic("test reached killExistingManagers") }
 	gameProcessRunning = func() bool { return false }
+	managerProcessRunning = func() bool { return false }
 	findGameDir = func() string { return "" }
 	dir, err := os.MkdirTemp("", "ame-ltk-test-")
 	if err != nil {

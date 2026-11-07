@@ -24,3 +24,9 @@ var gameWindowExists = func() bool {
 var gameProcessRunning = func() bool {
 	return winproc.IsRunning("League of Legends.exe")
 }
+
+// managerProcessRunning reports whether any LTK Manager runs, driven by ame
+// or not. A variable so tests never see one on the test machine.
+var managerProcessRunning = func() bool {
+	return winproc.IsRunning(managerExeName)
+}

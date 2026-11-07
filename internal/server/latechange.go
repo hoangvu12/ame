@@ -115,6 +115,10 @@ const (
 	changeAllowed changeVerdict = iota
 	changeKept                  // the set armed for this match stays; the change waits
 	changeRefused               // League runs and no usable set is armed for it
+	// changeUnconfirmed: League runs and ame cannot see what the manager
+	// serves it (the manager's page stopped answering, or an earlier ame
+	// left it running), so it cannot say whether the match has skins.
+	changeUnconfirmed
 )
 
 // changeContext is everything decideChange weighs.
@@ -123,6 +127,7 @@ type changeContext struct {
 	armed       bool // a set for the selected champion scans for this match
 	pending     bool // a set for the selected champion is still rebuilding
 	pendingFor  time.Duration
+	unknown     bool          // ame cannot see what the manager holds
 	budget      time.Duration // this PC's measured edit-to-scan time
 	timing      matchTiming
 	// mapsPreparing: the map copies are still being written, so a change
@@ -145,6 +150,8 @@ func decideChange(c changeContext) (changeVerdict, string) {
 func decideChangeTiming(c changeContext) (changeVerdict, string) {
 	if c.gameRunning {
 		switch {
+		case c.unknown:
+			return changeUnconfirmed, "League is already running"
 		case c.armed:
 			return changeKept, "League is already running"
 		case c.pending:
@@ -209,6 +216,7 @@ func lateChange(championID string) (changeVerdict, string) {
 		armed:       state.Armed && same,
 		pending:     state.Pending && same,
 		pendingFor:  state.PendingFor,
+		unknown:     state.Unknown,
 	}
 	if !c.gameRunning && (c.armed || c.pending) {
 		c.budget = rebuildBudget()
@@ -229,6 +237,9 @@ func reportBlockedChange(conn *websocket.Conn, source string, verdict changeVerd
 	case changeRefused:
 		display.Log(fmt.Sprintf("%s: skins cannot change now: %s", source, reason))
 		sendStatus(conn, "error", fmt.Sprintf("%s, so this match runs without these skins. They apply from the next match.", reason))
+	case changeUnconfirmed:
+		display.Log(fmt.Sprintf("%s: skins cannot change now: %s; ame cannot see what the manager serves this match", source, reason))
+		sendStatus(conn, "error", fmt.Sprintf("%s, so skins cannot change until the match ends. ame cannot tell whether the skins prepared earlier are in this match. Changes apply from the next match.", reason))
 	}
 }
 

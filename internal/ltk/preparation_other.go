@@ -5,3 +5,5 @@ package ltk
 var gameWindowExists = func() bool { return false }
 
 var gameProcessRunning = func() bool { return false }
+
+var managerProcessRunning = func() bool { return false }

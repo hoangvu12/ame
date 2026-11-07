@@ -239,6 +239,19 @@ func TestApplyWhileLeagueRunsNeverReachesTheManager(t *testing.T) {
 	}
 }
 
+// At 22:14:41 ame had lost the manager and told the user the match ran
+// without skins; the patcher had them live. When ame cannot see the
+// manager it says it does not know.
+func TestApplyDuringAMatchAmeCannotSeeSaysSo(t *testing.T) {
+	stubLateChange(t, true, ltk.Prepared{Unknown: true}, matchTiming{}, 15*time.Second)
+	conn, peer := loopbackClient(t)
+	handleApply(conn, "86", "86005", "", "Garen", "Skin", "")
+	msg := readStatus(t, peer)
+	if msg.Status != "error" || strings.Contains(msg.Message, "runs without") || !strings.Contains(msg.Message, "cannot tell") {
+		t.Fatalf("status=%+v", msg)
+	}
+}
+
 func TestPrefetchKeepsTheArmedSetWhenTooLate(t *testing.T) {
 	stubLateChange(t, false, ltk.Prepared{Armed: true}, finalization(18*time.Second), 153*time.Second)
 	setPreparedChampion("104")
