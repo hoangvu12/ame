@@ -37,6 +37,7 @@ var (
 	started          bool
 	diagnosticPath   string
 	diagnosticFailed bool
+	sessionOpened    bool // the Session line is written
 )
 
 // enableVT enables Virtual Terminal Processing on the Windows console,
@@ -66,10 +67,28 @@ func Init(ver string) {
 	skin = i18n.T("display.value.none", nil)
 	overlay = i18n.T("display.value.overlay_inactive", nil)
 	party = i18n.T("display.value.party_off", nil)
-	logs = nil
-	exportLogs = nil
+	// Lines logged during startup (after OpenDiagnostics) stay.
 	started = true
 	paused = false
+	openDiagnosticsLocked(ver)
+
+	render()
+}
+
+// OpenDiagnostics starts this session in launch.jsonl before the console is
+// set up, so lines logged during ame's own startup (the manager launched
+// early, the plugin connecting) are kept; Log writes nothing before it.
+func OpenDiagnostics(ver string) {
+	mu.Lock()
+	defer mu.Unlock()
+	openDiagnosticsLocked(ver)
+}
+
+func openDiagnosticsLocked(ver string) {
+	if sessionOpened {
+		return
+	}
+	sessionOpened = true
 	diagnosticPath = filepath.Join(os.Getenv("LOCALAPPDATA"), "ame", "logs", "launch.jsonl")
 	diagnosticFailed = false
 	entry := LogExportEntry{Timestamp: time.Now().UnixMilli(), Source: "server", Message: fmt.Sprintf("Session: ame=%s pid=%d", ver, os.Getpid())}
@@ -77,8 +96,6 @@ func Init(ver string) {
 		diagnosticFailed = true
 		exportLogs = append(exportLogs, logEntry{Time: time.Now(), Message: diagnosticWriteError(err)})
 	}
-
-	render()
 }
 
 // SetStatusKey updates the connection status and re-renders.

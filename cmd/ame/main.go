@@ -436,6 +436,9 @@ func main() {
 		fmt.Printf("  ! Failed to load settings: %v\n", err)
 	}
 
+	// The session's log starts here, so what happens during setup is kept.
+	display.OpenDiagnostics(Version)
+
 	// Wire up uninstall callback to trigger graceful exit
 	server.OnUninstall = func() {
 		quitTray()
