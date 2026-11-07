@@ -173,6 +173,20 @@ func TestDisarmStartsTheIdleCountdown(t *testing.T) {
 	t.Fatal("the idle manager was never stopped after the disarm")
 }
 
+// A manager launch kills every running manager. One started by an earlier
+// ame may serve the running game, so no launch happens while League runs.
+func TestManagerLaunchNeverKillsAManagerServingAGame(t *testing.T) {
+	oldGame := gameProcessRunning
+	gameProcessRunning = func() bool { return true }
+	defer func() { gameProcessRunning = oldGame }()
+	managerMu.Lock()
+	m, err := ensureManagerLocked() // killExistingManagers panics in tests
+	managerMu.Unlock()
+	if !errors.Is(err, ErrGameRunning) || m != nil {
+		t.Fatalf("m=%v err=%v, want ErrGameRunning", m, err)
+	}
+}
+
 // Quitting ame during a match must not kill the injection host under the
 // game: the Garen game whose host was killed mid-match hung on exit. The
 // manager is handed to the after-game stop instead.

@@ -998,6 +998,13 @@ func ensureManagerLocked() (*managerSession, error) {
 		}
 		display.Log("LTK: manager session lost its DevTools connection; relaunching")
 	}
+	// A relaunch kills every manager, and a manager left running by an
+	// earlier ame (quit or restarted mid-match) may be the one whose
+	// injection host serves this game. Callers check too; this is the last
+	// look before the kill.
+	if gameProcessRunning() {
+		return nil, ErrGameRunning
+	}
 	stopLocked()
 	// Terminate any running manager before touching its files: the
 	// single-instance plugin would otherwise focus the old window, and the
