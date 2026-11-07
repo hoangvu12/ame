@@ -199,8 +199,11 @@ func TestRebuildBudgetWithMapsReady(t *testing.T) {
 		{"only old full copies", rebuildHistory{Recent: []rebuildSample{sample(98724, true, false)}, Heavy: []rebuildSample{sample(98724, true, false)}}, readyRebuildBudget},
 		// No ready sample yet: the champion-only rebuilds stand in.
 		{"champion rebuilds", friend, minRebuildBudget},
-		{"slow ready rebuild", rebuildHistory{Recent: []rebuildSample{sample(2212, false, false), sample(12000, false, true)}}, 12*time.Second*3/2 + 5*time.Second},
-		{"fast ready rebuilds", rebuildHistory{Recent: append(append([]rebuildSample{}, friend.Recent...), sample(1400, false, true)), Heavy: friend.Heavy}, minRebuildBudget},
+		{"slow ready rebuild", rebuildHistory{Recent: []rebuildSample{sample(2212, false, false), sample(12000, false, true)}}, 26 * time.Second},
+		{"fast ready rebuilds", rebuildHistory{Recent: append(append([]rebuildSample{}, friend.Recent...), sample(1400, false, true)), Heavy: friend.Heavy}, 4800 * time.Millisecond},
+		// The owner at 18:48: 0.2-1.1s rebuilds; the 15s floor kept a change
+		// out with 12s left.
+		{"owner's ready rebuilds", rebuildHistory{Recent: []rebuildSample{sample(9933, true, false), sample(1138, false, true), sample(1148, false, true), sample(235, false, true)}}, 4296 * time.Millisecond},
 	}
 	for _, c := range cases {
 		if got := rebuildBudgetFrom(c.history, true); got != c.want {

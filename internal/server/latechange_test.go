@@ -71,10 +71,10 @@ func stubLateChange(t *testing.T, running bool, state ltk.Prepared, timing match
 	probeMatchTiming = func() matchTiming { stubs.probes++; return timing }
 	stopRuntime = func() { stubs.stops++ }
 	disarmRuntime = func() { stubs.disarms++ }
-	setPreparedChampion("")
+	setPreparedChampion("", false)
 	t.Cleanup(func() {
 		gameRunning, preparedState, rebuildBudget, probeMatchTiming, stopRuntime, disarmRuntime = oldRunning, oldState, oldBudget, oldProbe, oldStop, oldDisarm
-		setPreparedChampion("")
+		setPreparedChampion("", false)
 	})
 	return stubs
 }
@@ -146,6 +146,10 @@ func TestDecideChange(t *testing.T) {
 		{"slow disk, 18s left", changeContext{armed: true, budget: friendBudget, timing: finalization(18 * time.Second)}, changeKept},
 		{"fast disk, 18s left", changeContext{armed: true, budget: 15 * time.Second, timing: finalization(18 * time.Second)}, changeAllowed},
 		{"fast disk, 12s left", changeContext{armed: true, budget: 15 * time.Second, timing: finalization(12 * time.Second)}, changeKept},
+		// The owner at 18:48 with the maps ready (1.1s rebuilds, budget
+		// 4.3s): the 4s left of the last apply plus the launch floor fit.
+		{"maps ready, 4s left", changeContext{armed: true, budget: 4296 * time.Millisecond, timing: finalization(4*time.Second + launchFloor)}, changeAllowed},
+		{"maps ready, 2s left", changeContext{armed: true, budget: 4296 * time.Millisecond, timing: finalization(2*time.Second + launchFloor)}, changeKept},
 		// A change queued behind a running rebuild pays for both.
 		{"behind a rebuild, too little time", changeContext{pending: true, pendingFor: 5 * time.Second, budget: 60 * time.Second, timing: finalization(100 * time.Second)}, changeKept},
 		{"behind a rebuild, enough time", changeContext{pending: true, pendingFor: 5 * time.Second, budget: 60 * time.Second, timing: finalization(120 * time.Second)}, changeAllowed},
@@ -186,11 +190,11 @@ func TestChampSelectTiming(t *testing.T) {
 		want  time.Duration
 		timed bool
 	}{
-		{"finalization, updated 5s ago", timer("FINALIZATION", 20000, 5*time.Second), 15 * time.Second, true},
+		{"finalization, updated 5s ago", timer("FINALIZATION", 20000, 5*time.Second), 15*time.Second + launchFloor, true},
 		{"pick turn ending: finalization still follows", timer("BAN_PICK", 3000, 0), 13 * time.Second, true},
 		{"game starting", timer("GAME_STARTING", 4000, 0), 0, true},
-		{"stale timer", timer("FINALIZATION", 3000, 10*time.Second), 0, true},
-		{"clock ahead of the client", timer("FINALIZATION", 20000, -3*time.Second), 20 * time.Second, true},
+		{"stale timer", timer("FINALIZATION", 3000, 10*time.Second), launchFloor, true},
+		{"clock ahead of the client", timer("FINALIZATION", 20000, -3*time.Second), 20*time.Second + launchFloor, true},
 		{"infinite timer", lcu.ChampSelectTimer{Phase: "FINALIZATION", IsInfinite: true}, 0, false},
 	}
 	for _, c := range cases {
@@ -203,24 +207,43 @@ func TestChampSelectTiming(t *testing.T) {
 
 func TestLateChangeAsksTheClientOnlyWhenAnArmedSetIsAtStake(t *testing.T) {
 	stubs := stubLateChange(t, false, ltk.Prepared{}, matchTiming{stage: stageLaunching}, time.Minute)
-	if verdict, _ := lateChange("104"); verdict != changeAllowed || stubs.probes != 0 {
+	if verdict, _ := lateChange("104", true); verdict != changeAllowed || stubs.probes != 0 {
 		t.Fatalf("nothing armed: verdict=%d probes=%d", verdict, stubs.probes)
 	}
 	preparedState = func() ltk.Prepared { return ltk.Prepared{Armed: true} }
-	setPreparedChampion("104")
-	if verdict, _ := lateChange("104"); verdict != changeKept || stubs.probes != 1 {
+	setPreparedChampion("104", true)
+	if verdict, _ := lateChange("104", true); verdict != changeKept || stubs.probes != 1 {
 		t.Fatalf("armed for this champion: verdict=%d probes=%d", verdict, stubs.probes)
 	}
 	// A set built for the champion the player swapped away from protects
 	// nothing of theirs: trying the new one cannot cost the own skin.
-	if verdict, _ := lateChange("238"); verdict != changeAllowed {
+	if verdict, _ := lateChange("238", true); verdict != changeAllowed {
 		t.Fatalf("set for another champion protected: %d", verdict)
+	}
+}
+
+// At 18:48 a swap to Anivia left a teammates-only set armed for her; the
+// player's own skin was then kept out as a late change.
+func TestSetWithoutTheOwnSkinNeverBlocksIt(t *testing.T) {
+	stubLateChange(t, false, ltk.Prepared{Armed: true}, matchTiming{stage: stageLaunching}, time.Minute)
+	setPreparedChampion("34", false)
+	if verdict, _ := lateChange("34", true); verdict != changeAllowed {
+		t.Fatalf("own skin kept out by a teammates-only set: %d", verdict)
+	}
+	// A teammates-only change still protects the armed set.
+	if verdict, _ := lateChange("34", false); verdict != changeKept {
+		t.Fatalf("teammates-only change replaced the armed set too late: %d", verdict)
+	}
+	// A set with the own skin is protected against another own skin.
+	setPreparedChampion("34", true)
+	if verdict, _ := lateChange("34", true); verdict != changeKept {
+		t.Fatalf("armed own skin replaced too late: %d", verdict)
 	}
 }
 
 func TestApplyKeepsTheArmedSetWhenTooLate(t *testing.T) {
 	stubLateChange(t, false, ltk.Prepared{Armed: true}, matchTiming{stage: stageLaunching, detail: "GameStart"}, 15*time.Second)
-	setPreparedChampion("104")
+	setPreparedChampion("104", true)
 	conn, peer := loopbackClient(t)
 	handleApply(conn, "104", "104042", "", "Graves", "Skin", "")
 	msg := readStatus(t, peer)
@@ -254,7 +277,7 @@ func TestApplyDuringAMatchAmeCannotSeeSaysSo(t *testing.T) {
 
 func TestPrefetchKeepsTheArmedSetWhenTooLate(t *testing.T) {
 	stubLateChange(t, false, ltk.Prepared{Armed: true}, finalization(18*time.Second), 153*time.Second)
-	setPreparedChampion("104")
+	setPreparedChampion("104", true)
 	conn, peer := loopbackClient(t)
 	handlePrefetch(conn, "104", "104042", "", "Graves", "Skin", "", selectionRevision.Load())
 	msg := readStatus(t, peer)

@@ -208,7 +208,10 @@ func rebuildBudgetFrom(history rebuildHistory, mapsReady bool) time.Duration {
 		}
 		switch {
 		case haveReady:
-			return budgetFor(ready)
+			// These rebuilds rewrite no map in full (0.2-1.2s on the owner's
+			// NVMe), so they need no floor and a smaller margin: the 15s
+			// floor kept a 1s change out with 12s left (2026-11-07 18:48).
+			return ready*2 + 2*time.Second
 		case haveLight:
 			return budgetFor(light)
 		}

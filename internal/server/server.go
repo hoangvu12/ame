@@ -395,7 +395,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	// Too late to change what the manager holds for this match (League
 	// runs, or champion select has less time left than this PC's rebuild):
 	// decided before any download or build, and again before the edit.
-	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+	if verdict, reason := lateChange(championID, hasSkin); verdict != changeAllowed {
 		reportBlockedChange(conn, "Apply", verdict, reason)
 		return
 	}
@@ -521,7 +521,7 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 
 	// The last look before the manager's library changes: downloads and the
 	// package build may have taken seconds.
-	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+	if verdict, reason := lateChange(championID, hasSkin); verdict != changeAllowed {
 		reportBlockedChange(conn, "Apply", verdict, reason)
 		return
 	}
@@ -530,11 +530,11 @@ func handleApply(conn *websocket.Conn, championID, skinID, baseSkinID, championN
 	// finds it)
 	err = startRuntime(config.OverlayDir)
 	if errors.Is(err, ltk.ErrGameRunning) {
-		verdict, reason := lateChange(championID)
+		verdict, reason := lateChange(championID, hasSkin)
 		reportBlockedChange(conn, "Apply", verdict, reason)
 		return
 	}
-	setPreparedChampion(championID)
+	setPreparedChampion(championID, hasSkin)
 	if err != nil {
 		preparationInvalid.Store(true)
 		stateMu.Lock()
@@ -622,7 +622,7 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 
 	// Too late to change what the manager holds for this match: decided
 	// before any download or build, and again before the edit.
-	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+	if verdict, reason := lateChange(championID, hasSkin); verdict != changeAllowed {
 		reportBlockedChange(conn, "Prefetch", verdict, reason)
 		return
 	}
@@ -735,17 +735,17 @@ func handlePrefetch(conn *websocket.Conn, championID, skinID, baseSkinID, champi
 	// The last look before the manager's library changes. A kept set leaves
 	// the bookkeeping on the armed set: only a package the manager accepted
 	// becomes the prebuilt one.
-	if verdict, reason := lateChange(championID); verdict != changeAllowed {
+	if verdict, reason := lateChange(championID, hasSkin); verdict != changeAllowed {
 		reportBlockedChange(conn, "Prefetch", verdict, reason)
 		return
 	}
 	err = startRuntime(config.OverlayDir)
 	if errors.Is(err, ltk.ErrGameRunning) {
-		verdict, reason := lateChange(championID)
+		verdict, reason := lateChange(championID, hasSkin)
 		reportBlockedChange(conn, "Prefetch", verdict, reason)
 		return
 	}
-	setPreparedChampion(championID)
+	setPreparedChampion(championID, hasSkin)
 	if err != nil {
 		preparationInvalid.Store(true)
 		stateMu.Lock()
@@ -804,7 +804,7 @@ func resetSelection(stop func()) {
 	lastSkinName = ""
 	lastChromaName = ""
 	lastModKey = ""
-	preparedChampionID = ""
+	preparedChampionID, preparedOwnSkin = "", false
 	stateMu.Unlock()
 
 	display.SetSkin("", "")

@@ -62,6 +62,12 @@ type matchTiming struct {
 // League's process appears seconds after that.
 const banPickFloor = 10 * time.Second
 
+// launchFloor is the least time between the end of finalization and the
+// creation of League's process. The owner's client logs (2026-11-06/07)
+// show the game log 2.3-7s after the GameStart phase, and at 18:48 the
+// process was created 3.4s after it; 1s keeps a wide margin.
+const launchFloor = time.Second
+
 // champSelectTiming converts the champion select timer into a lower bound
 // on the time until League starts. The timer's values are as of the
 // client's last update, so the time since then is subtracted.
@@ -83,7 +89,7 @@ func champSelectTiming(timer lcu.ChampSelectTimer, now time.Time) matchTiming {
 	case "PLANNING", "BAN_PICK":
 		t.remaining = left + banPickFloor
 	case "FINALIZATION":
-		t.remaining = left
+		t.remaining = left + launchFloor
 	default: // GAME_STARTING, or a phase this code does not know
 		t.remaining = 0
 	}
@@ -186,31 +192,40 @@ func decideChangeTiming(c changeContext) (changeVerdict, string) {
 }
 
 // preparedChampionID is the champion the set handed to the manager was built
-// for. A set prepared for another champion is not worth protecting. Guarded
-// by stateMu.
-var preparedChampionID string
+// for, and preparedOwnSkin whether it carries the player's own skin (not only
+// teammates' skins or custom mods). Guarded by stateMu.
+var (
+	preparedChampionID string
+	preparedOwnSkin    bool
+)
 
-func samePreparedChampion(championID string) bool {
+// protectsPrepared reports whether the set the manager holds is worth keeping
+// against a change for championID. A set prepared for another champion is
+// not, and neither is one without the player's skin when the change brings
+// it: at 18:48 a swap left a teammates-only set armed for the new champion,
+// and keeping it cost the player their own skin.
+func protectsPrepared(championID string, ownSkin bool) bool {
 	stateMu.Lock()
-	prepared := preparedChampionID
+	prepared, preparedOwn := preparedChampionID, preparedOwnSkin
 	stateMu.Unlock()
 	if prepared == "" || championID == "" || championID == "0" {
 		return true
 	}
-	return prepared == championID
+	return prepared == championID && (preparedOwn || !ownSkin)
 }
 
-func setPreparedChampion(championID string) {
+func setPreparedChampion(championID string, ownSkin bool) {
 	stateMu.Lock()
-	preparedChampionID = championID
+	preparedChampionID, preparedOwnSkin = championID, ownSkin
 	stateMu.Unlock()
 }
 
-// lateChange weighs a change for championID against what the manager holds.
-// The client is asked about timing only when an armed set is at stake.
-func lateChange(championID string) (changeVerdict, string) {
+// lateChange weighs a change for championID (ownSkin: it carries the
+// player's own skin) against what the manager holds. The client is asked
+// about timing only when an armed set is at stake.
+func lateChange(championID string, ownSkin bool) (changeVerdict, string) {
 	state := preparedState()
-	same := samePreparedChampion(championID)
+	same := protectsPrepared(championID, ownSkin)
 	c := changeContext{
 		gameRunning: gameRunning(),
 		armed:       state.Armed && same,
