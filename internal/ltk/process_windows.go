@@ -19,7 +19,7 @@ var stopAfterGame = func(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	script := fmt.Sprintf("while (Get-Process -Name 'League of Legends' -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 3 }; Start-Sleep -Seconds 5; taskkill /PID %d /T /F", cmd.Process.Pid)
+	script := afterGameScript(cmd.Process.Pid)
 	watcher := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
 	hide(watcher)
 	if err := watcher.Start(); err != nil {
@@ -27,4 +27,11 @@ var stopAfterGame = func(cmd *exec.Cmd) {
 		return
 	}
 	go func() { _ = watcher.Process.Release() }()
+}
+
+// afterGameScript waits out the game, then kills the manager by pid. A new
+// ame may have replaced that manager meanwhile and its pid gone to another
+// program, so the kill is limited to a process still named like the manager.
+func afterGameScript(pid int) string {
+	return fmt.Sprintf("while (Get-Process -Name 'League of Legends' -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 3 }; Start-Sleep -Seconds 5; taskkill /PID %d /FI 'IMAGENAME eq %s' /T /F", pid, managerExeName)
 }
