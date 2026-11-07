@@ -270,6 +270,9 @@ func handleCleanupRequest(conn *websocket.Conn) {
 		// it set when sending the request; a "kept" can also answer a
 		// selection.
 		sendStatus(conn, "cleanupDeclined", "Skins cannot change during a match. Changes apply next match.")
+		// The game process may only be closing (post-game phases): the
+		// cleanup runs once it is gone.
+		afterGame(true)
 		return
 	}
 	resetSelection(disarmRuntime)

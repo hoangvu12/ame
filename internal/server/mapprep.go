@@ -48,13 +48,15 @@ func scheduleMapPrep(reason string, delay time.Duration) {
 	mapPrepTimer = time.AfterFunc(delay, func() { runMapPrep(reason) })
 }
 
+const blockerGame = "League is running"
+
 // mapPrepBlocker says why a preparation must not start now, or "".
 func mapPrepBlocker() string {
 	if !ready.Load() {
 		return "ame is still starting"
 	}
 	if gameRunning() {
-		return "League is running"
+		return blockerGame
 	}
 	if runtimeRunning() {
 		return "a skin set is armed"
@@ -71,6 +73,9 @@ func mapPrepBlocker() string {
 func runMapPrep(reason string) {
 	if why := mapPrepBlocker(); why != "" {
 		display.Log(fmt.Sprintf("LTK: map preparation not started (reason=%s): %s", reason, why))
+		if why == blockerGame {
+			afterGame(false) // comes back when the game ends
+		}
 		return
 	}
 	// A selection being prepared right now goes first; it arms the patcher,

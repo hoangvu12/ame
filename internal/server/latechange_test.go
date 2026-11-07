@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -254,6 +255,10 @@ func TestPrefetchKeepsTheArmedSetWhenTooLate(t *testing.T) {
 // while League runs that must not stop the patcher serving the match.
 func TestCleanupRequestNeverStopsTheRuntimeDuringAMatch(t *testing.T) {
 	stubs := stubLateChange(t, true, ltk.Prepared{Armed: true}, matchTiming{}, 15*time.Second)
+	var game atomic.Bool
+	game.Store(true)
+	gameRunning = game.Load
+	ended := expectGameEndWaiter(t)
 	conn, peer := loopbackClient(t)
 	handleCleanupRequest(conn)
 	if stubs.stops != 0 || stubs.disarms != 0 {
@@ -263,15 +268,17 @@ func TestCleanupRequestNeverStopsTheRuntimeDuringAMatch(t *testing.T) {
 		t.Fatalf("status=%+v", msg)
 	}
 	// After the match the patcher is disarmed; the manager stays for the
-	// map preparation and the next selection.
-	gameRunning = func() bool { return false }
+	// map preparation and the next selection. (The armed stub makes the
+	// after-game waiter drop the declined request.)
+	game.Store(false)
+	waitGameEnd(t, ended)
 	handleCleanupRequest(conn)
 	if stubs.disarms != 1 || stubs.stops != 0 {
 		t.Fatalf("cleanup after the match: disarms=%d stops=%d, want 1 and 0", stubs.disarms, stubs.stops)
 	}
 	// Uninstall, the stuck-game button and shutdown stop everything,
 	// unconditionally.
-	gameRunning = func() bool { return true }
+	game.Store(true)
 	HandleCleanup()
 	if stubs.stops != 1 || stubs.disarms != 1 {
 		t.Fatalf("explicit cleanup: stops=%d disarms=%d, want 1 and 1", stubs.stops, stubs.disarms)

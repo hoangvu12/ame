@@ -1,21 +1,23 @@
 package server
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 type mapPrepStubs struct {
-	game, armed bool
-	stage       launchStage
-	reasons     []string
+	game    atomic.Bool
+	armed   bool
+	stage   launchStage
+	reasons []string
 }
 
 func stubMapPrep(t *testing.T) *mapPrepStubs {
 	t.Helper()
 	s := &mapPrepStubs{stage: stageBefore}
 	oldGame, oldRunning, oldProbe, oldPrepare, oldReady := gameRunning, runtimeRunning, probeMatchTiming, prepareMaps, ready.Load()
-	gameRunning = func() bool { return s.game }
+	gameRunning = func() bool { return s.game.Load() }
 	runtimeRunning = func() bool { return s.armed }
 	probeMatchTiming = func() matchTiming { return matchTiming{stage: s.stage} }
 	prepareMaps = func(reason string) error { s.reasons = append(s.reasons, reason); return nil }
@@ -40,7 +42,7 @@ func TestMapPrepRunsOnlyWhenNothingIsAtStake(t *testing.T) {
 	}{
 		{"idle client", func(*mapPrepStubs) {}, true},
 		{"client closed", func(s *mapPrepStubs) { s.stage = stageUnknown }, true},
-		{"League running", func(s *mapPrepStubs) { s.game = true }, false},
+		{"League running", func(s *mapPrepStubs) { s.game.Store(true) }, false},
 		{"skin set armed", func(s *mapPrepStubs) { s.armed = true }, false},
 		{"champion select", func(s *mapPrepStubs) { s.stage = stageChampSelect }, false},
 		{"match starting", func(s *mapPrepStubs) { s.stage = stageLaunching }, false},
@@ -49,10 +51,16 @@ func TestMapPrepRunsOnlyWhenNothingIsAtStake(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s := stubMapPrep(t)
+			ended := expectGameEndWaiter(t)
 			c.setup(s)
 			runMapPrep("test")
 			if ran := len(s.reasons) == 1; ran != c.runs {
 				t.Fatalf("prepared=%v, want %v", ran, c.runs)
+			}
+			if s.game.Load() {
+				// Blocked by the game: the preparation comes back after it.
+				s.game.Store(false)
+				waitGameEnd(t, ended)
 			}
 		})
 	}
