@@ -1,8 +1,2 @@
-- Opening ame during champion select is much faster: the skin tool now starts as soon as ame opens
-- Skin changes late in champion select no longer cost you the skins already prepared for the match
-- Map files are prepared ahead of time between games, so last-second skin changes apply faster
-- The skin tool stays ready between games instead of restarting every match
-- Quitting or restarting ame during a match no longer shuts the skin tool down under the running game
-- Fixed ame wrongly saying a match had no skins after briefly losing contact with the skin tool
-- Fixed cleanup after a match being skipped when the game took a moment to close
-- Added a diagnostics download in settings and in game to help report problems
+- Skin changes late in champion select now apply to the current match far more often instead of waiting for the next one
+- Fixed your own skin being skipped after swapping champions late in champion select
