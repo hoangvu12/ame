@@ -20,6 +20,7 @@ import (
 	"github.com/hoangvu12/ame/internal/game"
 	"github.com/hoangvu12/ame/internal/i18n"
 	"github.com/hoangvu12/ame/internal/lcu"
+	"github.com/hoangvu12/ame/internal/ltk"
 	"github.com/hoangvu12/ame/internal/server"
 	"github.com/hoangvu12/ame/internal/setup"
 	"github.com/hoangvu12/ame/internal/skin"
@@ -438,6 +439,17 @@ func main() {
 
 	// The session's log starts here, so what happens during setup is kept.
 	display.OpenDiagnostics(Version)
+
+	// Players usually open League first and ame inside champion select. The
+	// manager's own start takes seconds, so it runs beside ame's setup
+	// rather than after it.
+	if lcu.IsClientRunning() {
+		go func() {
+			if err := ltk.WarmManagerEarly(); err != nil {
+				display.Log("LTK: early manager start: " + err.Error())
+			}
+		}()
+	}
 
 	// Wire up uninstall callback to trigger graceful exit
 	server.OnUninstall = func() {

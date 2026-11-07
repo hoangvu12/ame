@@ -1012,6 +1012,10 @@ func killManagerTree(cmd *exec.Cmd) {
 // patcher stays stopped and the library untouched; the idle stop ends a
 // manager nothing uses. Never while League runs.
 func WarmManager(reason string) error {
+	return warmManager(reason, managerFetch)
+}
+
+func warmManager(reason string, fetch func() (string, error)) error {
 	if MapPrepRunning() {
 		return nil // the preparation launches it
 	}
@@ -1025,7 +1029,7 @@ func WarmManager(reason string) error {
 	}
 	started := time.Now()
 	display.Log(fmt.Sprintf("LTK: starting the manager ahead of the first skin set (reason=%s)", reason))
-	if _, err := ensureManagerLocked(); err != nil {
+	if _, err := ensureManagerWith(fetch); err != nil {
 		if errors.Is(err, ErrGameRunning) {
 			return nil
 		}
@@ -1036,9 +1040,39 @@ func WarmManager(reason string) error {
 	return nil
 }
 
+// WarmManagerEarly is WarmManager at the very start of ame, before setup
+// has checked for a manager release: players usually open League first and
+// ame inside champion select, and the manager's own start (Tauri plus its
+// WebView2 window, 1-14s on the owner's PC) then runs beside ame's setup
+// instead of after it. It launches only an already delivered manager, with
+// no network call; setup's release check still runs, and a newer release
+// it cannot write while this one runs is installed at the next launch.
+func WarmManagerEarly() error {
+	if _, err := deliveredManager(); err != nil {
+		return nil // first run: setup delivers it, then the usual warm-up
+	}
+	return warmManager("ame start", deliveredManager)
+}
+
+// deliveredManager is the manager delivered earlier, without a release
+// check.
+func deliveredManager() (string, error) {
+	exe := filepath.Join(managerDir, managerExeName)
+	if !managerPairUsable(exe, filepath.Join(managerDir, managerHostName)) {
+		return "", fmt.Errorf("no LTK Manager delivered yet")
+	}
+	return exe, nil
+}
+
 // ensureManagerLocked returns a live manager session, launching the manager
 // when needed. The caller holds managerMu.
 func ensureManagerLocked() (*managerSession, error) {
+	return ensureManagerWith(managerFetch)
+}
+
+// ensureManagerWith is ensureManagerLocked with the manager exe found by
+// fetch.
+func ensureManagerWith(fetch func() (string, error)) (*managerSession, error) {
 	if m := manager; m != nil && m.alive() {
 		if _, err := m.cdp.patcherStatus(); err == nil {
 			return m, nil
@@ -1065,7 +1099,7 @@ func ensureManagerLocked() (*managerSession, error) {
 	// The manager runtime is delivered to the shared cache, one download for
 	// the manager and its bundled injector. The manager delivers the patcher
 	// DLL itself.
-	exe, err := managerFetch()
+	exe, err := fetch()
 	if err != nil {
 		return nil, fmt.Errorf("LTK manager runtime: %w", err)
 	}

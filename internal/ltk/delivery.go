@@ -125,8 +125,13 @@ func ManagerFetch() (string, error) {
 
 	if managerPairUsable(exePath, hostPath) {
 		display.Log("LTK: using the previously delivered LTK Manager runtime")
-		// A failed check is not repeated at every launch either.
-		markReleaseChecked()
+		// A failed check is not repeated at every launch either. A newer
+		// release that could not be written (the manager started early from
+		// the delivered copy holds its exe) is retried at the next launch,
+		// which kills the manager first.
+		if err != nil {
+			markReleaseChecked()
+		}
 		return exePath, nil
 	}
 	return "", fmt.Errorf("LTK Manager runtime is unavailable: %v (ame must reach GitHub once to deliver it)", err)
