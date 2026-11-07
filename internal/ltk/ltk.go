@@ -989,6 +989,38 @@ func killManagerTree(cmd *exec.Cmd) {
 	}
 }
 
+// WarmManager launches the manager ahead of the first skin set, so a pick
+// made soon after ame or the League client starts (champion select already
+// running) does not wait for a cold launch: at 22:14 on the owner's PC,
+// beside a loading League, 11.4s passed between the built package and a
+// usable manager, out of the 18s between ame's start and the scan. The
+// patcher stays stopped and the library untouched; the idle stop ends a
+// manager nothing uses. Never while League runs.
+func WarmManager(reason string) error {
+	if MapPrepRunning() {
+		return nil // the preparation launches it
+	}
+	managerMu.Lock()
+	defer managerMu.Unlock()
+	if m := manager; m != nil && m.alive() {
+		return nil
+	}
+	if gameProcessRunning() {
+		return nil
+	}
+	started := time.Now()
+	display.Log(fmt.Sprintf("LTK: starting the manager ahead of the first skin set (reason=%s)", reason))
+	if _, err := ensureManagerLocked(); err != nil {
+		if errors.Is(err, ErrGameRunning) {
+			return nil
+		}
+		return err
+	}
+	display.Log(fmt.Sprintf("LTK: manager warm in %s (reason=%s)", time.Since(started).Round(100*time.Millisecond), reason))
+	scheduleIdleStop()
+	return nil
+}
+
 // ensureManagerLocked returns a live manager session, launching the manager
 // when needed. The caller holds managerMu.
 func ensureManagerLocked() (*managerSession, error) {

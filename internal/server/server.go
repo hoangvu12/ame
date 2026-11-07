@@ -893,6 +893,7 @@ func handleConnection(conn *websocket.Conn) {
 	// The League client just started or reloaded, often right after an
 	// update replaced the maps.
 	scheduleMapPrep("client connected", mapPrepClientDelay)
+	warmManagerSoon("client connected")
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -1431,6 +1432,9 @@ var ready atomic.Bool
 func SetReady() {
 	ready.Store(true)
 	broadcastReady()
+	if clientRunning() {
+		warmManagerSoon("startup")
+	}
 	scheduleMapPrep("startup", mapPrepStartupDelay)
 }
 

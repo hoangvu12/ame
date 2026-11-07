@@ -35,6 +35,8 @@ func TestMain(m *testing.M) {
 	prepareMaps = func(string) error { return nil }
 	runtimeRunning = func() bool { return false }
 	mapsPreparing = func() bool { return false }
+	warmManager = func(string) error { return nil }
+	clientRunning = func() bool { return false }
 	dir, err := os.MkdirTemp("", "ame-server-test-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -187,6 +187,35 @@ func TestManagerLaunchNeverKillsAManagerServingAGame(t *testing.T) {
 	}
 }
 
+func TestWarmManagerKeepsALiveSession(t *testing.T) {
+	fake := &fakePatcher{running: true}
+	m := installFakeManager(t, fake)
+	if err := WarmManager("test"); err != nil { // a launch would panic
+		t.Fatal(err)
+	}
+	managerMu.Lock()
+	kept := manager == m
+	managerMu.Unlock()
+	if !kept || fake.stops() != 0 {
+		t.Fatal("warming replaced or disarmed a live manager")
+	}
+}
+
+func TestWarmManagerWaitsOutAGame(t *testing.T) {
+	oldGame := gameProcessRunning
+	gameProcessRunning = func() bool { return true }
+	defer func() { gameProcessRunning = oldGame }()
+	if err := WarmManager("test"); err != nil { // a launch would panic
+		t.Fatal(err)
+	}
+	managerMu.Lock()
+	launched := manager != nil
+	managerMu.Unlock()
+	if launched {
+		t.Fatal("a manager was launched while League ran")
+	}
+}
+
 // Quitting ame during a match must not kill the injection host under the
 // game: the Garen game whose host was killed mid-match hung on exit. The
 // manager is handed to the after-game stop instead.
