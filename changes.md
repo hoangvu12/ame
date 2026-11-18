@@ -1,2 +1,2 @@
-- Skins work again right after a League update, instead of waiting for the skin packages to be rebuilt for the new patch
-- ame now says when the skin packages are built for an older patch of League
+- Skin changes late in champion select now apply to the current match far more often instead of waiting for the next one
+- Fixed your own skin being skipped after swapping champions late in champion select

@@ -75,9 +75,6 @@ func leagueSkinsFreshPath(r PackageRequest) string {
 	return path
 }
 
-// leagueSkinsPackageFor is leagueSkinsEnsurePackage, replaceable in tests.
-var leagueSkinsPackageFor = leagueSkinsEnsurePackage
-
 // leagueSkinsEnsurePackage returns the LeagueSkins package for a selection,
 // revalidating an older cached copy and falling back to it while GitHub is
 // unreachable.
