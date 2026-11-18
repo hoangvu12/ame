@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hoangvu12/ame/internal/config"
 	"github.com/hoangvu12/ame/internal/game"
 )
 
@@ -31,18 +30,6 @@ var acquireContext, stopAcquire = context.WithCancel(context.Background())
 
 // Shutdown cancels queued and in-flight package downloads.
 func Shutdown() { stopAcquire() }
-
-// RemoveLocalGenerator deletes the skin generator bundles that versions with
-// on-device generation installed. Packages are now only downloaded.
-func RemoveLocalGenerator() {
-	dir := filepath.Join(config.AmeDir, "generators")
-	if _, err := os.Stat(dir); err != nil {
-		return
-	}
-	if err := os.RemoveAll(dir); err != nil {
-		logSkin("could not remove old skin generator: " + err.Error())
-	}
-}
 
 func validRequest(r PackageRequest) error {
 	c, e1 := strconv.Atoi(r.ChampionID)
@@ -122,9 +109,24 @@ func ensurePackage(ctx context.Context, r PackageRequest, gameDir string) (strin
 		return "", err
 	}
 	if !useCDN() {
-		path, err := leagueSkinsEnsurePackage(ctx, r)
+		path, err := leagueSkinsPackageFor(ctx, r)
 		if err != nil {
 			return "", fmt.Errorf("skin package unavailable for %s: %w", r.SkinID, err)
+		}
+		if gameDir != "" {
+			if pkg, installed, mismatch := patchMismatch(path, gameDir); mismatch {
+				// The published package was built for another patch of
+				// League. The patcher DLL refuses such an overlay and
+				// disables it, which leaves the match without any skin,
+				// so the package is built from the installed files instead.
+				logSkin(fmt.Sprintf("the published package for %s is for patch %s, League is patch %s", r.SkinID, pkg, installed))
+				local, err := localPackage(ctx, r, gameDir)
+				if err == nil {
+					return local, nil
+				}
+				logSkin("could not build " + r.SkinID + " from the installed files: " + err.Error())
+				setStalePackageNotice(fmt.Sprintf("The skin packages are built for patch %s, and League is on patch %s.", pkg, installed))
+			}
 		}
 		logSkin("using LeagueSkins package " + r.SkinID)
 		return path, nil
@@ -169,9 +171,16 @@ func GetValidCachedPath(championID, skinID, baseSkinID string) string {
 	}
 	if !useCDN() {
 		path := leagueSkinsFreshPath(r)
-		if path != "" {
-			logSkin("using LeagueSkins package " + r.SkinID + " (cached)")
+		if path == "" {
+			return ""
 		}
+		gameDir := game.FindGameDir()
+		if gameDir != "" && !packagePatchMatches(path, installedPatch(gameDir)) {
+			// A package for another patch cannot be used: the caller
+			// fetches a usable one instead.
+			return ""
+		}
+		logSkin("using LeagueSkins package " + r.SkinID + " (cached)")
 		return path
 	}
 	gameDir := game.FindGameDir()

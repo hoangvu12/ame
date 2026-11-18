@@ -23,6 +23,7 @@ import (
 	"github.com/hoangvu12/ame/internal/lcu"
 	"github.com/hoangvu12/ame/internal/ltk"
 	"github.com/hoangvu12/ame/internal/modtools"
+	"github.com/hoangvu12/ame/internal/skin"
 )
 
 // Variables so tests never depend on, or act on, a client, manager or game on
@@ -276,6 +277,9 @@ func reportOverlayVerdict(pid uint64, verdict string) {
 	message, ok := verdictMessages[verdict]
 	if !ok {
 		return
+	}
+	if notice := skin.StalePackageNotice(); notice != "" {
+		message += " " + notice
 	}
 	display.SetOverlayKey("display.value.overlay_inactive", nil)
 	broadcastStatus("error", message)

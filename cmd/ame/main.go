@@ -465,7 +465,11 @@ func main() {
 	// forever to connect. Commands that need setup are gated until SetReady;
 	// everything else (state, settings, custom mods) works immediately.
 	go func() {
-		go skin.RemoveLocalGenerator()
+		skin.RemoveLocalGenerator()
+		// The generator builds a skin package from the installed files when
+		// the published packages are for another patch of League, so it is
+		// installed before the first selection needs it.
+		skin.PrepareLocalGenerator()
 		if err := server.StartServer(PORT); err != nil {
 			display.Log(fmt.Sprintf("! Server error: %v", err))
 			fmt.Printf("\n  ! Could not start ame's server: %v\n", err)

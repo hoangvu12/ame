@@ -67,6 +67,11 @@ func ArtifactKey(skinID string) string {
 	if m.Source == "leagueskins" && m.LeagueSkins != nil && len(m.LeagueSkins.Digest) >= 12 {
 		return skinID + "@" + m.LeagueSkins.Digest[:12]
 	}
+	if m.Source == "local" && m.Local != nil && len(m.Local.Digest) >= 12 {
+		// A package generated from the installed files changes with the
+		// installation, so its identity is its content digest too.
+		return skinID + "@" + m.Local.Digest[:12]
+	}
 	return skinID
 }
 
