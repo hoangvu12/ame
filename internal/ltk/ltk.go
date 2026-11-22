@@ -377,6 +377,7 @@ func Build(modsDir, overlay, game, names string) error {
 // managerSession is one LTK Manager process driven over the DevTools
 // protocol. The manager stays resident across skin switches.
 type managerSession struct {
+	league  string // installation configured when this manager was launched
 	cmd     *exec.Cmd
 	cdp     *cdpClient
 	modID   string            // library id of the installed skin package
@@ -1075,8 +1076,17 @@ func ensureManagerLocked() (*managerSession, error) {
 // ensureManagerWith is ensureManagerLocked with the manager exe found by
 // fetch.
 func ensureManagerWith(fetch func() (string, error)) (*managerSession, error) {
+	league := findGameDir()
+	if league == "" {
+		league = gameDir
+	}
 	if m := manager; m != nil && m.alive() {
-		if _, err := m.cdp.patcherStatus(); err == nil {
+		if m.league != "" && league != "" && !strings.EqualFold(filepath.Clean(m.league), filepath.Clean(league)) {
+			if gameProcessRunning() {
+				return nil, ErrGameRunning
+			}
+			display.Log("LTK: League installation changed; restarting the idle manager with the active client's path")
+		} else if _, err := m.cdp.patcherStatus(); err == nil {
 			return m, nil
 		}
 		display.Log("LTK: manager session lost its DevTools connection; relaunching")
@@ -1115,10 +1125,6 @@ func ensureManagerWith(fetch func() (string, error)) (*managerSession, error) {
 	// The first launch of a run precedes any Build, so gameDir may still be
 	// empty: without a path the manager auto-detects, which can pick another
 	// install than the one ame patches.
-	league := gameDir
-	if league == "" {
-		league = findGameDir()
-	}
 	if err := configureManagerSettings(league); err != nil {
 		display.Log("LTK: manager settings: " + err.Error())
 	}
@@ -1162,6 +1168,7 @@ func ensureManagerWith(fetch func() (string, error)) (*managerSession, error) {
 		return nil, fmt.Errorf("LTK manager bridge: %s", result)
 	}
 	m := &managerSession{
+		league: league,
 		cmd:    cmd,
 		cdp:    c,
 		stop:   make(chan struct{}),

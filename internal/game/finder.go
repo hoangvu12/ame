@@ -66,9 +66,23 @@ func getSavedGameDir() string {
 	return ""
 }
 
-// SaveGameDir persists the game directory to config
+// SaveGameDir persists the game directory and refreshes cached detection.
 func SaveGameDir(dir string) {
 	config.SetGamePath(dir)
+	storeCachedGameDir(dir)
+}
+
+// SelectGameDir validates a manual selection before changing configuration.
+func SelectGameDir(dir string) error {
+	dir = filepath.Clean(strings.Trim(strings.TrimSpace(dir), `"'`))
+	if !isValidGameDir(dir) {
+		return fmt.Errorf("League of Legends.exe not found in the selected Game folder")
+	}
+	if err := config.SetGamePath(dir); err != nil {
+		return err
+	}
+	storeCachedGameDir(dir)
+	return nil
 }
 
 // addCandidate appends dir to candidates if it's a valid game dir and not already present.
@@ -108,22 +122,31 @@ func newestGameDir(candidates []string) string {
 	return best
 }
 
-// FindGameDir finds League of Legends Game directory using multiple detection methods.
-// When multiple installations exist it picks the one with the most recently
-// modified League of Legends.exe (i.e. the actively-patched installation).
+var activeClientGameDir = findFromRunningProcess
+
+// FindGameDir prioritizes the open League client, then a cached or saved
+// selection. Modification time is only a fallback for unconfigured machines.
 func FindGameDir() string {
+	// The open client identifies the installation the player actually uses.
+	// Check before the cache: ame often starts before the League client.
+	if dir := activeClientGameDir(); dir != "" {
+		storeCachedGameDir(dir)
+		if config.GamePath() != dir {
+			SaveGameDir(dir)
+		}
+		return dir
+	}
 	// 0. In-memory cache
 	if dir := loadCachedGameDir(); dir != "" {
 		return dir
 	}
 
-	// Collect all candidate directories, then pick the newest.
-	var candidates []string
-
-	// 1. Saved path from previous run (as candidate, not final answer)
+	// Without a running client, honor the validated saved selection.
 	if dir := getSavedGameDir(); dir != "" {
-		candidates = addCandidate(candidates, dir)
+		storeCachedGameDir(dir)
+		return dir
 	}
+	var candidates []string
 
 	// 2. RiotClientInstalls.json (authoritative — checked early)
 	candidates = appendFromRiotClientInstalls(candidates)

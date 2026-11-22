@@ -941,10 +941,7 @@ func handleConnection(conn *websocket.Conn) {
 			handleCleanupRequest(conn)
 
 		case "getGamePath":
-			path := config.GamePath()
-			if path == "" {
-				path = game.FindGameDir()
-			}
+			path := game.FindGameDir()
 			resp := GamePathMessage{Type: "gamePath", Path: path}
 			data, _ := json.Marshal(resp)
 			writeClientMessage(conn, websocket.TextMessage, data)
@@ -954,8 +951,8 @@ func handleConnection(conn *websocket.Conn) {
 			if err := json.Unmarshal(message, &msg); err != nil {
 				continue
 			}
-			if err := config.SetGamePath(msg.Path); err != nil {
-				sendStatus(conn, "error", "Failed to save game path")
+			if err := game.SelectGameDir(msg.Path); err != nil {
+				sendStatus(conn, "error", err.Error())
 			} else {
 				resp := GamePathMessage{Type: "gamePath", Path: msg.Path}
 				data, _ := json.Marshal(resp)

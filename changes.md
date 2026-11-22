@@ -1,3 +1,4 @@
-- Fixed interrupted manager connections causing overly long skin rebuild estimates and blocking skin changes.
-- Fixed Download logs silently doing nothing in the League client. Logs are now saved locally and shown in Windows Explorer.
-- Added progress and error feedback when saving logs.
+- Fixed automatic League detection choosing an unused installation instead of the open League client.
+- Fixed changing the game folder leaving the old folder cached.
+- Fixed LTK Manager keeping an old installation path after the active League installation changes. Running matches are left untouched.
+- Added validation for manually selected game folders.
