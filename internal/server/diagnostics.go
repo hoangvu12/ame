@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -135,6 +136,43 @@ func buildDiagnosticZIP(local, roaming, version string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// saveDiagnosticZIP avoids Chromium download handling in the embedded League
+// client. Use a unique file and reveal it without putting its path in a shell.
+func saveDiagnosticZIP() (string, error) {
+	data, err := buildDiagnosticZIP(os.Getenv("LOCALAPPDATA"), os.Getenv("APPDATA"), display.GetVersion())
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(os.Getenv("LOCALAPPDATA"), "ame", "diagnostics")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "ame-diagnostics-*.zip")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	_, writeErr := f.Write(data)
+	closeErr := f.Close()
+	if writeErr != nil || closeErr != nil {
+		os.Remove(name)
+		if writeErr != nil {
+			return "", writeErr
+		}
+		return "", closeErr
+	}
+	return name, nil
+}
+
+var revealDiagnosticZIP = func(path string) error {
+	cmd := exec.Command("explorer.exe", "/select,"+path)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go cmd.Wait()
+	return nil
 }
 
 // handleDiagnosticsDownload exports only bounded log tails, never settings.

@@ -482,6 +482,8 @@ func observeRebuild(status patcherStatus, now time.Time) bool {
 			kind = "prepared map WADs updated in place"
 		}
 		display.Log(fmt.Sprintf("LTK: skin set reached the patcher scan %s after the edit (%s); rebuild budget now %s", d.Round(100*time.Millisecond), kind, RebuildBudget().Round(time.Second)))
+	} else if r.measurementLost {
+		display.Log("LTK: skin set reached the patcher scan; rebuild timing discarded because the manager connection was interrupted")
 	} else {
 		display.Log("LTK: skin set reached the patcher scan")
 	}

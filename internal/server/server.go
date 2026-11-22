@@ -1202,6 +1202,20 @@ func handleConnection(conn *websocket.Conn) {
 			data, _ := json.Marshal(state)
 			writeClientMessage(conn, websocket.TextMessage, data)
 
+		case "exportDiagnostics":
+			go func() {
+				path, err := saveDiagnosticZIP()
+				resp := map[string]interface{}{"type": "diagnosticsExported"}
+				if err != nil {
+					resp["error"] = "Unable to save logs: " + err.Error()
+				} else {
+					resp["path"] = path
+					resp["revealed"] = revealDiagnosticZIP(path) == nil
+				}
+				data, _ := json.Marshal(resp)
+				writeClientMessage(conn, websocket.TextMessage, data)
+			}()
+
 		case "getLogs":
 			logs := display.GetLogsJSON()
 			version := display.GetVersion()

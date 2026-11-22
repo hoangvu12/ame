@@ -58,10 +58,10 @@ type cdpClient struct {
 	// redials url.
 	discover func() (string, error)
 	conn     *websocket.Conn
-	mu     sync.Mutex
-	next   int64
-	broken bool
-	closed bool
+	mu       sync.Mutex
+	next     int64
+	broken   bool
+	closed   bool
 }
 
 func dialPage(wsURL string) (*websocket.Conn, error) {
@@ -93,6 +93,13 @@ func (c *cdpClient) close() {
 
 // fail marks the connection unusable after a failed read or write.
 func (c *cdpClient) fail() {
+	// A timeout tells us nothing about when a build ended. Readiness may
+	// recover, but this edit can no longer supply a trustworthy timing sample.
+	snapshotMu.Lock()
+	if rebuild != nil {
+		rebuild.measurementLost = true
+	}
+	snapshotMu.Unlock()
 	c.broken = true
 	c.conn.Close()
 }

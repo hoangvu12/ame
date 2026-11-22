@@ -1,11 +1,15 @@
-import { WS_URL } from './constants';
+import { exportDiagnostics } from './websocket';
+import { toastPromise } from './toast';
 
-// A normal browser download: no upload and no WebSocket round trip needed.
+// The embedded League browser can silently ignore anchor/blob downloads.
+// Save through Ame instead and reveal the real file in Windows Explorer.
 export function downloadDiagnosticZIP() {
-  const a = document.createElement('a');
-  a.href = `${WS_URL.replace(/^ws:/, 'http:')}/diagnostics.zip`;
-  a.download = 'ame-diagnostics.zip';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const pending = exportDiagnostics();
+  toastPromise(pending, {
+    loading: 'Saving logs…',
+    success: (result) => `Logs saved: ${result.path}`,
+    error: (error) => error.message || 'Unable to save logs. Try again.',
+  });
+  pending.catch(() => {});
+  return pending;
 }

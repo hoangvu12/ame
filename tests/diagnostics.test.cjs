@@ -3,20 +3,33 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
-test('diagnostics uses explicit local attachment download without upload', async () => {
-  let clicked = false, removed = false, appended = false;
-  const anchor = { click() { clicked = true; }, remove() { removed = true; } };
-  const context = vm.createContext({ document: {
-    createElement(tag) { assert.equal(tag, 'a'); return anchor; },
-    body: { appendChild(a) { assert.equal(a, anchor); appended = true; } },
-  } });
+async function load(exporter) {
+  let feedback;
+  const context = vm.createContext({});
   const mod = new vm.SourceTextModule(fs.readFileSync('src/diagnostics.js', 'utf8'), { context });
-  await mod.link(() => new vm.SyntheticModule(['WS_URL'], function () {
-    this.setExport('WS_URL', 'ws://localhost:18765');
-  }, { context }));
+  await mod.link((name) => {
+    const values = name === './websocket' ? { exportDiagnostics: exporter } : {
+      toastPromise: (promise, options) => { feedback = { promise, options }; },
+    };
+    return new vm.SyntheticModule(Object.keys(values), function () {
+      for (const [key, value] of Object.entries(values)) this.setExport(key, value);
+    }, { context });
+  });
   await mod.evaluate();
-  mod.namespace.downloadDiagnosticZIP();
-  assert.equal(anchor.href, 'http://localhost:18765/diagnostics.zip');
-  assert.equal(anchor.download, 'ame-diagnostics.zip');
-  assert.ok(clicked && removed && appended);
+  return { download: mod.namespace.downloadDiagnosticZIP, feedback: () => feedback };
+}
+
+test('export saves through backend and reports the actual saved path, without browser downloads', async () => {
+  const result = { path: 'C:\\logs\\ame.zip' };
+  const app = await load(() => Promise.resolve(result));
+  assert.equal(await app.download(), result);
+  assert.match(app.feedback().options.loading, /Saving/);
+  assert.match(app.feedback().options.success(result), /C:\\logs\\ame.zip/);
+});
+
+test('export surfaces backend failure instead of silently doing nothing', async () => {
+  const error = new Error('Ame is disconnected');
+  const app = await load(() => Promise.reject(error));
+  await assert.rejects(app.download(), /disconnected/);
+  assert.equal(app.feedback().options.error(error), error.message);
 });

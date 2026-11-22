@@ -25,14 +25,15 @@ const rebuildGrace = 3 * time.Second
 // build follow. The phase flips to "patching" a few milliseconds before the
 // host's "start scan", so armedAt leads the real scan start by that much.
 type rebuildTracker struct {
-	editAt     time.Time
-	staleBuild bool      // the build running at edit time predates the edit
-	building   bool      // a build that includes the edit was observed
-	merged     bool      // the edit's build was hidden inside the stale one
-	quietSince time.Time // start of the current stretch without a build
-	armedAt    time.Time // the scan ran with the edit from here on
-	measured   bool      // armedAt follows an observed build
-	mapsReady  bool      // the map copies were prepared before the edit
+	editAt          time.Time
+	staleBuild      bool      // the build running at edit time predates the edit
+	building        bool      // a build that includes the edit was observed
+	merged          bool      // the edit's build was hidden inside the stale one
+	quietSince      time.Time // start of the current stretch without a build
+	armedAt         time.Time // the scan ran with the edit from here on
+	measured        bool      // armedAt follows an observed build
+	measurementLost bool      // a failed status read hid the actual scan restart
+	mapsReady       bool      // the map copies were prepared before the edit
 }
 
 func newRebuildTracker(editAt time.Time, phaseAtEdit string) *rebuildTracker {
@@ -89,7 +90,7 @@ func (r *rebuildTracker) observe(phase string, deferred bool, now time.Time) boo
 
 // duration is the edit-to-scan time a completed, measured tracker saw.
 func (r *rebuildTracker) duration() time.Duration {
-	if !r.measured || r.armedAt.Before(r.editAt) {
+	if !r.measured || r.measurementLost || r.armedAt.Before(r.editAt) {
 		return 0
 	}
 	return r.armedAt.Sub(r.editAt)

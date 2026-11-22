@@ -1,2 +1,3 @@
-- Skin changes late in champion select now apply to the current match far more often instead of waiting for the next one
-- Fixed your own skin being skipped after swapping champions late in champion select
+- Fixed interrupted manager connections causing overly long skin rebuild estimates and blocking skin changes.
+- Fixed Download logs silently doing nothing in the League client. Logs are now saved locally and shown in Windows Explorer.
+- Added progress and error feedback when saving logs.

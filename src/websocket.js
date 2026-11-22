@@ -51,6 +51,22 @@ let gamePathCallback = null;
 
 // One-shot callback for logs response
 let logsCallback = null;
+let diagnosticExport = null;
+
+export function exportDiagnostics() {
+  if (diagnosticExport) return diagnosticExport.promise;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Ame is disconnected. Reconnect and try again.'));
+  let resolve, reject;
+  const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+  const timer = setTimeout(() => {
+    diagnosticExport = null;
+    reject(new Error('Log export timed out. Check Ame and try again.'));
+  }, 15000);
+  diagnosticExport = { promise, resolve, reject, timer };
+  try { ws.send(JSON.stringify({ type: 'exportDiagnostics' })); }
+  catch (error) { clearTimeout(timer); diagnosticExport = null; reject(error); }
+  return promise;
+}
 
 // One-shot callback for custom mod file picked
 let customModFilePickedCallback = null;
@@ -315,6 +331,14 @@ export function wsConnect() {
           if (gamePathCallback) {
             gamePathCallback(msg.path || '');
             gamePathCallback = null;
+          }
+        } else if (msg.type === 'diagnosticsExported') {
+          if (diagnosticExport) {
+            const pending = diagnosticExport;
+            diagnosticExport = null;
+            clearTimeout(pending.timer);
+            if (msg.error) pending.reject(new Error(msg.error));
+            else pending.resolve(msg);
           }
         } else if (msg.type === 'logs') {
           if (logsCallback) {
