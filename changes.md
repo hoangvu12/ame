@@ -1,4 +1,4 @@
-- Fixed automatic League detection choosing an unused installation instead of the open League client.
-- Fixed changing the game folder leaving the old folder cached.
-- Fixed LTK Manager keeping an old installation path after the active League installation changes. Running matches are left untouched.
-- Added validation for manually selected game folders.
+- Auto accept, bench swap, auto pick/ban, availability status and random skin now work even when Ame is not running
+- These settings are now saved in the League client, so changes made while Ame is closed are no longer lost
+- Random skin only picks skins you own while Ame is not running
+- Settings that need Ame are greyed out while it is not running, with a note explaining why
