@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "設定",
+    "offline_note": "Ame が起動していません。グレー表示の設定には Ame が必要です。その他の設定はそのまま使えます。",
     "sections": {
       "general": "一般",
       "auto_select": "自動チャンピオン選択"

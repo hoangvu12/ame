@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "설정",
+    "offline_note": "Ame가 실행 중이 아닙니다. 회색으로 표시된 설정은 Ame가 필요하며, 나머지는 그대로 작동합니다.",
     "sections": {
       "general": "일반",
       "auto_select": "자동 챔피언 선택"

@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame ไม่ได้ทำงานอยู่ การตั้งค่าที่เป็นสีเทาต้องใช้ Ame ส่วนการตั้งค่าอื่นยังใช้งานได้",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

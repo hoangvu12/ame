@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame neběží. Zašedlá nastavení ho potřebují, ostatní fungují dál.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

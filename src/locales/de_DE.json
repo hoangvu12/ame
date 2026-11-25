@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame läuft nicht. Ausgegraute Einstellungen brauchen es, die anderen funktionieren weiter.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

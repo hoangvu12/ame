@@ -3,6 +3,10 @@ import { toastError, toastPromise, toastSuccess } from './toast';
 import { el } from './dom';
 import { t } from './i18n';
 import { createLogger } from './logger';
+import {
+  CLIENT_BOOL_KEYS, getClientSettings, mergeServerSettings,
+  setClientBool, setClientAutoSelectRole, setClientChatStatus, setClientRandomSkin,
+} from './clientSettings';
 
 const logger = createLogger('ws');
 
@@ -91,6 +95,22 @@ const chatStatusListeners = [];
 // changes stay fast. Latest status + listeners.
 let mapPrepCache = null;
 const mapPrepListeners = [];
+
+// Settings for the client-side features are kept in the client
+// (clientSettings.js), so they load now instead of waiting for ame.
+function loadClientSettingsIntoCaches() {
+  const values = getClientSettings();
+  for (const key of CLIENT_BOOL_KEYS) settingsCache[key] = !!values[key];
+  autoSelectRolesCache = values.autoSelectRoles || {};
+  chatStatusCache = { availability: values.chatAvailability || '', statusMessage: values.chatStatusMessage || '' };
+  randomSkinCache = values.randomSkin || '';
+}
+
+loadClientSettingsIntoCaches();
+
+function isClientSetting(key) {
+  return CLIENT_BOOL_KEYS.includes(key);
+}
 
 // Room party: teammate update listeners
 const roomPartyListeners = [];
@@ -254,7 +274,35 @@ export function getRandomSkinMode() {
 }
 
 export function setRandomSkinMode(mode) {
+  setClientRandomSkin(mode);
   applyRandomSkinMode(mode);
+  wsSend({ type: 'setRandomSkin', mode: mode || '' });
+}
+
+/**
+ * Change an on/off setting. Client-side settings are saved here and take
+ * effect at once, with or without ame. Every change is also sent to ame,
+ * which keeps its own copy and owns the settings that need it.
+ */
+export function setSetting(key, enabled) {
+  const v = !!enabled;
+  if (isClientSetting(key)) {
+    setClientBool(key, v);
+    applySetting(key, v);
+  }
+  wsSend({ type: `set${key.charAt(0).toUpperCase()}${key.slice(1)}`, enabled: v });
+}
+
+export function setAutoSelectRole(role, picks, bans) {
+  setClientAutoSelectRole(role, picks, bans);
+  applyAutoSelectRole(role, picks, bans);
+  wsSend({ type: 'setAutoSelectRole', role, picks: picks || [], bans: bans || [] });
+}
+
+export function setChatStatus(availability, statusMessage = '') {
+  setClientChatStatus(availability, statusMessage);
+  applyChatStatusConfig(availability, statusMessage);
+  wsSend({ type: 'setChatStatus', availability: availability || '', statusMessage: statusMessage || '' });
 }
 
 function applyRandomSkinMode(mode) {
@@ -349,23 +397,20 @@ export function wsConnect() {
             logsCallback = null;
           }
         } else if (msg.type === 'settings') {
-          // Batch settings snapshot — update all registered keys
+          // Batch settings snapshot. ame owns only the settings that need it;
+          // its copy of the client-side ones is taken over once, then ignored.
           for (const key of Object.keys(settingsListeners)) {
-            if (key in msg) applySetting(key, msg[key]);
+            if (key in msg && !isClientSetting(key)) applySetting(key, msg[key]);
           }
-          if (msg.autoSelectRoles) applyAutoSelectRoles(msg.autoSelectRoles);
-          if ('chatAvailability' in msg || 'chatStatusMessage' in msg) {
-            applyChatStatusConfig(msg.chatAvailability, msg.chatStatusMessage);
+          if (mergeServerSettings(msg)) {
+            const values = getClientSettings();
+            for (const key of CLIENT_BOOL_KEYS) applySetting(key, values[key]);
+            applyAutoSelectRoles(values.autoSelectRoles);
+            applyChatStatusConfig(values.chatAvailability, values.chatStatusMessage);
+            applyRandomSkinMode(values.randomSkin);
           }
-          if ('randomSkin' in msg) {
-            applyRandomSkinMode(msg.randomSkin);
-          }
-        } else if (msg.type === 'autoSelectRole') {
-          applyAutoSelectRole(msg.role, msg.picks, msg.bans);
-        } else if (msg.type === 'randomSkin') {
-          applyRandomSkinMode(msg.mode);
-        } else if (msg.type === 'chatStatus') {
-          applyChatStatusConfig(msg.availability, msg.statusMessage);
+        } else if (msg.type === 'autoSelectRole' || msg.type === 'randomSkin' || msg.type === 'chatStatus') {
+          // ame confirming a client-side change: already applied here.
         } else if (msg.type === 'customMods') {
           customModsCache = msg.mods || [];
           customModsListeners.forEach(cb => cb(customModsCache, 'list'));
@@ -408,8 +453,9 @@ export function wsConnect() {
             extensionRemovedCallback = null;
           }
         } else if (settingsListeners[msg.type] && 'enabled' in msg) {
-          // Individual setting response (from set* calls)
-          applySetting(msg.type, msg.enabled);
+          // Individual setting response (from set* calls). Client-side
+          // settings were already applied when they were changed.
+          if (!isClientSetting(msg.type)) applySetting(msg.type, msg.enabled);
         } else if (msg.type === 'ready') {
           // ame now accepts the WebSocket well before setup finishes, so it
           // reports separately whether skin commands will actually work.

@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame tidak berjalan. Pengaturan yang berwarna abu-abu membutuhkannya; yang lain tetap berfungsi.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

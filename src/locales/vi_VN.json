@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "CÀI ĐẶT",
+    "offline_note": "Ame chưa chạy. Các cài đặt bị làm mờ cần Ame; các cài đặt khác vẫn hoạt động.",
     "sections": {
       "general": "Chung",
       "auto_select": "Tự động chọn tướng"

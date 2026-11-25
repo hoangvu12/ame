@@ -243,6 +243,23 @@ export function injectStyles() {
       padding-left: 20px;
       opacity: 0.75;
     }
+    .ame-offline-note {
+      display: none;
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      border: 1px solid #785a28;
+      color: #f0e6d2;
+      font-family: var(--font-body);
+      font-size: 12px;
+      line-height: 16px;
+    }
+    .ame-offline .ame-offline-note {
+      display: block;
+    }
+    .ame-offline .ame-needs-ame {
+      opacity: 0.4;
+      pointer-events: none;
+    }
     .ame-bench-mark {
       position: absolute;
       top: 4px;

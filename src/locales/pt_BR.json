@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "CONFIGURAÇÕES",
+    "offline_note": "O Ame não está em execução. As configurações em cinza precisam dele; as outras continuam funcionando.",
     "sections": {
       "general": "Geral",
       "auto_select": "Seleção automática"

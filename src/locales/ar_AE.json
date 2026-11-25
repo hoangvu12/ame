@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame لا يعمل. الإعدادات الرمادية تحتاج إليه، أما البقية فتعمل.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

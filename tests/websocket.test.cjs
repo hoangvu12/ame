@@ -4,7 +4,18 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-async function setup() {
+// In-memory stand-in for the client's storage; pass the same one to several
+// setups to simulate the client restarting.
+function memoryStorage(initial = {}) {
+  const data = new Map(Object.entries(initial));
+  return {
+    data,
+    getItem: (key) => (data.has(key) ? data.get(key) : null),
+    setItem: (key, value) => { data.set(key, String(value)); },
+  };
+}
+
+async function setup({ storage = null, connect = true } = {}) {
   const timers = new Map();
   const sockets = [];
   const promises = [];
@@ -24,6 +35,7 @@ async function setup() {
     WebSocket: Socket,
     setTimeout: (fn, delay) => { timers.set(++id, { fn, delay }); return id; },
     clearTimeout: (key) => timers.delete(key),
+    ...(storage ? { localStorage: storage } : {}),
   });
   const mocks = {
     './constants': { WS_URL: 'ws://test', WS_RECONNECT_BASE_MS: 1000, WS_RECONNECT_MAX_MS: 5000, WS_RECONNECT_JITTER_MS: 0 },
@@ -37,13 +49,18 @@ async function setup() {
     './logger': { createLogger: () => ({ log() {}, error() {} }) },
   };
   const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../src/websocket.js'), 'utf8'), { context });
-  await module.link((name) => new vm.SyntheticModule(Object.keys(mocks[name]), function () {
-    for (const [key, value] of Object.entries(mocks[name])) this.setExport(key, value);
-  }, { context }));
+  await module.link((name) => {
+    if (name === './clientSettings') {
+      return new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../src/clientSettings.js'), 'utf8'), { context });
+    }
+    return new vm.SyntheticModule(Object.keys(mocks[name]), function () {
+      for (const [key, value] of Object.entries(mocks[name])) this.setExport(key, value);
+    }, { context });
+  });
   await module.evaluate();
   const api = module.namespace;
   api.wsConnect();
-  sockets[0].open();
+  if (connect) sockets[0].open();
   const fire = (delay) => {
     const entry = [...timers].find(([, timer]) => timer.delay === delay);
     assert.ok(entry, `timer ${delay} exists`);
@@ -175,4 +192,85 @@ test('send exception rejects and clears timer, allowing a later explicit retry',
   assert.equal(api.wsSendApply(payload), true);
   sockets[0].status('ready');
   await promises[1];
+});
+
+// Settings for the client-side features live in the client, so they work
+// without ame. ame's copy is taken over once, then the client copy wins.
+const plain = (value) => JSON.parse(JSON.stringify(value));
+const serverSays = (socket, msg) => socket.onmessage({ data: JSON.stringify(msg) });
+
+test('client-side settings changed while ame is off apply at once and survive a restart', async () => {
+  const storage = memoryStorage();
+  const first = await setup({ storage, connect: false });
+  const seen = [];
+  first.api.onSetting('autoAccept', (v) => seen.push(v));
+  first.api.setSetting('autoAccept', true);
+  first.api.setAutoSelectRole('top', [1, 2], [3]);
+  first.api.setChatStatus('away');
+  first.api.setRandomSkinMode('top3');
+  assert.deepEqual(seen, [false, true]);
+
+  const second = await setup({ storage, connect: false });
+  const restarted = [];
+  second.api.onSetting('autoAccept', (v) => restarted.push(v));
+  assert.deepEqual(restarted, [true]);
+  assert.deepEqual(plain(second.api.getAutoSelectRolesCache()), { top: { picks: [1, 2], bans: [3] } });
+  assert.equal(second.api.getRandomSkinMode(), 'top3');
+  let chat = null;
+  second.api.onChatStatus((c) => { chat = plain(c); });
+  assert.deepEqual(chat, { availability: 'away', statusMessage: '' });
+});
+
+test('ame settings are taken over once, then ame cannot overwrite them', async () => {
+  const storage = memoryStorage();
+  const { api, sockets } = await setup({ storage });
+  const autoAccept = [];
+  const roomParty = [];
+  api.onSetting('autoAccept', (v) => autoAccept.push(v));
+  api.onSetting('roomParty', (v) => roomParty.push(v));
+  serverSays(sockets[0], {
+    type: 'settings', autoAccept: true, roomParty: true, randomSkin: 'all',
+    autoSelectRoles: { mid: { picks: [7], bans: [] } }, chatAvailability: 'mobile', chatStatusMessage: '',
+  });
+  assert.deepEqual(autoAccept, [false, true]);
+  assert.equal(api.getRandomSkinMode(), 'all');
+  assert.deepEqual(plain(api.getAutoSelectRolesCache()), { mid: { picks: [7], bans: [] } });
+
+  // A later snapshot or an echo from ame does not touch client-side settings,
+  // but ame still owns the settings that need it.
+  serverSays(sockets[0], { type: 'settings', autoAccept: false, roomParty: false, randomSkin: '', autoSelectRoles: {} });
+  serverSays(sockets[0], { type: 'autoAccept', enabled: false });
+  serverSays(sockets[0], { type: 'randomSkin', mode: '' });
+  assert.deepEqual(autoAccept, [false, true]);
+  assert.equal(api.getRandomSkinMode(), 'all');
+  assert.deepEqual(plain(api.getAutoSelectRolesCache()), { mid: { picks: [7], bans: [] } });
+  assert.deepEqual(roomParty, [true, false]);
+
+  // Changes still reach ame, which keeps its own copy.
+  api.setSetting('autoAccept', false);
+  assert.deepEqual(plain(sockets[0].sent.at(-1)), { type: 'setAutoAccept', enabled: false });
+  api.setSetting('roomParty', true);
+  assert.deepEqual(plain(sockets[0].sent.at(-1)), { type: 'setRoomParty', enabled: true });
+  assert.deepEqual(roomParty, [true, false]);
+});
+
+test('changes made before ame was first reached are not overwritten by its older copy', async () => {
+  const storage = memoryStorage();
+  const offline = await setup({ storage, connect: false });
+  offline.api.setSetting('autoAccept', true);
+  offline.api.setAutoSelectRole('top', [1], []);
+
+  const { api, sockets } = await setup({ storage });
+  serverSays(sockets[0], {
+    type: 'settings', autoAccept: false, benchSwap: true, randomSkin: 'all',
+    autoSelectRoles: { top: { picks: [9], bans: [] }, jungle: { picks: [2], bans: [4] } },
+  });
+  const values = {};
+  for (const key of ['autoAccept', 'benchSwap']) api.onSetting(key, (v) => { values[key] = v; });
+  assert.deepEqual(values, { autoAccept: true, benchSwap: true });
+  assert.equal(api.getRandomSkinMode(), 'all');
+  assert.deepEqual(plain(api.getAutoSelectRolesCache()), {
+    top: { picks: [1], bans: [] },
+    jungle: { picks: [2], bans: [4] },
+  });
 });

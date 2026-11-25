@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "PARAMÈTRES",
+    "offline_note": "Ame n'est pas lancé. Les paramètres grisés en ont besoin, les autres fonctionnent toujours.",
     "sections": {
       "general": "Général",
       "auto_select": "Sélection automatique"

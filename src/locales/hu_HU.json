@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Az Ame nem fut. A szürke beállításokhoz szükség van rá, a többi továbbra is működik.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

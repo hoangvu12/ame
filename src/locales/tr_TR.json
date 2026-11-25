@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame çalışmıyor. Gri ayarlar için gerekli; diğerleri çalışmaya devam ediyor.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "AJUSTES",
+    "offline_note": "Ame no se está ejecutando. Los ajustes en gris lo necesitan; los demás siguen funcionando.",
     "sections": {
       "general": "General",
       "auto_select": "Selección automática"

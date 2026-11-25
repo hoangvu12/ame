@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame non è in esecuzione. Le impostazioni in grigio ne hanno bisogno, le altre funzionano comunque.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

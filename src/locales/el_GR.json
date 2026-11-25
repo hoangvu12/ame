@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Το Ame δεν εκτελείται. Οι γκρι ρυθμίσεις το χρειάζονται, οι υπόλοιπες λειτουργούν κανονικά.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

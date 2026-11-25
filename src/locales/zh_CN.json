@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "设置",
+    "offline_note": "Ame 未运行。灰色的设置需要它，其他设置仍可正常使用。",
     "sections": {
       "general": "常规",
       "auto_select": "自动选人"

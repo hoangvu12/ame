@@ -1,5 +1,4 @@
 import { onChatStatus } from './websocket';
-import { fetchJson } from './api';
 
 let currentAvailability = '';
 let reapplyTimer = null;
@@ -41,23 +40,8 @@ function stopReapply() {
   }
 }
 
-/**
- * Apply chat status directly. Called from settings UI for immediate effect.
- * Returns the verified availability string on success, null on failure.
- */
-export async function applyChatStatus(availability) {
-  currentAvailability = availability;
-  if (!availability) {
-    stopReapply();
-    return null;
-  }
-  const ok = await applyToLCU();
-  if (!ok) return null;
-  startReapply();
-  const me = await fetchJson('/lol-chat/v1/me');
-  return me?.availability || null;
-}
-
+// The chosen availability is saved in the client (clientSettings.js), so it
+// is applied as soon as the plugin loads, whether ame is running or not.
 export function initChatStatus(context) {
   onChatStatus(({ availability }) => {
     currentAvailability = availability;

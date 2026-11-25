@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame nie jest uruchomiony. Wyszarzone ustawienia go wymagają, pozostałe nadal działają.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

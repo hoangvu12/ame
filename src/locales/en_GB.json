@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame isn't running. Greyed-out settings need it; the others still work.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

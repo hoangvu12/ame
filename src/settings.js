@@ -1,10 +1,12 @@
-import { wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus, onRandomSkin, setRandomSkinMode, onMapPrep } from './websocket';
+import {
+  wsSend, onGamePath, onSetting, refreshSettings, getAutoSelectRolesCache, onAutoSelectRoles, onChatStatus,
+  onRandomSkin, setRandomSkinMode, onMapPrep, onConnection, setSetting, setAutoSelectRole, setChatStatus,
+} from './websocket';
 import { downloadDiagnosticZIP } from './diagnostics';
 import { el } from './dom';
 import { createButton, createCheckbox, createChampionSearch, createInput } from './components';
 import { loadChampionSummary } from './api';
 import { AUTO_SELECT_ROLES, CHAT_AVAILABILITY_OPTIONS } from './constants';
-import { applyChatStatus } from './chatStatus';
 import { openCustomSkinsModal } from './customSkins';
 import { t } from './i18n';
 
@@ -47,12 +49,30 @@ function buildSection(title, ...children) {
   return el('div', { class: 'ame-section' }, header, body);
 }
 
-function buildToggle(id, labelText, settingKey) {
+// Settings that only ame can carry out are greyed out while it is not running.
+// The client-side ones (auto accept, bench swap, auto pick/ban, availability,
+// random skin) keep working and are saved in the client.
+const NEEDS_AME_CLASS = 'ame-needs-ame';
+const OFFLINE_CLASS = 'ame-offline';
+
+function buildToggle(id, labelText, settingKey, { needsAme = false } = {}) {
   const { checkbox, input } = createCheckbox(id, labelText, (checked) => {
-    wsSend({ type: `set${settingKey.charAt(0).toUpperCase()}${settingKey.slice(1)}`, enabled: checked });
+    setSetting(settingKey, checked);
   });
   onSetting(settingKey, (enabled) => { input.checked = enabled; });
-  return el('div', { class: 'ame-settings-toggle-row' }, checkbox);
+  return el('div', { class: `ame-settings-toggle-row${needsAme ? ` ${NEEDS_AME_CLASS}` : ''}` }, checkbox);
+}
+
+function trackConnection(panel) {
+  // Stop listening once the panel has been shown and then removed (the
+  // League settings window is rebuilt each time it opens).
+  let shown = false;
+  let off = null;
+  off = onConnection((connected) => {
+    if (panel.isConnected) shown = true;
+    else if (shown) { off?.(); return; }
+    panel.classList.toggle(OFFLINE_CLASS, !connected);
+  });
 }
 
 export function mapPrepText(status) {
@@ -75,7 +95,7 @@ export function mapPrepText(status) {
 function buildMapPrepSection() {
   const line = el('span', { class: 'ame-list-label ame-map-prep-status', style: 'margin-top: 4px' }, mapPrepText(null));
   onMapPrep((status) => { line.textContent = mapPrepText(status); });
-  return el('div', null,
+  return el('div', { class: NEEDS_AME_CLASS },
     buildToggle('ameMapPrep', t('settings.general.map_prep'), 'mapPrep'),
     el('div', { class: 'ame-sub-toggle' }, line),
   );
@@ -94,23 +114,21 @@ function getChampionIcon(id) {
   return `/lol-game-data/assets/v1/champion-icons/${id}.png`;
 }
 
-function sendRoleUpdate(role) {
-  const config = getAutoSelectRolesCache();
-  const roleConfig = config[role] || { picks: [], bans: [] };
-  wsSend({ type: 'setAutoSelectRole', role, picks: roleConfig.picks, bans: roleConfig.bans });
+function updateRoleList(role, listType, list) {
+  const roleConfig = getAutoSelectRolesCache()[role] || { picks: [], bans: [] };
+  const next = { picks: roleConfig.picks || [], bans: roleConfig.bans || [], [listType]: list };
+  setAutoSelectRole(role, next.picks, next.bans);
+  renderRoleContent();
 }
 
 function buildChampionEntry(id, index, listType) {
   const removeBtn = el('button', {
     class: 'ame-champion-remove',
     onClick: () => {
-      const config = getAutoSelectRolesCache();
-      const roleConfig = config[activeRole] || { picks: [], bans: [] };
+      const roleConfig = getAutoSelectRolesCache()[activeRole] || { picks: [], bans: [] };
       const list = [...(roleConfig[listType] || [])];
       list.splice(list.indexOf(id), 1);
-      config[activeRole] = { ...roleConfig, [listType]: list };
-      sendRoleUpdate(activeRole);
-      renderRoleContent();
+      updateRoleList(activeRole, listType, list);
     },
   }, '\u00d7');
 
@@ -134,12 +152,8 @@ function buildChampionPicker(listType) {
     },
     onSelect: (id) => {
       if (id <= 0) return;
-      const cfg = getAutoSelectRolesCache();
-      const rc = cfg[activeRole] || { picks: [], bans: [] };
-      const list = [...(rc[listType] || []), id];
-      cfg[activeRole] = { ...rc, [listType]: list };
-      sendRoleUpdate(activeRole);
-      renderRoleContent();
+      const rc = getAutoSelectRolesCache()[activeRole] || { picks: [], bans: [] };
+      updateRoleList(activeRole, listType, [...(rc[listType] || []), id]);
     },
   });
   const wrapper = el('div', { class: 'ame-add-champion' });
@@ -224,10 +238,10 @@ function buildChatStatusSection() {
     });
   }
 
-  async function apply() {
+  function apply() {
     updateButtons();
-    applyChatStatus(selectedAvailability);
-    wsSend({ type: 'setChatStatus', availability: selectedAvailability, statusMessage: '' });
+    // chatStatus.js listens for this and applies it to the client.
+    setChatStatus(selectedAvailability, '');
   }
 
   const buttonRow = el('div', { class: 'ame-status-buttons' },
@@ -283,7 +297,6 @@ function buildRandomSkinSection() {
           selectedMode = opt.value;
           updateButtons();
           setRandomSkinMode(opt.value);
-          wsSend({ type: 'setRandomSkin', mode: opt.value });
         },
       }, t(opt.labelKey));
       buttons.push({ btn, value: opt.value });
@@ -353,15 +366,16 @@ function buildPanel() {
     placeholder: t('settings.general.game_path_placeholder'),
   });
 
-  return el('div', { class: AME_PANEL_CLASS },
+  const panel = el('div', { class: AME_PANEL_CLASS },
     el('lol-uikit-scrollable', {
       'overflow-masks': 'enabled',
       'scrolled-bottom': 'false',
       'scrolled-top': 'true',
     },
       el('div', { class: 'ame-settings-panel-inner' },
+        el('div', { class: 'ame-offline-note' }, t('settings.offline_note')),
         buildSection(t('settings.sections.general'),
-          el('div', { class: 'ame-settings-row' },
+          el('div', { class: `ame-settings-row ${NEEDS_AME_CLASS}` },
             flatInput,
             createButton(t('settings.general.save'), {
               class: 'ame-settings-save',
@@ -377,13 +391,13 @@ function buildPanel() {
           el('div', { class: 'ame-sub-toggle' },
             buildToggle('ameBenchSwapSkipCooldown', t('settings.general.bench_swap_skip_cooldown'), 'benchSwapSkipCooldown'),
           ),
-          buildToggle('ameRoomParty', t('settings.general.room_party'), 'roomParty'),
-          buildToggle('ameStartWithWindows', t('settings.general.start_with_windows'), 'startWithWindows'),
-          buildToggle('ameAutoUpdate', t('settings.general.auto_update'), 'autoUpdate'),
+          buildToggle('ameRoomParty', t('settings.general.room_party'), 'roomParty', { needsAme: true }),
+          buildToggle('ameStartWithWindows', t('settings.general.start_with_windows'), 'startWithWindows', { needsAme: true }),
+          buildToggle('ameAutoUpdate', t('settings.general.auto_update'), 'autoUpdate', { needsAme: true }),
           buildMapPrepSection(),
           buildChatStatusSection(),
           buildRandomSkinSection(),
-          el('div', { class: 'ame-settings-toggle-row' },
+          el('div', { class: `ame-settings-toggle-row ${NEEDS_AME_CLASS}` },
             createButton(t('custom_skins.button'), {
               onClick: () => openCustomSkinsModal(),
             }),
@@ -392,7 +406,7 @@ function buildPanel() {
         buildSection(t('settings.sections.auto_select'),
           buildAutoSelectSection(),
         ),
-        el('div', { class: 'ame-settings-toggle-row', style: { marginTop: '16px', gap: '8px' } },
+        el('div', { class: `ame-settings-toggle-row ${NEEDS_AME_CLASS}`, style: { marginTop: '16px', gap: '8px' } },
           createButton(t('settings.download_logs.button'), {
             class: 'ame-settings-download-logs',
             onClick: () => downloadDiagnosticZIP(),
@@ -409,6 +423,8 @@ function buildPanel() {
       ),
     ),
   );
+  trackConnection(panel);
+  return panel;
 }
 
 function deselectAllNav(container) {

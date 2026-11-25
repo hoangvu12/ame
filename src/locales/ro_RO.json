@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame nu rulează. Setările gri au nevoie de el; celelalte funcționează în continuare.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

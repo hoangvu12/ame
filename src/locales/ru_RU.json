@@ -36,6 +36,7 @@
   "settings": {
     "nav_title": "Ame",
     "nav_item": "SETTINGS",
+    "offline_note": "Ame не запущен. Серые настройки требуют его, остальные продолжают работать.",
     "sections": {
       "general": "General",
       "auto_select": "Auto Champion Select"

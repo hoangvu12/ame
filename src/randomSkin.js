@@ -1,6 +1,7 @@
 import { getChampionSkins, getChampionName } from './api';
 import { isDefaultSkin, getSkinKeyFromItem } from './skin';
-import { getRandomSkinMode } from './websocket';
+import { getRandomSkinMode, isConnected } from './websocket';
+import { getOwnedSkinChampionId, isOwnedSkin } from './state';
 import { createLogger } from './logger';
 
 const logger = createLogger('random');
@@ -80,10 +81,17 @@ export async function triggerRandomSkin(championId) {
     const skins = getChampionSkins();
     if (!skins || skins.length === 0) return;
 
-    const nonBaseSkins = skins.filter(s => !isDefaultSkin(s));
-    if (nonBaseSkins.length === 0) return;
+    let candidates = skins.filter(s => !isDefaultSkin(s));
 
-    let pool = nonBaseSkins;
+    // Without ame, skins the player does not own stay locked in the carousel
+    // and cannot be applied, so only owned skins can be picked.
+    if (!isConnected()) {
+      if (getOwnedSkinChampionId() !== championId) return; // ownership not loaded yet, next poll retries
+      candidates = candidates.filter(s => isOwnedSkin(s.id));
+    }
+    if (candidates.length === 0) return;
+
+    let pool = candidates;
 
     if (mode === 'top3') {
       const champName = await getChampionName(championId);
@@ -92,7 +100,7 @@ export async function triggerRandomSkin(championId) {
         if (rankings && rankings.length > 0) {
           const sorted = [...rankings].sort((a, b) => b.vote_count - a.vote_count);
           const top3Ids = new Set(sorted.slice(0, 3).map(r => parseInt(r.skin_id, 10)));
-          const matched = nonBaseSkins.filter(s => top3Ids.has(s.id));
+          const matched = candidates.filter(s => top3Ids.has(s.id));
           if (matched.length > 0) {
             pool = matched;
           } else {
